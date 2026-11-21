@@ -23,7 +23,7 @@ env:
 
 jobs:
   release:
-    if: inputs.seed || (github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && github.event.head_commit.message != 'Initial commit')
+    if: inputs.seed || (github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && github.event.head_commit.message != 'Initial commit' && (vars.EXACT_OTA_ENABLED != 'true' || contains(github.event.head_commit.message, '[native]')))
     runs-on: ubuntu-24.04
     steps:
       - name: Create release
@@ -36,7 +36,7 @@ jobs:
 
   build:
     needs: release
-    if: always() && (needs.release.result == 'success' || (needs.release.result == 'skipped' && !(github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && github.event.head_commit.message == 'Initial commit')))
+    if: always() && (needs.release.result == 'success' || (needs.release.result == 'skipped' && !(github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && (github.event.head_commit.message == 'Initial commit' || vars.EXACT_OTA_ENABLED == 'true'))))
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.platform == 'windows' && 90 || 45 }}
@@ -85,7 +85,22 @@ jobs:
           xcrun swift --version
           echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
 
+      - name: Restore web compiler
+        if: matrix.platform == 'web' && !inputs.seed
+        id: web-tools
+        uses: actions/cache@v5
+        with:
+          key: web-compiler-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.EXACT_REF }}
+          path: ~/.cache/exact/tools
+
+      - name: Download starter web compiler
+        if: matrix.platform == 'web' && !inputs.seed && steps.web-tools.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/web-tools.sh restore
+
       - name: Restore Exact build cache
+        if: matrix.platform != 'web' || inputs.seed
         id: cache
         uses: actions/cache/restore@v5
         with:
@@ -106,7 +121,7 @@ jobs:
             exact-v2-${{ matrix.runner }}-${{ runner.arch }}-${{ matrix.platform }}-${{ env.EXACT_REF }}-
 
       - name: Restore published seed
-        if: steps.cache.outputs.cache-matched-key == '' && !inputs.seed && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
+        if: matrix.platform != 'web' && steps.cache.outputs.cache-matched-key == '' && !inputs.seed && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
         env:
           GH_TOKEN: ${{ github.token }}
           PLATFORM: ${{ matrix.platform }}
@@ -115,7 +130,12 @@ jobs:
       - name: Prepare toolchain
         env:
           PLATFORM: ${{ matrix.platform }}
-        run: bash scripts/prepare-exact-ci.sh "$PLATFORM"
+        run: |
+          if [[ "$PLATFORM" == web && "${{ inputs.seed }}" != true ]]; then
+            (cd "$EXACT" && bun install --frozen-lockfile)
+          else
+            bash scripts/prepare-exact-ci.sh "$PLATFORM"
+          fi
 
       - name: Build app
         env:
@@ -130,8 +150,16 @@ jobs:
             macos) args=(mac --no-install) ;;
             windows) args=(windows --out dist-windows) ;;
           esac
+          if [[ "$PLATFORM" == android || "$PLATFORM" == ios ]] && bun -e 'process.exit(require("./app.json").deploy?.store?.[process.env.PLATFORM] === "A" ? 0 : 1)'; then
+            export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1
+            export EXACT_BAKE_OUTPUT="$RUNNER_TEMP/ota-base"
+          fi
           start=$SECONDS
-          bun exact.mjs "${args[@]}" --json | tee "$RUNNER_TEMP/exact-build.json"
+          if [[ "$PLATFORM" == web && "${{ vars.EXACT_OTA_ENABLED }}" == true ]]; then
+            EXACT_PAGES_BUILD=true bash "$GITHUB_WORKSPACE/scripts/build-web.sh" | tee "$RUNNER_TEMP/exact-build.json"
+          else
+            bun exact.mjs "${args[@]}" --json | tee "$RUNNER_TEMP/exact-build.json"
+          fi
           printf 'Build command took %ss\n' "$((SECONDS - start))"
           printf '| Platform | Exact cache hit | Build command |\n| --- | --- | ---: |\n| %s | %s | %ss |\n' \
             "$PLATFORM" "${{ steps.cache.outputs.cache-hit || 'false' }}" "$((SECONDS - start))" >> "$GITHUB_STEP_SUMMARY"
@@ -155,6 +183,12 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: bash scripts/portable-seed.sh publish
 
+      - name: Publish compact web compiler
+        if: inputs.seed && matrix.platform == 'web'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/web-tools.sh publish
+
       - name: Publish app output
         if: github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
         env:
@@ -164,7 +198,7 @@ jobs:
         run: bash scripts/publish-output.sh
 
       - name: Save rolling cache
-        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && (matrix.platform != 'web' || inputs.seed) && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: *exact-cache-paths
