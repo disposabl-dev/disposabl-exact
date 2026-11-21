@@ -6,18 +6,37 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      seed:
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   EXACT_REF: f40a26b9d7c07b5a38de9ded2e5a82c65d920ab0
-  EXACT: ${{ github.workspace }}/exact-sdk
+  SEED_TAG: exact-seed-v1-f40a26b9
   EXACT_FEEDBACK: "0"
   BUN_VERSION: "1.4.5"
 
 jobs:
+  release:
+    if: inputs.seed || (github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && github.event.head_commit.message != 'Initial commit')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED: ${{ inputs.seed }}
+        run: |
+          if [[ "$SEED" == "true" ]]; then tag="$SEED_TAG"; else tag="build-$GITHUB_SHA"; fi
+          gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$tag" --notes "Automated build assets" --prerelease
+
   build:
+    needs: release
+    if: always() && (needs.release.result == 'success' || (needs.release.result == 'skipped' && !(github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && github.event.head_commit.message == 'Initial commit')))
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.platform == 'windows' && 90 || 45 }}
@@ -38,6 +57,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Prepare stable build directory
+        run: |
+          BUILD_ROOT="$RUNNER_TEMP/exact-work"
+          echo "BUILD_ROOT=$BUILD_ROOT" >> "$GITHUB_ENV"
+          echo "EXACT=$BUILD_ROOT/exact-sdk" >> "$GITHUB_ENV"
+          mkdir -p "$BUILD_ROOT"
+          cp -R "$GITHUB_WORKSPACE/apps" "$BUILD_ROOT/"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -77,10 +104,19 @@ jobs:
             ~/.cache/exact/binaryen
             ~/.gradle/caches
             ~/.gradle/wrapper
-            exact-sdk/target
-            exact-sdk/vendor/ibex/crates/hermes-lean-sys-installer/target
-            apps/apps/target
-          key: exact-v1-${{ matrix.runner }}-${{ runner.arch }}-${{ matrix.platform }}-${{ env.EXACT_REF }}-${{ hashFiles('.github/workflows/exact-build.yml', 'scripts/prepare-exact-ci.sh', 'apps/apps/app.json', 'apps/apps/package.json', 'apps/apps/bun.lock', 'apps/apps/Cargo.lock') }}
+            ${{ env.BUILD_ROOT }}/exact-sdk/target
+            ${{ env.BUILD_ROOT }}/exact-sdk/vendor/ibex/crates/hermes-lean-sys-installer/target
+            ${{ env.BUILD_ROOT }}/apps/apps/target
+          key: exact-v2-${{ matrix.runner }}-${{ runner.arch }}-${{ matrix.platform }}-${{ env.EXACT_REF }}-${{ github.sha }}
+          restore-keys: |
+            exact-v2-${{ matrix.runner }}-${{ runner.arch }}-${{ matrix.platform }}-${{ env.EXACT_REF }}-
+
+      - name: Restore published seed
+        if: steps.cache.outputs.cache-matched-key == '' && !inputs.seed && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/portable-seed.sh restore
 
       - name: Prepare toolchain
         env:
@@ -90,7 +126,7 @@ jobs:
       - name: Build app
         env:
           PLATFORM: ${{ matrix.platform }}
-        working-directory: apps/apps
+        working-directory: ${{ env.BUILD_ROOT }}/apps/apps
         run: |
           case "$PLATFORM" in
             web) args=(web-build --out dist) ;;
@@ -118,7 +154,22 @@ jobs:
             if (info.isFile() && info.size === 0) throw Error("Exact produced an empty artifact");
           '
 
-      - name: Save baseline cache
+      - name: Publish seed
+        if: inputs.seed && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/portable-seed.sh publish
+
+      - name: Publish app output
+        if: github.event_name == 'push' && github.repository != 'disposabl-dev/disposabl-exact' && contains(fromJSON('["web", "android", "ios"]'), matrix.platform)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_JSON: ${{ runner.temp }}/exact-build.json
+        run: bash scripts/publish-output.sh
+
+      - name: Save rolling cache
         if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:

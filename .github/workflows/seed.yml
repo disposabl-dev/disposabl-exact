@@ -1,0 +1,12 @@
+name: Publish portable build seeds
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  seed:
+    uses: ./.github/workflows/exact-build.yml
+    with:
+      seed: true
+    permissions:
+      contents: write
