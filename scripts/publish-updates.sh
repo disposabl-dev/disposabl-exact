@@ -75,9 +75,16 @@ if (( ${#known[@]} )); then
   fi
   bun "$GITHUB_WORKSPACE/scripts/route-updates.mjs" "$scratch/plan.json" "$bases" "$site" app.json "$source_sha" > "$scratch/routes.json"
   if jq -e '.rows[] | select(.kind=="stream" and .action=="bundle")' "$scratch/plan.json" >/dev/null; then
-    snapshot=$(jq -er '.snapshot.id' "$scratch/plan.json")
-    bun "${args[@]}" --snapshot "$snapshot" --yes > "$scratch/result.json"
-    jq -e '.failed == []' "$scratch/result.json" >/dev/null
+    if jq -e 'all(.[]; .action != "native")' "$scratch/routes.json" >/dev/null &&
+       jq -e 'all(.rows[] | select(.kind=="stream"); .action=="bundle" or .action=="current")' "$scratch/plan.json" >/dev/null; then
+      # The same immutable source is already checked against every stream. Push
+      # signs its compatible edit without running the snapshot build a second time.
+      env -u CARGO_TARGET_DIR EXACT_UPDATE_TRUST=production bun exact.mjs push --origin "$site" --keys "$scratch"
+    else
+      snapshot=$(jq -er '.snapshot.id' "$scratch/plan.json")
+      bun "${args[@]}" --snapshot "$snapshot" --yes > "$scratch/result.json"
+      jq -e '.failed == []' "$scratch/result.json" >/dev/null
+    fi
   fi
   unset CARGO_TARGET_DIR
 else
