@@ -1,0 +1,137 @@
+name: Exact builds
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXACT_REF: f40a26b9d7c07b5a38de9ded2e5a82c65d920ab0
+  EXACT: ${{ github.workspace }}/exact-sdk
+  EXACT_FEEDBACK: "0"
+  BUN_VERSION: "1.4.5"
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: web, runner: ubuntu-24.04 }
+          - { platform: android, runner: ubuntu-24.04 }
+          - { platform: linux, runner: ubuntu-24.04 }
+          - { platform: ios, runner: xcode-27 }
+          - { platform: macos, runner: xcode-27 }
+          - { platform: windows, runner: windows-2025 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Fetch Exact
+        run: |
+          EXACT="${EXACT//\\//}"
+          echo "EXACT=$EXACT" >> "$GITHUB_ENV"
+          git init "$EXACT"
+          git -C "$EXACT" fetch --depth 1 https://github.com/expo/exact.git "$EXACT_REF"
+          git -C "$EXACT" checkout --detach FETCH_HEAD
+          test "$(git -C "$EXACT" rev-parse HEAD)" = "$EXACT_REF"
+          # Reuse Cargo fingerprints for identical SDK sources. App sources keep checkout times.
+          when=$(TZ=UTC git -C "$EXACT" log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd)
+          git -C "$EXACT" ls-files -z | (cd "$EXACT" && xargs -0 touch -h -d "$when")
+
+      - name: Select Xcode
+        if: runner.os == 'macOS'
+        run: |
+          export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          xcrun swift --version
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+
+      - name: Restore Exact build cache
+        id: cache
+        uses: actions/cache/restore@v5
+        with:
+          path: &exact-cache-paths |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/hermes-lean-sys
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cache/exact/binaryen
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            exact-sdk/target
+            exact-sdk/vendor/ibex/crates/hermes-lean-sys-installer/target
+            apps/apps/target
+          key: exact-v1-${{ matrix.runner }}-${{ runner.arch }}-${{ matrix.platform }}-${{ env.EXACT_REF }}-${{ hashFiles('.github/workflows/exact-build.yml', 'scripts/prepare-exact-ci.sh', 'apps/apps/app.json', 'apps/apps/package.json', 'apps/apps/bun.lock', 'apps/apps/Cargo.lock') }}
+
+      - name: Prepare toolchain
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/prepare-exact-ci.sh "$PLATFORM"
+
+      - name: Build app
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        working-directory: apps/apps
+        run: |
+          case "$PLATFORM" in
+            web) args=(web-build --out dist) ;;
+            android) args=(android --release --no-install) ;;
+            linux) args=(linux) ;;
+            ios) args=(ios --device --unsigned --release) ;;
+            macos) args=(mac --no-install) ;;
+            windows) args=(windows --out dist-windows) ;;
+          esac
+          start=$SECONDS
+          bun exact.mjs "${args[@]}" --json | tee "$RUNNER_TEMP/exact-build.json"
+          printf 'Build command took %ss\n' "$((SECONDS - start))"
+          printf '| Platform | Exact cache hit | Build command |\n| --- | --- | ---: |\n| %s | %s | %ss |\n' \
+            "$PLATFORM" "${{ steps.cache.outputs.cache-hit || 'false' }}" "$((SECONDS - start))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package build output
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_JSON: ${{ runner.temp }}/exact-build.json
+          BUILD_ARCHIVE: ${{ runner.temp }}/exact-${{ matrix.platform }}.tar.gz
+        run: |
+          bun --eval '
+            import { basename, dirname } from "node:path";
+            const output = JSON.parse(await Bun.file(process.env.BUILD_JSON).text()).path;
+            if (typeof output !== "string" || !output) throw Error("Exact returned no artifact path");
+            const artifact = process.env.PLATFORM === "windows" ? dirname(output) : output;
+            const tar = process.platform === "win32" ? "tar.exe" : "tar";
+            const result = Bun.spawnSync([tar, "-czf", process.env.BUILD_ARCHIVE, "-C", dirname(artifact), basename(artifact)], { stderr: "inherit" });
+            process.exit(result.exitCode);
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-${{ matrix.platform }}
+          path: ${{ runner.temp }}/exact-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Save baseline cache
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: *exact-cache-paths
+          key: ${{ steps.cache.outputs.cache-primary-key }}
