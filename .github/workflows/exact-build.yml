@@ -43,13 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { platform: web, runner: ubuntu-24.04 }
-          - { platform: android, runner: ubuntu-24.04 }
-          - { platform: linux, runner: ubuntu-24.04 }
-          - { platform: ios, runner: xcode-27 }
-          - { platform: macos, runner: xcode-27 }
-          - { platform: windows, runner: windows-2025 }
+        include: ${{ fromJSON((inputs.seed || github.repository != 'disposabl-dev/disposabl-exact') && '[{"platform":"web","runner":"ubuntu-24.04"},{"platform":"android","runner":"ubuntu-24.04"},{"platform":"ios","runner":"xcode-27"}]' || '[{"platform":"web","runner":"ubuntu-24.04"},{"platform":"android","runner":"ubuntu-24.04"},{"platform":"linux","runner":"ubuntu-24.04"},{"platform":"ios","runner":"xcode-27"},{"platform":"macos","runner":"xcode-27"},{"platform":"windows","runner":"windows-2025"}]') }}
     defaults:
       run:
         shell: bash
