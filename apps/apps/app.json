@@ -1,0 +1,20 @@
+{
+  "$schema": ".exact/checkout/scripts/app.schema.json",
+  "name": "Apps",
+  "short_name": "Apps",
+  "id": "com.example.apps-8d662a",
+  "start_url": "/",
+  "display": "standalone",
+  "app": {
+    "id": "com.example.apps-8d662a",
+    "name": "Apps"
+  },
+  "host": {
+    "web": {}
+  },
+  "deploy": {
+    "store": {
+      "web": "0"
+    }
+  }
+}
