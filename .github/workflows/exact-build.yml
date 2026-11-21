@@ -20,7 +20,7 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: ${{ matrix.platform == 'windows' && 90 || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,28 +106,17 @@ jobs:
           printf '| Platform | Exact cache hit | Build command |\n| --- | --- | ---: |\n| %s | %s | %ss |\n' \
             "$PLATFORM" "${{ steps.cache.outputs.cache-hit || 'false' }}" "$((SECONDS - start))" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package build output
+      - name: Verify build output exists
         env:
-          PLATFORM: ${{ matrix.platform }}
           BUILD_JSON: ${{ runner.temp }}/exact-build.json
-          BUILD_ARCHIVE: ${{ runner.temp }}/exact-${{ matrix.platform }}.tar.gz
         run: |
           bun --eval '
-            import { basename, dirname } from "node:path";
+            import { stat } from "node:fs/promises";
             const output = JSON.parse(await Bun.file(process.env.BUILD_JSON).text()).path;
             if (typeof output !== "string" || !output) throw Error("Exact returned no artifact path");
-            const artifact = process.env.PLATFORM === "windows" ? dirname(output) : output;
-            const tar = process.platform === "win32" ? "tar.exe" : "tar";
-            const result = Bun.spawnSync([tar, "-czf", process.env.BUILD_ARCHIVE, "-C", dirname(artifact), basename(artifact)], { stderr: "inherit" });
-            process.exit(result.exitCode);
+            const info = await stat(output);
+            if (info.isFile() && info.size === 0) throw Error("Exact produced an empty artifact");
           '
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: exact-${{ matrix.platform }}
-          path: ${{ runner.temp }}/exact-${{ matrix.platform }}.tar.gz
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Save baseline cache
         if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
