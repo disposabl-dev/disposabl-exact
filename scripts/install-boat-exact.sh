@@ -184,7 +184,8 @@ if [[ ! -f $apple_sdk ]]; then
   [[ -e $sdk_archive ]] || fail 'stage the Apple SDK archive or set EXACT_APPLE_SDK_URL and EXACT_APPLE_SDK_SHA256'
   case "$sdk_archive" in
     *.xtoolsdk.tar.gz)
-      tar -xzf "$sdk_archive" -C "$staging"
+      # macOS tar archives can carry AppleDouble sidecars that Clang sees as headers.
+      tar --exclude='._*' --warning=no-unknown-keyword -xzf "$sdk_archive" -C "$staging"
       sdk_archive="$staging/darwin.xtoolsdk"
       ;;
     *.xtoolsdk|*.xip) ;;
