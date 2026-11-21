@@ -50,3 +50,9 @@ test('other platform host metadata leaves this platform baseline safe', () => {
  assert.equal(onlyOtherPlatformManifestChanged(before,after,'ios'),false);
  after.deploy.store.android='0'; assert.equal(onlyOtherPlatformManifestChanged(before,after,'android'),false);
 });
+
+test('a recorded same-source native metadata baseline prevents repair loops', () => {
+ const t=table([row('android',aid),row('ios',iid),{kind:'binary',platform:'android',compatibilityId:aid,pendingInputs:['host','minimumOS']}]);
+ assert.equal(route(t,bases,verified,sha,{android:['host','minimumOS']}).android.action,'bundle');
+ assert.equal(route(t,bases,verified,sha,{}).android.action,'native');
+});

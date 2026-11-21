@@ -20,7 +20,7 @@ function splitReasons(text) {
   return parts.filter(Boolean);
 }
 
-const generatedNoise = new Set(['app/.exact/shells/Cargo.toml', 'app/.exact/shells/apple/Cargo.toml', 'app/.exact/shells/android/Cargo.toml', 'exact/host/apple/Sources/ExactCore/GeneratedBatch.swift', 'exact/host/apple/Sources/ExactCore']);
+const generatedNoise = new Set(['host', 'minimumOS', 'app/.exact/shells/Cargo.toml', 'app/.exact/shells/apple/Cargo.toml', 'app/.exact/shells/android/Cargo.toml', 'exact/host/apple/Sources/ExactCore/GeneratedBatch.swift', 'exact/host/apple/Sources/ExactCore']);
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
