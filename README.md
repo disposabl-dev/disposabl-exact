@@ -28,13 +28,13 @@ Same-repository PRs deploy to a branch-specific Convex preview and use the previ
 
 ## iPhone builds
 
-The Ubuntu 26.04 runner builds the first IPA and any replacement native binary. Blacksmith and GitHub-hosted x64 runners both offer Ubuntu 26.04. The job installs pinned Swift, LLVM, and rcodesign and assembles Exact’s Darwin cross-compilation SDK from a public Xcode 27.1 export and xtool’s Linux tools. Compatible iOS updates use the production bake receipt and skip native toolchain setup. [Exact Linux build instructions](https://github.com/expo/exact/blob/a55c5581c7e1a62cdee1f09367ea2909c74c7292/README.md#building-for-ios-on-linux-and-wsl) · [SDK export](https://github.com/kemono-games/apple-inputs/releases/tag/ios-27.1-xcode-27.1-27A9275-r1)
+Hosted macOS with Xcode builds the first IPA and any replacement native binary. Blacksmith Ubuntu 26.04 handles web, Android, and compatible iOS updates. The shared iOS setup bundle contains Rust and Hermes tools. Xcode and the Apple SDK come from the hosted runner.
 
 ## Subsequent deployments
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the actual production bake receipt to initialize each stream.
 
-Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. This lets preview and production use the same tested bundle. Clones download it on their first deployment and reuse their own GitHub Actions cache afterward.
+Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. Clones download the published bundles on their first deployment and cache them for later runs.
 
 The warm deployment target is one minute including queueing and transfers.
 

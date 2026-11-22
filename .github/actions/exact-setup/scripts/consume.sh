@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
+if [[ "$SETUP_PLATFORM" == ios ]]; then
+  if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer
+    echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+  fi
+  xcodebuild -version
+  xcrun --sdk iphoneos --show-sdk-version
+fi
+if ! command -v zstd >/dev/null; then
+  if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi
+fi
 tag="v${SETUP_BUNDLE_VERSION}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -24,13 +34,15 @@ extract_bundle() {
 
 extract_bundle "$SETUP_PLATFORM"
 publisher=".cache/exact/publisher/$SETUP_EXACT_REF"
-if [[ "$SETUP_PLATFORM" != web ]]; then
+if [[ "$SETUP_PLATFORM" == android ]]; then
   # The native bundle already supplies the matching host Hermes compiler.
   extract_bundle web "$publisher"
 fi
 (cd "$EXACT" && bun install --frozen-lockfile)
 echo "EXACT=$EXACT" >> "$GITHUB_ENV"
-echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+if [[ "$SETUP_PLATFORM" != ios ]]; then
+  echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+fi
 
 if [[ "$SETUP_PLATFORM" == android ]]; then
   sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
