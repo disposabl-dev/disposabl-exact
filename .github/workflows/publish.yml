@@ -16,7 +16,7 @@ permissions:
 env:
   EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '3'
+  BUNDLE_VERSION: '4'
 
 jobs:
   version:
@@ -24,7 +24,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2604
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       missing: ${{ steps.release.outputs.missing }}
@@ -46,7 +46,7 @@ jobs:
             200)
               jq -e --arg prefix "exact-$EXACT_REF-" --arg suffix "-bun-$BUN_VERSION.tar.zst" '
                 [.assets[] | select(.state == "uploaded" and .size > 0) | .name] as $names
-                | [.draft == false, (("web-Linux-X64","android-Linux-X64","ios-macOS-ARM64") as $p | ("",".sha256") as $ext
+                | [.draft == false, (("web-Linux-X64","android-Linux-X64","ios-Linux-X64") as $p | ("",".sha256") as $ext
                     | $names | index($prefix+$p+$suffix+$ext) != null)] | all
               ' "$RUNNER_TEMP/release.json" >/dev/null
               echo 'missing=false' >> "$GITHUB_OUTPUT" ;;
@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [web, android, ios]
-    runs-on: ${{ matrix.platform == 'ios' && 'xcode-27' || 'ubuntu-24.04' }}
+    runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7.0.1
@@ -88,7 +88,7 @@ jobs:
           compression-level: 0
   release:
     needs: [version, build]
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2604
     permissions:
       contents: write
     steps:

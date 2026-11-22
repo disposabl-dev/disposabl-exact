@@ -12,7 +12,7 @@ inputs:
     description: Bun version
   bundle-version:
     description: Published setup bundle version
-    default: '3'
+    default: '4'
   mode:
     default: consume
     description: consume a release or build its bundle
@@ -44,13 +44,15 @@ runs:
         SETUP_MODE: ${{ inputs.mode }}
       run: |
         case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in
-          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;;
+          web:Linux:X64|android:Linux:X64|ios:Linux:X64) ;;
           *) echo "::error::Unexpected runner for $SETUP_PLATFORM"; exit 1 ;;
         esac
         [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]
         [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-        exact="$RUNNER_TEMP/exact-sdk"
-        mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
+        # Prebuilt publisher tools embed the SDK checkout path used to compile them.
+        exact="$HOME/work/_temp/exact-sdk"
+        mkdir -p "$(dirname "$exact")"
+        mv -T "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
         ln -s "$exact" "$GITHUB_WORKSPACE/.exact-sdk"
         [[ $(git -C "$exact" rev-parse HEAD) == "$SETUP_EXACT_REF" ]]
         echo "EXACT=$exact" >> "$GITHUB_ENV"
@@ -60,7 +62,16 @@ runs:
       uses: actions/cache@v6.1.0
       with:
         path: ${{ runner.temp }}/exact-bundles
-        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
+        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}${{ inputs.platform != 'web' && '-with-publisher' || '' }}
+    - id: android-sdk
+      if: inputs.mode == 'consume' && inputs.platform == 'android'
+      shell: bash
+      run: |
+        if [[ -z "${ANDROID_HOME:-}" || ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]]; then
+          echo "install=true" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: android-actions/setup-android@v4.0.4
+      if: steps.android-sdk.outputs.install == 'true'
     - id: consume
       if: inputs.mode == 'consume'
       shell: bash
