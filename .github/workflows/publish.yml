@@ -22,7 +22,7 @@ jobs:
   version:
     if: github.repository == 'disposabl-dev/disposabl-exact' && !github.event.forced && !github.event.created && !github.event.deleted
     permissions:
-      contents: read
+      contents: write
       pull-requests: read
     runs-on: ubuntu-24.04
     outputs:
@@ -50,7 +50,12 @@ jobs:
                     | $names | index($prefix+$p+$suffix+$ext) != null)] | all
               ' "$RUNNER_TEMP/release.json" >/dev/null
               echo 'missing=false' >> "$GITHUB_OUTPUT" ;;
-            404) echo 'missing=true' >> "$GITHUB_OUTPUT" ;;
+            404)
+              if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+                gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
+              fi
+              gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha | grep -Fx "$GITHUB_SHA"
+              echo 'missing=true' >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::GitHub release lookup returned $status"; exit 1 ;;
           esac
 
@@ -99,4 +104,4 @@ jobs:
         run: |
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
-          gh release create --target "$GITHUB_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create "$TAG" --verify-tag --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
