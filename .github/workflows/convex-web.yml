@@ -45,9 +45,12 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - name: Set up Exact and install dependencies
+      - name: Set up Exact
+        working-directory: .exact-sdk
+        run: CHROME="$(command -v google-chrome)" bun scripts/exact.mjs setup --platform web
+
+      - name: Install app and backend dependencies
         run: |
-          (cd "$EXACT" && CHROME="$(command -v google-chrome)" bun scripts/exact.mjs setup --platform web)
           (cd packages/backend && bun install --frozen-lockfile)
           (cd apps/apps && mkdir -p .exact && ln -s "$EXACT" .exact/checkout && bun install --frozen-lockfile)
 
