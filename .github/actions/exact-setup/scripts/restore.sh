@@ -7,6 +7,7 @@ ref=$SETUP_EXACT_REF
 tag="v${SETUP_BUNDLE_VERSION}-exact-${ref}-bun-$SETUP_BUN_VERSION"
 release="https://github.com/disposabl-dev/disposabl-exact/releases/download/$tag"
 manifest="$scripts/../inputs.json"
+if [[ $SETUP_BUNDLE_VERSION -ge 9 ]]; then manifest="$scripts/../inputs-v${SETUP_BUNDLE_VERSION}.json"; fi
 staging=$(mktemp -d "$RUNNER_TEMP/exact-inputs.XXXXXX")
 trap 'rm -rf "$staging"' EXIT
 publisher=".cache/exact/publisher/$ref"
