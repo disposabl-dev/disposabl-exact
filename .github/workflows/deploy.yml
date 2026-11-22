@@ -249,7 +249,14 @@ jobs:
           [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
           mkdir -p "$RUNNER_TEMP/ios-artifacts/bake"
           bun exact.mjs ios --device --release --unsigned --archive "$RUNNER_TEMP/ios-artifacts/apps.ipa" --json > "$RUNNER_TEMP/ios-artifacts/build.json"
-          test -s "$RUNNER_TEMP/ios-artifacts/apps.ipa"
+          archive="$RUNNER_TEMP/ios-artifacts/apps.ipa"
+          unzip -q "$archive" -d "$RUNNER_TEMP/iphone-archive"
+          apps=("$RUNNER_TEMP"/iphone-archive/Payload/*.app)
+          test "${#apps[@]}" -eq 1
+          executable=$(plutil -extract CFBundleExecutable raw -o - "${apps[0]}/Info.plist")
+          lipo -verify_arch arm64 "${apps[0]}/$executable"
+          xcrun vtool -show-build "${apps[0]}/$executable" | grep -E 'platform (IOS|2)$'
+          codesign --verify "${apps[0]}"
           test -s "$RUNNER_TEMP/ios-artifacts/apps.receipt.json"
           test -s "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json"
       - name: Upload iOS archive and build receipts
