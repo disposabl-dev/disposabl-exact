@@ -2,17 +2,16 @@ import { setupGoogle, vGoogleProfile } from "@convex-dev/auth/methods/google/ser
 import { setupUsernamePassword } from "@convex-dev/auth/methods/username-password/server";
 import { getAuthUserId, setupConvexAuth } from "@convex-dev/auth/server";
 import { MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
-import { componentsGeneric, type RegisteredMutation } from "convex/server";
+import type { RegisteredMutation } from "convex/server";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { internalMutation, query, type MutationCtx } from "./_generated/server";
 import {
-  ACCESS_TOKEN_SECONDS, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleEnabled, siteOrigin, webOrigin,
+  GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleComponent, googleEnabled, siteOrigin, webOrigin,
 } from "./authSettings";
 
 const auth = setupConvexAuth({
   component: components.auth,
-  accessTokenTtlSeconds: ACCESS_TOKEN_SECONDS,
   refreshInactivityTimeoutSeconds: 7 * 24 * 60 * 60,
 });
 export const { refreshSession, signOut } = auth;
@@ -23,7 +22,7 @@ const password = setupUsernamePassword(auth, {
 }).attachUserCallbacks({ createUser: internal.auth.createPasswordUser });
 
 const google = setupGoogle(auth, {
-  component: (componentsGeneric() as unknown as { authGoogle: Parameters<typeof setupGoogle>[1]["component"] }).authGoogle,
+  component: googleComponent,
   allowedRedirectOrigins: [siteOrigin(), webOrigin()],
 }).attachUserCallbacks({ createUser: internal.auth.createGoogleUser });
 
@@ -90,10 +89,11 @@ export const passwordSession = internalMutation({
       if ([...secret].length < 15) return { error: "PASSWORD_TOO_SHORT" };
       if (!(await limits.limit(ctx, "signup")).ok) return { error: "RATE_LIMITED" };
     }
-    const method = create ? password.signUpWithUsernamePassword : password.signInWithUsernamePassword;
-    const result = await runAuthMethod(method, ctx, credentials);
+    const result = create
+      ? await runAuthMethod(password.signUpWithUsernamePassword, ctx, credentials)
+      : await runAuthMethod(password.signInWithUsernamePassword, ctx, credentials);
     if (result.status === "complete") return { tokens: result.tokens };
-    const code: string = result.userError.error;
+    const code = result.userError.error;
     if (code === "RATE_LIMITED") return { error: code };
     return { error: create ? code : "INVALID_CREDENTIALS" };
   },

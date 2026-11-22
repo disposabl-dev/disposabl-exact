@@ -47,6 +47,22 @@ test("logout revokes an issued access token and its refresh token", async () => 
   expect((await login.json()).viewer).toEqual({ name: account.username });
 });
 
+test("restoring an expired access token rotates the stored session", async () => {
+  const account = credentials();
+  const response = await request("native", { operation: "password", create: true, ...account });
+  expect(response.status).toBe(200);
+  const signedIn = await response.json();
+  const [accessToken, refreshToken] = signedIn.session.split("~");
+  const [header, , signature] = accessToken.split(".");
+  const expired = `${header}.${btoa(JSON.stringify({ exp: 0 })).replace(/=+$/, "")}.${signature}`;
+  const restored = await request("native", { operation: "status" }, { "X-Exact-Session": `${expired}~${refreshToken}` });
+  expect(restored.status).toBe(200);
+  const rotated = await restored.json();
+  expect(rotated.viewer).toEqual({ name: account.username });
+  expect(rotated.session.split("~")[1]).not.toBe(refreshToken);
+  await request("native", { operation: "signOut" }, { "X-Exact-Session": rotated.session });
+});
+
 test("web cookies stay HttpOnly and cross-origin requests are rejected", async () => {
   const account = credentials();
   const signup = { operation: "password", create: true, ...account };
@@ -57,7 +73,9 @@ test("web cookies stay HttpOnly and cross-origin requests are rejected", async (
   expect(result.status).toBe(200);
   const cookie = result.headers.get("Set-Cookie") ?? "";
   expect(cookie).toStartWith("__Host-exact-session=");
-  expect(cookie).toContain("Path=/; Secure; HttpOnly; SameSite=Strict");
+  for (const attr of ["Path=/", "Secure", "HttpOnly", "SameSite=Strict"]) {
+    expect(cookie.split("; ")).toContain(attr);
+  }
   expect(await result.json()).toEqual({ viewer: { name: account.username }, google: expect.any(Boolean) });
   const headers = { Origin: site, Cookie: cookie.split(";")[0] };
   const status = await request("web", { operation: "status" }, headers);

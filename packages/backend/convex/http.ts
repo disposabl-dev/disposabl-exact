@@ -1,9 +1,10 @@
+import { httpCookies, isTokenExpiring, serializeCookie } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
 import { api, components, internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
-import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleEnabled, webOrigin } from "./authSettings";
+import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, webOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
 const sessionHeader = "X-Exact-Session";
@@ -13,9 +14,9 @@ const tokenPattern = /^[a-zA-Z0-9._-]{1,2048}$/;
 
 type Session = { accessToken: string; refreshToken: string };
 
-function existingSession(request: Request, web: boolean): Session | null {
+async function existingSession(request: Request, web: boolean): Promise<Session | null> {
   const raw = web
-    ? request.headers.get("Cookie")?.split(/;\s*/).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1)
+    ? await httpCookies(request).get(cookieName)
     : request.headers.get(sessionHeader);
   const parts = raw?.split("~");
   if (parts?.length !== 2 || !parts.every((part) => tokenPattern.test(part))) return null;
@@ -30,7 +31,7 @@ function reply(body: object, status = 200, cookie?: string) {
 }
 
 function sessionCookie(value: string, maxAge: number) {
-  return `${cookieName}=${value}; Max-Age=${maxAge}; Path=/; Secure; HttpOnly; SameSite=Strict`;
+  return serializeCookie(cookieName, value, { maxAge, path: "/", secure: true, httpOnly: true, sameSite: "strict" });
 }
 
 function authError(error: string) {
@@ -71,18 +72,6 @@ async function viewer(accessToken: string) {
   return client.query(api.auth.viewer, {});
 }
 
-function tokenExpired(token: string) {
-  // The claim only tells us whether to try refreshing. Convex still verifies
-  // the signature and checks that the backing session exists before returning a user.
-  try {
-    const payload = token.split(".")[1].replaceAll("-", "+").replaceAll("_", "/");
-    const { exp } = JSON.parse(atob(payload));
-    return typeof exp !== "number" || exp * 1000 <= Date.now() + 5000;
-  } catch {
-    return true;
-  }
-}
-
 const session = httpAction(async (ctx, request) => {
   const web = new URL(request.url).pathname.endsWith("/web");
   const origin = request.headers.get("Origin");
@@ -97,8 +86,8 @@ const session = httpAction(async (ctx, request) => {
   const body = await readBody(request);
   if (body === null) return authError("INVALID_REQUEST");
 
-  const active = existingSession(request, web);
-  const google = googleEnabled();
+  const active = await existingSession(request, web);
+  const google = await googleAvailable();
   const signedOut = () => reply({ viewer: null, google }, 200, web ? sessionCookie("", 0) : undefined);
   const signedIn = async (tokens: Session & { refreshTokenExpiresAt: number }) => {
     const account = await viewer(tokens.accessToken);
@@ -113,7 +102,7 @@ const session = httpAction(async (ctx, request) => {
   switch (body.operation) {
     case "status": {
       if (!active) return reply({ viewer: null, google });
-      if (!tokenExpired(active.accessToken)) {
+      if (!isTokenExpiring(active.accessToken, 5)) {
         const account = await viewer(active.accessToken);
         return account ? reply({ viewer: account, google }) : signedOut();
       }
@@ -135,6 +124,7 @@ const session = httpAction(async (ctx, request) => {
       return result.tokens ? signedIn(result.tokens) : authError(result.error);
     }
     case "googleStart": {
+      if (!google) return authError("GOOGLE_DISABLED");
       if (typeof body.callbackState !== "string" || !statePattern.test(body.callbackState)) {
         return authError("INVALID_REQUEST");
       }
@@ -142,6 +132,7 @@ const session = httpAction(async (ctx, request) => {
       return "error" in result ? authError(result.error) : reply(result);
     }
     case "googleComplete": {
+      if (!google) return authError("GOOGLE_DISABLED");
       if (typeof body.code !== "string" || typeof body.state !== "string" ||
           !tokenPattern.test(body.code) || !tokenPattern.test(body.state)) return authError("INVALID_REQUEST");
       const result = await ctx.runMutation(internal.auth.finishGoogle, { code: body.code, state: body.state });

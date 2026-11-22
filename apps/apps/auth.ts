@@ -62,16 +62,16 @@ function passwordError(error: unknown, create: boolean): string {
     case 'PASSWORD_TOO_SHORT': return 'Use at least 15 characters for your password.';
     case 'PASSWORD_TOO_COMMON': return 'Choose a less common password.';
     default:
-      if (code.startsWith('USERNAME_')) return 'Choose a username with 3 to 32 characters, using letters, numbers, or underscores.';
+      if (code.startsWith('USERNAME_')) return 'Choose a shorter username using letters and numbers.';
       if (code.startsWith('PASSWORD_') || code === 'INVALID_REQUEST') return 'Check your username and password length and try again.';
       return create ? 'Could not create your account. Try again.' : 'Could not sign in. Try again.';
   }
 }
 
 async function googleSignIn(store: Store): Promise<AuthReply> {
-  const canPrepare = exactHost() === 'web' && typeof prepareAuthSession === 'function';
-  const prepared = canPrepare ? prepareAuthSession() : null;
+  let prepared: string | null = null;
   try {
+    if (exactHost() === 'web' && typeof prepareAuthSession === 'function') prepared = prepareAuthSession();
     const callback = authCallback();
     const state = crypto.randomUUID();
     const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store);
