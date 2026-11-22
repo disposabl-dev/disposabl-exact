@@ -71,6 +71,12 @@ if [[ $platform == ios ]]; then
   if [[ -f "$ios_tools/link/arms/manifest.json" ]] && ! python3 "$scripts/ios-link-arms.py" restore --kit "$ios_tools/link" --target "$cargo_target"; then
     echo 'Using the standard Apple framework build for this runner.'
   fi
+  # Exact chooses entries by the current package sources, dependencies and compiler flags.
+  if [[ -d "$ios_tools/link/packages-kept" ]]; then
+    package_root="$cargo_target/apple-swift/ios-17.0-balanced"
+    mkdir -p "$package_root"
+    cp -R "$ios_tools/link/packages-kept" "$package_root/"
+  fi
   # Match the canonical public SDK checkout used by Cargo build scripts.
   (cd "$EXACT" && git ls-files -z | xargs -0 touch -t 202001010000)
   find "$EXACT" -type d -not -path '*/.git*' -exec touch -t 202001010000 {} +
