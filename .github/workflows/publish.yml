@@ -16,7 +16,7 @@ permissions:
 env:
   EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '2'
+  BUNDLE_VERSION: '4'
 
 jobs:
   version:
