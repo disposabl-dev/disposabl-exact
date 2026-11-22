@@ -56,7 +56,7 @@ component Apps
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
               text greeting.text testId="greeting"
-              text "Shared app counter" role="heading" aria-level=2 font="-exact-title2"
+              text "Live counter" role="heading" aria-level=2 font="-exact-title2"
               text (live.status == "closed" ? "Disconnected. Reconnecting…" : live.status == "failed" or failed(counter) ? "Could not load the counter" : live.status == "ready" and counter.count >= 0 ? "Connected to Convex" : "Connecting to Convex…") testId="convex-status"
               if counter.count >= 0
                 text `${counter.count}` font="-exact-large-title" testId="convex-count"
