@@ -20,7 +20,7 @@ env:
 
 jobs:
   version:
-    if: github.repository == 'disposabl-dev/disposabl-exact'
+    if: github.repository == 'disposabl-dev/disposabl-exact' && !github.event.forced && !github.event.created && !github.event.deleted
     permissions:
       contents: read
       pull-requests: read
@@ -33,7 +33,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Only a reviewed merge into main can publish, including squash and rebase merges.
+          # Only a merge into main can publish, including squash and rebase merges.
           pulls=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls")
           if ! jq -es --arg sha "$GITHUB_SHA" 'any(.[][]; .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha)' <<< "$pulls" >/dev/null; then
             echo "Direct push: skipping tool publication."

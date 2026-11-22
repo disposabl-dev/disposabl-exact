@@ -8,7 +8,7 @@ Create a repository from this template and enable GitHub Actions. Use a Convex p
 
 | Scope | Name | Value |
 | --- | --- | --- |
-| Repository | `CONVEX_DEPLOY_KEY` | Convex production deploy key |
+| Repository | `CONVEX_DEPLOY_KEY` | Convex production deploy key, optional for preview-only repositories |
 | Repository | `CONVEX_DEPLOY_KEY_PREVIEW` | Convex project preview deploy key |
 | `android-production` environment | `EXACT_UPDATE_SEED` | Independent 32-byte, base64-encoded mobile update signing seed |
 | `android-preview` environment | `EXACT_UPDATE_SEED` | Separate preview seed of the same format |
@@ -16,7 +16,7 @@ Create a repository from this template and enable GitHub Actions. Use a Convex p
 
 Create both environments in **Settings → Environments**. Restrict `android-production` to the `main` branch. Both mobile platforms use these environments. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
-Same-repository contributors who can edit workflows are trusted with repository secrets. A public repository can additionally scope the production Convex key to the branch-restricted production environment. Set the two Convex secrets yourself. To provision the other three secrets, run the following once from your clone with a repository administrator's GitHub CLI login. GitHub-hosted runners generate the keys. The client receives ciphertext encrypted to the environment's GitHub public key and saves it using your existing login. Repeating the command keeps existing keys.
+Same-repository contributors who can edit workflows are trusted with repository secrets. Set the Convex keys at repository scope. A PR uses the preview key. A push to `main` uses the production key when set, or a persistent `main` preview with the preview signing environment when only the preview key is set. To provision the other three secrets, run the following once from your clone with a repository administrator's GitHub CLI login. GitHub-hosted runners generate the keys. The client receives ciphertext encrypted to the environment's GitHub public key and saves it using your existing login. Repeating the command keeps existing keys.
 
 ```sh
 python3 .github/actions/exact-setup/scripts/setup-signing.py
@@ -40,9 +40,9 @@ Only the canonical repository publishes tools. Merge a tools PR into `disposabl-
 
 The warm deployment target is one minute including queueing and transfers.
 
-### Optional Google Play build
+### Android App Bundles and Google Play
 
-Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UPLOAD_SIGNING` environment secret. Set the `ANDROID_PLAY_CONNECTED` Actions **variable** to `true` in `android-production` and bump the app version for the first Play build. Production native builds then upload a signed AAB alongside the APK. The Play upload key is separate from the APK signing key. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
+Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UPLOAD_SIGNING` environment secret. Set the `ANDROID_PLAY_CONNECTED` Actions **variable** to `true` in `android-production` and bump the app version for the first Play build. Production native builds always produce a signed APK and AAB. By default both use the standalone release key. A Play-connected build signs the AAB with its upload key. If the artifacts have incompatible native receipts, CI keeps the verified APK and fails the job before publishing the AAB. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
 
 ### Run the app locally
 

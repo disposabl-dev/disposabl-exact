@@ -75,7 +75,7 @@ const nativeFiles = execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', '.']).t
     return !/^(?:assets|deck)\//.test(path) && !/\.(?:ts|contract|md)$/.test(path);
   });
 const generation = createHash('sha256').update(JSON.stringify([
-  GITHUB_REPOSITORY, EXACT_PR_NUMBER || 'production', platform, CONVEX_ORIGIN,
+  GITHUB_REPOSITORY, EXACT_PR_NUMBER || (env.EXACT_VARIANT === 'preview' ? 'main-preview' : 'production'), platform, CONVEX_ORIGIN,
   EXACT_REF, manifest.version, nativeFiles,
 ])).digest();
 const keyBytes = Buffer.from(hkdfSync('sha256', secret, generation, 'exact-updates-v1', 32));
