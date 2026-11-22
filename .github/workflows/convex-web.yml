@@ -45,6 +45,12 @@ jobs:
         with:
           bun-version: 1.4.4
 
+      - name: Cache wasm-bindgen
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: exact-wasm-bindgen-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('.exact-sdk/rust-toolchain.toml', '.exact-sdk/game/Cargo.toml') }}
+
       - name: Set up Exact
         working-directory: .exact-sdk
         run: CHROME="$(command -v google-chrome)" bun scripts/exact.mjs setup --platform web
