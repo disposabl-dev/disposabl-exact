@@ -16,7 +16,7 @@ permissions:
 jobs:
   deploy:
     if: github.event_name != 'workflow_dispatch'
-    uses: disposabl-dev/exact-setup/.github/workflows/deploy.yml@a6eaaba8ee6d34839818aa0f8047f4286af61a51
+    uses: disposabl-dev/disposabl-exact/.github/workflows/app.yml@e0be036a72f5621c851cbc2cdee61dd72b57b72b
     secrets:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       CONVEX_DEPLOY_KEY_PREVIEW: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
@@ -24,6 +24,6 @@ jobs:
   provision-signing:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     permissions: {}
-    uses: disposabl-dev/exact-setup/.github/workflows/signing.yml@a6eaaba8ee6d34839818aa0f8047f4286af61a51
+    uses: disposabl-dev/disposabl-exact/.github/workflows/signing.yml@e0be036a72f5621c851cbc2cdee61dd72b57b72b
     with:
       recipients: ${{ inputs.recipients }}
