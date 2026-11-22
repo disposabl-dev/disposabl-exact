@@ -30,8 +30,8 @@ jobs:
       deployment: false
     outputs:
       convex_origin: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
-      android_native: ${{ steps.android-deliver.outputs.native }}
-      ios_native: ${{ steps.ios-deliver.outputs.native }}
+      android_native: ${{ steps.updates.outputs.android_native }}
+      ios_native: ${{ steps.updates.outputs.ios_native }}
     env:
       EXACT_TOOLS_ORIGIN: none
       EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@3c4fbe84e22eaecd33c19b560c2bc14797319d68
+      - uses: disposabl-dev/exact-setup@d8c25f687f32d33b3673dba795d32f31eec7342c
         with:
           platform: web
           exact-ref: ${{ env.EXACT_REF }}
@@ -77,24 +77,24 @@ jobs:
             | jq -er 'select(.deploymentName and .adminKey) | "preview:\(.deploymentName)|\(.adminKey | split("|")[-1])"')
           echo "::add-mask::$CONVEX_DEPLOY_KEY"
           bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
-      - name: Deliver Android updates
-        id: android-deliver
-        working-directory: apps/apps
+      - name: Publish compatible mobile updates
+        id: updates
         env:
           CONVEX_ORIGIN: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
         run: |
-          bun ../../scripts/mobile-updates.mjs deliver android
-          git restore -- app.json
-      - name: Deliver iOS updates
-        id: ios-deliver
-        working-directory: apps/apps
-        env:
-          CONVEX_ORIGIN: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: |
-          bun ../../scripts/mobile-updates.mjs deliver ios
-          git restore -- app.json
+          # Exact reads each platform's manifest from disk while baking.
+          ios="$RUNNER_TEMP/ios-publisher"
+          git worktree add --quiet --detach "$ios" HEAD
+          mkdir -p "$ios/apps/apps/.exact"
+          ln -s "$EXACT" "$ios/apps/apps/.exact/checkout"
+          ln -s "$GITHUB_WORKSPACE/apps/apps/node_modules" "$ios/apps/apps/node_modules"
+          (cd "$ios/apps/apps" && bun ../../scripts/mobile-updates.mjs deliver ios) &
+          ios_pid=$!
+          status=0
+          (cd apps/apps && bun ../../scripts/mobile-updates.mjs deliver android) || status=$?
+          wait "$ios_pid" || status=$?
+          exit "$status"
 
   android:
     name: Build Android ${{ github.event_name == 'push' && 'production' || 'preview' }}
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@3c4fbe84e22eaecd33c19b560c2bc14797319d68
+      - uses: disposabl-dev/exact-setup@d8c25f687f32d33b3673dba795d32f31eec7342c
         with:
           platform: android
           exact-ref: ${{ env.EXACT_REF }}
@@ -177,7 +177,9 @@ jobs:
           echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_EVENT_NAME" == push && "$ANDROID_PLAY_CONNECTED" == true ]]; then
             [[ -n "$ANDROID_PLAY_UPLOAD_SIGNING" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
-            build "$ANDROID_PLAY_UPLOAD_SIGNING" android-production.aab --bundle
+            EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$ANDROID_PLAY_UPLOAD_SIGNING" android-production.aab --bundle
+            cmp <(jq -Sc '.compat.id' "$EXACT_BAKE_OUTPUT"/android-*.build.json) \
+                <(jq -Sc '.compat.id' "$RUNNER_TEMP/play-bake"/android-*.build.json)
           fi
       - name: Upload Android artifacts
         if: ${{ !cancelled() && steps.android-build.outputs.apk_verified == 'true' }}
@@ -218,7 +220,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@3c4fbe84e22eaecd33c19b560c2bc14797319d68
+      - uses: disposabl-dev/exact-setup@d8c25f687f32d33b3673dba795d32f31eec7342c
         with:
           platform: ios
           exact-ref: ${{ env.EXACT_REF }}
