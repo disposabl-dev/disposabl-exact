@@ -20,7 +20,7 @@ Set the two Convex secrets yourself. To provision the other three secrets, run t
 
 ```sh
 gh api -H 'Accept: application/vnd.github.raw+json' \
-  'repos/disposabl-dev/disposabl-exact/contents/scripts/setup-signing.py?ref=e0be036a72f5621c851cbc2cdee61dd72b57b72b' | python3 -
+  'repos/disposabl-dev/disposabl-exact/contents/scripts/setup-signing.py?ref=d6d3f7d3c2aa5acda6d34c09830abdd39ffb5c3e' | python3 -
 ```
 
 Push one commit to `main`. Even a README edit triggers web deployment and a native build for each mobile platform lacking a compatible baseline. Download the mobile artifacts from **Deploy app**. The iOS job also publishes an unlisted AppDrop install link in its summary. Anyone with that link can access the archive. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
@@ -37,7 +37,7 @@ Apple’s standard Xcode agreement limits use to Apple-branded hardware running 
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the actual production bake receipt to initialize each stream.
 
-The shared [Exact setup action](https://github.com/disposabl-dev/disposabl-exact/tree/exact-setup) downloads pinned platform tools from GitHub Releases. Fresh app repositories can use the same tools. App binaries and signing keys stay specific to each application. Maintainers run **Publish shared Exact tools** in this template to publish a new SDK and Bun combination as a versioned GitHub Release. The shared workflow pins the SDK and Bun. Upgrade the reusable workflow reference in the template to adopt a newer version. Repositories created from that revision use the new tools on their first deployment. Existing repositories keep their pinned versions until their owners upgrade.
+The shared [Exact setup action](https://github.com/disposabl-dev/disposabl-exact/tree/exact-setup) downloads pinned platform tools from GitHub Releases. Fresh clones run only the deployment workflow on pull requests and pushes to main. It downloads the pinned tools on its first run and reuses its repository cache afterward. Only `disposabl-dev/disposabl-exact` can run the tools publisher. App binaries and signing keys stay specific to each application. Maintainers run **Publish shared Exact tools** in this template to publish a new SDK and Bun combination as a versioned GitHub Release. The shared workflow pins the SDK and Bun. Upgrade the reusable workflow reference in the template to adopt a newer version. Repositories created from that revision use the new tools on their first deployment. Existing repositories keep their pinned versions until their owners upgrade.
 
 The warm deployment target is one minute including queueing and transfers.
 
