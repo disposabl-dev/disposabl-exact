@@ -8,8 +8,7 @@ if [[ "$SETUP_PLATFORM" == web ]]; then
   (( ${#paths[@]} > 2 )) || { echo 'Missing host Hermes compiler' >&2; exit 1; }
 else
   pin=$(bun -p 'Bun.TOML.parse(await Bun.file("rust-toolchain.toml").text()).toolchain.channel')
-  case "$RUNNER_OS:$RUNNER_ARCH" in Linux:X64) triple=x86_64-unknown-linux-gnu;; macOS:ARM64) triple=aarch64-apple-darwin;; *) exit 1;; esac
-  paths=(".rustup/toolchains/$pin-$triple" .cargo/hermes-lean-sys .cargo/registry/cache .cargo/registry/index .cargo/git/db)
+  paths=(".rustup/toolchains/$pin-x86_64-unknown-linux-gnu" .cargo/hermes-lean-sys .cargo/registry/cache .cargo/registry/index .cargo/git/db)
 fi
 present=()
 for path in "${paths[@]}"; do [[ ! -e "$HOME/$path" ]] || present+=("$path"); done

@@ -1,5 +1,5 @@
 name: Exact setup
-description: Install pinned Exact tools on a clean hosted runner
+description: Install or publish pinned Exact tools for Ubuntu
 inputs:
   platform:
     required: true
@@ -10,15 +10,15 @@ inputs:
   bun-version:
     default: '1.4.4'
     description: Bun version
-  release-repo:
-    default: disposabl-dev/disposabl-exact
-    description: Repository holding setup releases
+  mode:
+    default: consume
+    description: consume a release or build its bundle
 outputs:
   exact-path:
-    value: ${{ steps.setup.outputs.exact-path }}
+    value: ${{ steps.checkout-exact.outputs.exact-path }}
     description: Path to Exact checkout
   source:
-    value: ${{ steps.setup.outputs.source }}
+    value: ${{ steps.consume.outputs.source }}
     description: cache or release
 runs:
   using: composite
@@ -32,30 +32,48 @@ runs:
         ref: ${{ inputs.exact-ref }}
         path: .exact-sdk
         persist-credentials: false
-    - id: format
-      shell: bash
-      env:
-        SETUP_ACTION_DIR: ${{ github.action_path }}
-      run: |
-        version=$(cat "$SETUP_ACTION_DIR/bundle-version")
-        [[ "$version" =~ ^[1-9][0-9]*$ ]]
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-    - name: Restore verified Exact bundle
-      uses: actions/cache@v5
-      with:
-        path: ${{ runner.temp }}/exact-bundles
-        key: exact-bundle-v${{ steps.format.outputs.version }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.release-repo }}-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
-    - id: setup
+    - id: checkout-exact
       shell: bash
       env:
         SETUP_PLATFORM: ${{ inputs.platform }}
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
-        SETUP_RELEASE_REPO: ${{ inputs.release-repo }}
-        SETUP_ACTION_DIR: ${{ github.action_path }}
+        SETUP_MODE: ${{ inputs.mode }}
+      run: |
+        [[ "$RUNNER_OS:$RUNNER_ARCH" == Linux:X64 && "$SETUP_PLATFORM" =~ ^(web|android|ios)$ && "$SETUP_MODE" =~ ^(consume|build)$ ]]
+        [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+        exact="$RUNNER_TEMP/exact-sdk"
+        mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
+        ln -s "$exact" "$GITHUB_WORKSPACE/.exact-sdk"
+        [[ $(git -C "$exact" rev-parse HEAD) == "$SETUP_EXACT_REF" ]]
+        echo "EXACT=$exact" >> "$GITHUB_ENV"
+        echo "exact-path=$exact" >> "$GITHUB_OUTPUT"
+    - name: Restore Exact bundle
+      if: inputs.mode == 'consume'
+      uses: actions/cache@v5
+      with:
+        path: ${{ runner.temp }}/exact-bundles
+        key: exact-bundle-v2-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
+    - id: consume
+      if: inputs.mode == 'consume'
+      shell: bash
+      env:
+        SETUP_PLATFORM: ${{ inputs.platform }}
+        SETUP_EXACT_REF: ${{ inputs.exact-ref }}
+        SETUP_BUN_VERSION: ${{ inputs.bun-version }}
         GH_TOKEN: ${{ github.token }}
-      run: bash "$SETUP_ACTION_DIR/scripts/consume.sh"
+      run: bash "$GITHUB_ACTION_PATH/scripts/consume.sh"
+    - name: Build bundle
+      if: inputs.mode == 'build'
+      shell: bash
+      env:
+        SETUP_PLATFORM: ${{ inputs.platform }}
+        SETUP_EXACT_REF: ${{ inputs.exact-ref }}
+        SETUP_BUN_VERSION: ${{ inputs.bun-version }}
+      run: |
+        bash "$GITHUB_ACTION_PATH/scripts/setup.sh"
+        bash "$GITHUB_ACTION_PATH/scripts/pack.sh"
     - name: Check iOS cross toolchain
-      if: inputs.platform == 'ios' && runner.os == 'Linux'
+      if: inputs.mode == 'consume' && inputs.platform == 'ios'
       shell: bash
       run: cd "$EXACT" && bun scripts/exact.mjs setup --check --platform ios --device
