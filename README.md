@@ -28,7 +28,7 @@ Same-repository PRs deploy to a branch-specific Convex preview and use the previ
 
 ## iPhone builds
 
-Hosted macOS with Xcode builds the first IPA and any replacement native binary. Blacksmith Ubuntu 26.04 handles web, Android, and compatible iOS updates. The shared iOS setup bundle contains Rust and Hermes tools. Xcode and the Apple SDK come from the hosted runner.
+Blacksmith macOS 27 with Xcode builds the first IPA and any replacement native binary. Blacksmith Ubuntu 26.04 handles web, Android, and compatible iOS updates. The shared iOS setup bundle contains Rust and Hermes tools. Xcode and the Apple SDK come from the hosted runner.
 
 ## Subsequent deployments
 
