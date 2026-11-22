@@ -62,7 +62,7 @@ runs:
       uses: actions/cache@v6.1.0
       with:
         path: ${{ runner.temp }}/exact-bundles
-        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
+        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}${{ inputs.platform != 'web' && '-with-publisher' || '' }}
     - id: android-sdk
       if: inputs.mode == 'consume' && inputs.platform == 'android'
       shell: bash
