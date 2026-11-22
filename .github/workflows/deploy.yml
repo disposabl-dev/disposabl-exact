@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@9243de0c9230f5f8f999500148702071d7b24c78
+      - uses: disposabl-dev/exact-setup@f2f9e06305a6167b033fd83e4b7c396c4854679d
         with:
           platform: web
           exact-ref: ${{ env.EXACT_REF }}
@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@9243de0c9230f5f8f999500148702071d7b24c78
+      - uses: disposabl-dev/exact-setup@f2f9e06305a6167b033fd83e4b7c396c4854679d
         with:
           platform: android
           exact-ref: ${{ env.EXACT_REF }}
@@ -225,7 +225,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: disposabl-dev/exact-setup@9243de0c9230f5f8f999500148702071d7b24c78
+      - uses: disposabl-dev/exact-setup@f2f9e06305a6167b033fd83e4b7c396c4854679d
         with:
           platform: ios
           exact-ref: ${{ env.EXACT_REF }}
