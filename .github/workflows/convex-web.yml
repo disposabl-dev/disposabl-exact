@@ -13,6 +13,11 @@ concurrency:
   group: convex-web-${{ github.event_name }}-${{ github.head_ref || 'main' }}
   cancel-in-progress: false
 
+env:
+  EXACT: ${{ github.workspace }}/.exact-sdk
+  EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
+  BUN_VERSION: 1.4.4
+
 jobs:
   deploy:
     if: >-
@@ -21,15 +26,16 @@ jobs:
        github.head_ref != 'main')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      convex_origin: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
     env:
-      EXACT: ${{ github.workspace }}/.exact-sdk
       EXACT_TOOLS_ORIGIN: none
-      BUN_VERSION: 1.4.4
       BUILD_WEB: >-
         cd ../../apps/apps &&
         rm -rf dist/convex &&
         env -u CONVEX_DEPLOY_KEY CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" bun exact.mjs web-build --out dist/convex &&
-        rm -f dist/convex/.exact-build.json
+        rm -f dist/convex/.exact-build.json &&
+        printf 'convex_origin=wss://%s\n' "${VITE_CONVEX_URL#https://}" >> "$GITHUB_OUTPUT"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,7 +45,7 @@ jobs:
         id: exact-sdk
         with:
           repository: expo/exact
-          ref: 28f071ca1b04fb4af90af965bab5241fa26d037a
+          ref: ${{ env.EXACT_REF }}
           path: .exact-sdk
           persist-credentials: false
 
@@ -85,6 +91,7 @@ jobs:
           (cd apps/apps && mkdir -p .exact && ln -s "$EXACT" .exact/checkout && bun install --frozen-lockfile)
 
       - name: Deploy production
+        id: production
         if: github.event_name == 'push'
         working-directory: packages/backend
         env:
@@ -92,6 +99,7 @@ jobs:
         run: bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
 
       - name: Deploy preview
+        id: preview
         if: github.event_name == 'pull_request'
         working-directory: packages/backend
         shell: bash
@@ -107,3 +115,167 @@ jobs:
             | jq -er 'select(.deploymentName and .adminKey) | "preview:\(.deploymentName)|\(.adminKey | split("|")[-1])"')
           echo "::add-mask::$CONVEX_DEPLOY_KEY"
           bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+
+  android:
+    name: Build Android ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    needs: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: ${{ github.event_name == 'push' && 'android-production' || 'android-preview' }}
+      deployment: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXACT_TOOLS_ORIGIN: none
+      ANDROID_NDK_VERSION: 27.3.13750724
+      ANDROID_BUILD_TOOLS_VERSION: 37.0.0
+      ANDROID_PLATFORM: android-37.2
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@v6
+        with:
+          repository: expo/exact
+          ref: ${{ env.EXACT_REF }}
+          path: .exact-sdk
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Restore Android setup
+        id: android-setup
+        uses: actions/cache/restore@v5
+        with: &android-setup-cache
+          path: |
+            ~/.rustup/toolchains/[0-9]*
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/hermes-lean-sys
+            .exact-sdk/node_modules
+          key: exact-android-setup-v3-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-bun-${{ env.BUN_VERSION }}-${{ env.ANDROID_PLATFORM }}-ndk-${{ env.ANDROID_NDK_VERSION }}-tools-${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+
+      - name: Set up Android and Exact
+        working-directory: .exact-sdk
+        env:
+          SETUP_CACHE_HIT: ${{ steps.android-setup.outputs.cache-hit }}
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -f "$ANDROID_HOME/platforms/$ANDROID_PLATFORM/source.properties" ||
+                ! -f "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/source.properties" ||
+                ! -f "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties" ]]; then
+            (set +o pipefail; yes | "$sdkmanager" --licenses >/dev/null)
+            "$sdkmanager" --install "platforms;$ANDROID_PLATFORM" "build-tools;$ANDROID_BUILD_TOOLS_VERSION" "ndk;$ANDROID_NDK_VERSION"
+          fi
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+
+          pin=$(bun -p 'Bun.TOML.parse(await Bun.file("rust-toolchain.toml").text()).toolchain.channel')
+          target=aarch64-linux-android
+          if [[ "$SETUP_CACHE_HIT" != true || ! -d node_modules || ! -d "${CARGO_HOME:-$HOME/.cargo}/hermes-lean-sys" ]] ||
+             ! rustup target list --installed --toolchain "$pin" | grep -Fxq "$target"; then
+            rustup toolchain install "$pin" --profile minimal --target "$target"
+            bun install --frozen-lockfile
+            cargo +"$pin" run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target "$target"
+            cargo +"$pin" fetch --locked
+          else
+            echo "Exact Android setup restored and ready"
+          fi
+
+      - name: Save Android setup
+        if: steps.android-setup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with: *android-setup-cache
+
+      - name: Restore Android Gradle dependencies
+        uses: actions/cache/restore@v5
+        id: android-gradle
+        with: &android-gradle-cache
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: exact-android-gradle-v1-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-ndk-${{ env.ANDROID_NDK_VERSION }}
+
+      - name: Install app dependencies
+        working-directory: apps/apps
+        run: |
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+
+      - name: Build signed Android artifacts
+        id: android-build
+        working-directory: apps/apps
+        env:
+          ANDROID_APK_SIGNING: ${{ secrets.ANDROID_APK_SIGNING }}
+          ANDROID_PLAY_UPLOAD_SIGNING: ${{ secrets.ANDROID_PLAY_UPLOAD_SIGNING }}
+          ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
+          CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
+          EXACT_UPDATE_TRUST: production
+          EXACT_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          if [[ "$CONVEX_ORIGIN" != wss://* ]]; then
+            echo "::error::The Convex deployment did not return a WebSocket origin"
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && -z "$ANDROID_APK_SIGNING" ]]; then
+            echo "::warning::Production APK skipped. Run Set up Android signing to enable it."
+            echo "Production APK skipped because Android signing is not configured." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          signing_dir=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
+          trap 'rm -rf "$signing_dir"' EXIT
+          artifacts="$RUNNER_TEMP/android-artifacts"
+          mkdir -p "$artifacts"
+
+          build() (
+            signing=$1
+            output=$2
+            shift 2
+            if [[ -n "$signing" ]]; then
+              export EXACT_KEYSTORE="$signing_dir/signing.p12"
+              export EXACT_KEY_ALIAS=android
+              EXACT_KEYSTORE_PASSWORD=$(jq -er '.password' <<< "$signing")
+              echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
+              export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
+              jq -er '.keystore' <<< "$signing" | base64 --decode > "$EXACT_KEYSTORE"
+            fi
+            bun exact.mjs android "$@" --json > "$signing_dir/build.json"
+            cp "$(jq -er '.path' "$signing_dir/build.json")" "$signing_dir/$output"
+            mv "$signing_dir/$output" "$artifacts/$output"
+          )
+
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            build "" android-preview.apk --variant preview --release --no-install
+          else
+            build "$ANDROID_APK_SIGNING" android-production.apk --release --no-install
+          fi
+          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$artifacts/"*.apk
+          echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_EVENT_NAME" == push && "$ANDROID_PLAY_CONNECTED" == true ]]; then
+            if [[ -z "$ANDROID_PLAY_UPLOAD_SIGNING" ]]; then
+              echo "::error::Run Android signing setup for the Play upload key before enabling Play builds"
+              exit 1
+            fi
+            build "$ANDROID_PLAY_UPLOAD_SIGNING" android-production.aab --bundle
+          fi
+
+      - name: Upload Android artifacts
+        if: ${{ !cancelled() && steps.android-build.outputs.apk_verified == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-${{ github.event_name == 'push' && 'production' || 'preview' }}
+          path: ${{ runner.temp }}/android-artifacts/
+          if-no-files-found: error
+
+      - name: Save Android Gradle dependencies
+        if: success() && steps.android-build.outputs.apk_verified == 'true' && steps.android-gradle.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with: *android-gradle-cache

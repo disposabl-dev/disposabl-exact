@@ -10,9 +10,17 @@
     "id": "com.example.apps-8d662a",
     "name": "Apps"
   },
+  "variants": {
+    "preview": {
+      "idSuffix": ".preview",
+      "name": "Apps Preview"
+    }
+  },
   "host": {
     "web": {},
-    "android": {},
+    "android": {
+      "id": "dev.disposabl.exact"
+    },
     "ios": {
       "minimumOS": "17.0",
       "deviceFamily": [

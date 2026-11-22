@@ -13,6 +13,15 @@ The [web workflow](.github/workflows/convex-web.yml) builds the Exact app and up
 
 The **Deploy web to Convex** run uses the matching Convex backend for each build and prints the live URL after upload. It builds the pinned Exact SDK’s web tools from source on a cache miss and reuses them through GitHub Actions.
 
+### Android release builds
+
+Same-repository PRs upload a release APK for `dev.disposabl.exact.preview` with the PR’s Convex preview URL and Android’s default debug signature. Pushes to `main` upload a release APK for `dev.disposabl.exact` with the production URL and the app’s production signing key. Download the APK from the workflow run’s **Artifacts** section.
+
+1. In **Settings → Environments**, create `android-production`. Set its deployment branches to **Selected branches and tags** and add only the branch `main`. Deployment branch rules and environment secrets are [available on GitHub Free for public repositories](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+2. Add `ANDROID_SIGNING_SETUP_TOKEN` to `android-production` as an environment secret. Use a short-lived fine-grained GitHub token restricted to this repository with **Environments: Read and write**. Once the workflow is on `main`, run **Set up Android signing** for `production`. The runner generates the keystore and saves it directly as an environment secret. Revoke the setup token and remove its secret afterward.
+
+Once Play Console is set up, run **Set up Android signing** with `play-upload` and set the `ANDROID_PLAY_CONNECTED` environment variable to `true` in `android-production`. Main builds then also upload a signed AAB as a GitHub Actions artifact. Use the AAB for the first Play upload or use the public certificate from the setup run if Play asks for it. If Play should update existing direct-download APK installs, enroll the original production app-signing key in Play App Signing. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
+
 ### Run the app locally
 
 With the Exact SDK checkout available, run `bun exact.mjs --help` and `bun install` from `apps/apps`. Set `CONVEX_ORIGIN` in `apps/apps/.env.local` to the WebSocket origin of your development deployment, for example `wss://your-deployment.convex.cloud`. Start the app with `bun exact.mjs web`. The Android and iOS builds read the same setting. The shared counter lets you verify a live query and a write between clients connected to the same deployment.
