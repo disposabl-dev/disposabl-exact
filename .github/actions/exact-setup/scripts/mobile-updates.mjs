@@ -52,7 +52,7 @@ if (!['configure', 'deliver', 'seed'].includes(command) || !['ios', 'android'].i
   throw Error('expected plan or configure|deliver|seed ios|android');
 
 const env = process.env;
-const { EXACT, EXACT_REF, EXACT_PR_NUMBER, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;
+const { EXACT, EXACT_REF, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;
 if (!EXACT || !/^[a-f0-9]{40}$/.test(EXACT_REF) || !GITHUB_REPOSITORY ||
     !/^[a-f0-9]{40}$/.test(GITHUB_SHA) || !/^wss:\/\/[^/]+$/.test(CONVEX_ORIGIN))
   throw Error('Missing pinned SDK, commit, repository or Convex deployment origin');
@@ -75,7 +75,7 @@ const nativeFiles = execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', '.']).t
     return !/^(?:assets|deck)\//.test(path) && !/\.(?:ts|contract|md)$/.test(path);
   });
 const generation = createHash('sha256').update(JSON.stringify([
-  GITHUB_REPOSITORY, EXACT_PR_NUMBER || (env.EXACT_VARIANT === 'preview' ? 'main-preview' : 'production'), platform, CONVEX_ORIGIN,
+  GITHUB_REPOSITORY, 'production', platform, CONVEX_ORIGIN,
   EXACT_REF, manifest.version, nativeFiles,
 ])).digest();
 const keyBytes = Buffer.from(hkdfSync('sha256', secret, generation, 'exact-updates-v1', 32));

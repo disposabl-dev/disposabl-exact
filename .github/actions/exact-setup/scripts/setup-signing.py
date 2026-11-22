@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+ENVIRONMENT = "android-production"
+
 
 def gh(*args, payload=None):
     return subprocess.check_output(["gh", *args], text=True,
@@ -20,13 +22,13 @@ def generate_for_runner():
     destination = Path(os.environ["RUNNER_TEMP"], "sealed")
     destination.mkdir(exist_ok=True)
     for environment, recipient in json.loads(os.environ["RECIPIENTS"]).items():
-        if environment not in ("android-production", "android-preview"):
+        if environment != ENVIRONMENT:
             raise ValueError("Unknown signing environment")
         box = SealedBox(PublicKey(base64.b64decode(recipient["key"], validate=True)))
         for name in recipient["names"]:
             if name == "EXACT_UPDATE_SEED":
                 plaintext = base64.b64encode(secrets.token_bytes(32))
-            elif environment == "android-production" and name in ("ANDROID_APK_SIGNING", "ANDROID_PLAY_UPLOAD_SIGNING"):
+            elif name in ("ANDROID_APK_SIGNING", "ANDROID_PLAY_UPLOAD_SIGNING"):
                 password = secrets.token_hex(32)
                 with tempfile.TemporaryDirectory() as directory:
                     keystore = Path(directory, "signing.p12")
@@ -58,25 +60,19 @@ repo = gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
 ref = "main"
 sha = gh("api", f"repos/{repo}/commits/{ref}", "--jq", ".sha")
 
-recipients = {}
-for env in ("android-preview", "android-production"):
-    path = f"repos/{repo}/environments/{env}/secrets"
-    existing = gh("api", path, "--paginate", "--jq", ".secrets[].name").splitlines()
-    wanted = ["EXACT_UPDATE_SEED"]
-    if env == "android-production":
-        wanted += ["ANDROID_APK_SIGNING"]
-        if args.play:
-            wanted += ["ANDROID_PLAY_UPLOAD_SIGNING"]
-    missing = [name for name in wanted if name not in existing]
-    if missing:
-        recipients[env] = {**json.loads(gh("api", path + "/public-key")), "names": missing}
-
-if not recipients:
+path = f"repos/{repo}/environments/{ENVIRONMENT}/secrets"
+existing = gh("api", path, "--paginate", "--jq", ".secrets[].name").splitlines()
+wanted = ["EXACT_UPDATE_SEED", "ANDROID_APK_SIGNING"]
+if args.play:
+    wanted.append("ANDROID_PLAY_UPLOAD_SIGNING")
+missing = [name for name in wanted if name not in existing]
+if not missing:
     print("All requested signing keys are already configured.")
     raise SystemExit
 
+recipient = {**json.loads(gh("api", path + "/public-key")), "names": missing}
 run_url = gh("workflow", "run", "deploy.yml", "--repo", repo, "--ref", ref, "--json",
-             payload={"recipients": json.dumps(recipients)})
+             payload={"recipients": json.dumps({ENVIRONMENT: recipient})})
 run = run_url.rstrip("/").split("/")[-1]
 if not run.isdecimal():
     raise ValueError(f"Unexpected GitHub workflow response: {run_url}")
@@ -87,14 +83,12 @@ if gh("run", "view", run, "--repo", repo, "--json", "headSha,workflowName,event"
     raise ValueError("Signing run does not match the selected workflow and commit")
 with tempfile.TemporaryDirectory() as directory:
     gh("run", "download", run, "--repo", repo, "--name", "sealed-keys", "--dir", directory)
-    for env, spec in recipients.items():
-        path = f"repos/{repo}/environments/{env}/secrets"
-        for name in spec["names"]:
-            sealed = json.loads(Path(directory, f"{env}-{name}.json").read_text())
-            if sealed["key_id"] != gh("api", path + "/public-key", "--jq", ".key_id"):
-                raise ValueError("GitHub environment encryption key changed; run setup again")
-            if name in gh("api", path, "--paginate", "--jq", ".secrets[].name").splitlines():
-                print(f"Keeping {env}/{name}")
-                continue
-            gh("api", "--method", "PUT", f"{path}/{name}", "--input", "-", payload=sealed)
-            print(f"Stored {env}/{name}")
+    for name in missing:
+        sealed = json.loads(Path(directory, f"{ENVIRONMENT}-{name}.json").read_text())
+        if sealed["key_id"] != gh("api", path + "/public-key", "--jq", ".key_id"):
+            raise ValueError("GitHub environment encryption key changed; run setup again")
+        if name in gh("api", path, "--paginate", "--jq", ".secrets[].name").splitlines():
+            print(f"Keeping {ENVIRONMENT}/{name}")
+            continue
+        gh("api", "--method", "PUT", f"{path}/{name}", "--input", "-", payload=sealed)
+        print(f"Stored {ENVIRONMENT}/{name}")

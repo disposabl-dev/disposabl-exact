@@ -41,8 +41,7 @@ if [[ "$platform" == ios ]]; then
   exit
 fi
 [[ "$platform" == android ]]
-[[ "${DEPLOY_TARGET:-}" == preview || "${DEPLOY_TARGET:-}" == production ]] || { echo '::error::Invalid deployment target'; exit 1; }
-if [[ "$DEPLOY_TARGET" == production && -z "$ANDROID_APK_SIGNING" ]]; then
+if [[ -z "${ANDROID_APK_SIGNING:-}" ]]; then
   echo '::error::Production Android signing is not configured'; exit 1
 fi
 signing_dir=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
@@ -50,47 +49,39 @@ trap 'rm -rf "$signing_dir"' EXIT
 build() (
   signing=$1 output=$2
   shift 2
-  if [[ -n "$signing" ]]; then
-    export EXACT_KEYSTORE="$signing_dir/signing.p12" EXACT_KEY_ALIAS=android
-    EXACT_KEYSTORE_PASSWORD=$(jq -er '.password' <<< "$signing")
-    echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
-    export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
-    jq -er '.keystore' <<< "$signing" | base64 --decode > "$EXACT_KEYSTORE"
-  fi
+  export EXACT_KEYSTORE="$signing_dir/signing.p12" EXACT_KEY_ALIAS=android
+  EXACT_KEYSTORE_PASSWORD=$(jq -er '.password' <<< "$signing")
+  echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
+  export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
+  jq -er '.keystore' <<< "$signing" | base64 --decode > "$EXACT_KEYSTORE"
   bun exact.mjs android "$@" --json > "$signing_dir/build.json"
   cp "$(jq -er '.path' "$signing_dir/build.json")" "$output"
 )
-if [[ "$DEPLOY_TARGET" == preview ]]; then
-  build '' "$artifacts/android-preview.apk" --release --no-install
-else
-  build "$ANDROID_APK_SIGNING" "$artifacts/android-production.apk" --release --no-install
-fi
+build "$ANDROID_APK_SIGNING" "$artifacts/android-production.apk" --release --no-install
 "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$artifacts/"*.apk
 echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
-if [[ "$DEPLOY_TARGET" == production ]]; then
-  aab_signing=$ANDROID_APK_SIGNING
-  if [[ "${ANDROID_PLAY_CONNECTED:-}" == true ]]; then
-    [[ -n "${ANDROID_PLAY_UPLOAD_SIGNING:-}" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
-    aab_signing=$ANDROID_PLAY_UPLOAD_SIGNING
-  fi
-  EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$aab_signing" "$signing_dir/play.aab" --bundle
-  # Compare exactly the frozen cohort Exact signs into the update stream.
-  bun -e '
-    import { readFileSync, readdirSync } from "node:fs";
-    import { resolve } from "node:path";
-    const { cohortReceipt } = await import(resolve(process.env.EXACT, "scripts/deploy-heads.mjs"));
-    const { canonicalJson } = await import(resolve(process.env.EXACT, "scripts/deploy-signing.mjs"));
-    const read = dir => {
-      const files = readdirSync(dir).filter(name => /^android-.*\.build\.json$/.test(name)).sort();
-      if (!files.length) throw Error("Missing Android build receipt");
-      return files.map(name => {
-        const build = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
-        if (build.trust !== "production" || build.compat?.inputs?.platform !== "android") throw Error("Invalid Android production receipt");
-        return cohortReceipt(build);
-      });
-    };
-    const apk = read(process.env.EXACT_BAKE_OUTPUT), bundle = read(process.env.RUNNER_TEMP + "/play-bake");
-    if (canonicalJson(apk) !== canonicalJson(bundle)) throw Error("APK and AAB update cohorts differ");
-  '
-  mv "$signing_dir/play.aab" "$artifacts/android-production.aab"
+aab_signing=$ANDROID_APK_SIGNING
+if [[ "${ANDROID_PLAY_CONNECTED:-}" == true ]]; then
+  [[ -n "${ANDROID_PLAY_UPLOAD_SIGNING:-}" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
+  aab_signing=$ANDROID_PLAY_UPLOAD_SIGNING
 fi
+EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$aab_signing" "$signing_dir/play.aab" --bundle
+# Compare exactly the frozen cohort Exact signs into the update stream.
+bun -e '
+  import { readFileSync, readdirSync } from "node:fs";
+  import { resolve } from "node:path";
+  const { cohortReceipt } = await import(resolve(process.env.EXACT, "scripts/deploy-heads.mjs"));
+  const { canonicalJson } = await import(resolve(process.env.EXACT, "scripts/deploy-signing.mjs"));
+  const read = dir => {
+    const files = readdirSync(dir).filter(name => /^android-.*\.build\.json$/.test(name)).sort();
+    if (!files.length) throw Error("Missing Android build receipt");
+    return files.map(name => {
+      const build = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
+      if (build.trust !== "production" || build.compat?.inputs?.platform !== "android") throw Error("Invalid Android production receipt");
+      return cohortReceipt(build);
+    });
+  };
+  const apk = read(process.env.EXACT_BAKE_OUTPUT), bundle = read(process.env.RUNNER_TEMP + "/play-bake");
+  if (canonicalJson(apk) !== canonicalJson(bundle)) throw Error("APK and AAB update cohorts differ");
+'
+mv "$signing_dir/play.aab" "$artifacts/android-production.aab"
