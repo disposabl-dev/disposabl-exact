@@ -4,11 +4,18 @@ Starter kit for building apps and agents.
 
 ## Build from this template
 
-Use **Use this template → Create a new repository**. Clone the generated repository, edit the heading in `apps/apps/app.contract`, and push to `main`. The first edit starts parallel web, Android, and iOS builds. Web restores Exact’s prebuilt Linux compiler. Android and iOS restore their compiled starter caches from the canonical repository's [seed release](https://github.com/disposabl-dev/disposabl-exact/releases/tag/exact-seed-v1-f40a26b9). Subsequent pushes restore the generated repository's own Actions cache when available.
+Use **Use this template → Create a new repository** and clone it. Link `packages/backend` to your Convex project with `bun run convex dev` from that directory after installing dependencies.
 
-Open **Releases** in the generated repository for the commit's `web.zip`, `android.apk`, and `ios-unsigned.ipa`. Extract the web archive onto a static web host. The iOS archive requires signing before installation on a device.
+The [web workflow](.github/workflows/convex-web.yml) builds the Exact app and uploads `apps/apps/dist/convex` to Convex Static Hosting. Set two repository secrets in **Settings → Secrets and variables → Actions**.
 
-Starter maintainers can publish the three cache archives using **Actions → Publish portable build seeds → Run workflow**.
+- `CONVEX_DEPLOY_KEY` is the production deploy key. Every push to `main`, including PR merges, deploys production.
+- `CONVEX_DEPLOY_KEY_PREVIEW` is the project preview key. Opening or updating a same-repository PR from another branch deploys a preview named for the branch.
+
+The **Deploy web to Convex** run prints the live URL after upload. It uses the matching Convex backend for each build and restores the Linux compiler from the pinned [Exact seed release](https://github.com/disposabl-dev/disposabl-exact/releases/tag/exact-seed-v1-f40a26b9).
+
+### Run the app locally
+
+With the Exact SDK checkout available, run `bun exact.mjs --help` and `bun install` from `apps/apps`. Set `CONVEX_ORIGIN` in `apps/apps/.env.local` to the WebSocket origin of your development deployment, for example `wss://your-deployment.convex.cloud`. Start the app with `bun exact.mjs web`. The Android and iOS builds read the same setting. The shared counter lets you verify a live query and a write between clients connected to the same deployment.
 
 ## Enable automatic updates
 

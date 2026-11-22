@@ -1,0 +1,85 @@
+name: Deploy web to Convex
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: convex-web-${{ github.event_name }}-${{ github.head_ref || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.head_ref != 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXACT: ${{ github.workspace }}/.exact-sdk
+      BUILD_WEB: >-
+        cd ../../apps/apps &&
+        rm -rf dist/convex &&
+        env -u CONVEX_DEPLOY_KEY CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" bun exact.mjs web-build --out dist/convex &&
+        rm -f dist/convex/.exact-build.json
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@v6
+        with:
+          repository: expo/exact
+          ref: f40a26b9d7c07b5a38de9ded2e5a82c65d920ab0
+          path: .exact-sdk
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Restore Exact web compiler
+        run: |
+          archive="$RUNNER_TEMP/web-tools-linux-x64.tar.zst"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/disposabl-dev/disposabl-exact/releases/download/exact-seed-v1-f40a26b9/web-tools-linux-x64.tar.zst \
+            --output "$archive"
+          echo "55c94cff7a5279b83a02503d1d7263acbc72f9c74f72f1207f49f95d6fee70df  $archive" | sha256sum --check
+          mkdir -p "$HOME/.cache/exact"
+          tar --zstd --extract --file "$archive" --directory "$HOME/.cache/exact"
+
+      - name: Install dependencies
+        run: |
+          (cd "$EXACT" && bun install --frozen-lockfile)
+          (cd packages/backend && bun install --frozen-lockfile)
+          (cd apps/apps && mkdir -p .exact && ln -s "$EXACT" .exact/checkout && bun install --frozen-lockfile)
+
+      - name: Deploy production
+        if: github.event_name == 'push'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+
+      - name: Deploy preview
+        if: github.event_name == 'pull_request'
+        working-directory: packages/backend
+        shell: bash
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
+        run: |
+          # Static Hosting needs the credential for the branch deployment. Use the same claim endpoint as convex deploy.
+          IFS=: read -r _ team project <<< "${CONVEX_DEPLOY_KEY%%|*}"
+          CONVEX_DEPLOY_KEY=$(curl -fsS https://api.convex.dev/api/claim_preview_deployment \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            --json "$(jq -nc --arg branch "$GITHUB_HEAD_REF" --arg team "$team" --arg project "$project" \
+              '{identifier:$branch,reuse:true,projectSelection:{kind:"teamAndProjectSlugs",teamSlug:$team,projectSlug:$project}}')" \
+            | jq -er 'select(.deploymentName and .adminKey) | "preview:\(.deploymentName)|\(.adminKey | split("|")[-1])"')
+          echo "::add-mask::$CONVEX_DEPLOY_KEY"
+          bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
