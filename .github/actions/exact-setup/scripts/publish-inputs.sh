@@ -3,7 +3,11 @@
 set -euo pipefail
 out="$RUNNER_TEMP/kit-out"
 mkdir -p "$out"
-mv "$RUNNER_TEMP"/exact-*.tar.zst* "$out/"
+base="exact-$EXACT_REF-$PLATFORM-$RUNNER_OS-$RUNNER_ARCH-bun-$BUN_VERSION.tar.zst"
+source_dir="$RUNNER_TEMP"
+if [[ ! -f "$source_dir/$base" ]]; then source_dir="$RUNNER_TEMP/exact-bundles"; fi
+cp "$source_dir/$base" "$source_dir/$base.sha256" "$out/"
+(cd "$out" && shasum -a 256 -c "$base.sha256")
 case "$PLATFORM" in
   android|ios) bash "$(dirname "$0")/$PLATFORM-compiler-cache.sh" ;;
   web)

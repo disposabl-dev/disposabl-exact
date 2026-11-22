@@ -4,7 +4,7 @@
 This is not a replacement for Exact's archive/signing checks. The caller must run
 Exact's normal packaging and validate that the receipt belongs to this source.
 """
-import argparse, hashlib, json, os, shutil, struct, subprocess
+import argparse, hashlib, json, os, re, shutil, struct, subprocess
 from pathlib import Path
 
 COMPILED = ('module.rs', 'logic.rs', 'linked.rs', 'host.rs')
@@ -90,6 +90,28 @@ def facts(receipt, bake, app):
             'compat': inputs, 'source': source, 'topology': topology, 'metadata': native_metadata,
             'configuration': r['binary']['configuration']}
 
+def runtime_grants(facts):
+    # Only a single wss endpoint may vary across the public template's grants.
+    # Preserve each field, role, line count and every other native fact.
+    result=json.loads(json.dumps(facts)); origins=[]
+    pattern=re.compile(r'net\.websocket (wss://[A-Za-z0-9.-]+(?::[0-9]{1,5})?)')
+    def normalize(value):
+        if value is None or value == '': return value
+        if not isinstance(value,str): raise ValueError('Unexpected grant type; use normal Exact build')
+        match=pattern.fullmatch(value)
+        if not match: raise ValueError('Only one wss WebSocket grant is eligible; use normal Exact build')
+        origins.append(match.group(1))
+        return 'net.websocket wss://<app-origin>'
+    compat=result['compat']
+    for name in ('grantCeiling','rustGrants','javascriptGrants'):
+        if name in compat: compat[name]=normalize(compat[name])
+    if not origins: raise ValueError('Missing wss WebSocket grant; use normal Exact build')
+    for artifact in result['topology']['artifacts']:
+        if artifact.get('name')=='app.plan' and 'grantCeiling' in artifact.get('requires', {}):
+            artifact['requires']['grantCeiling']=normalize(artifact['requires']['grantCeiling'])
+    if len(set(origins)) != 1: raise ValueError('WebSocket grants name different origins; use normal Exact build')
+    return result
+
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument('mode', choices=['create','link']); parser.add_argument('--app', default=os.getcwd()); parser.add_argument('--kit', required=True); parser.add_argument('--receipt', required=True); parser.add_argument('--bake', required=True); parser.add_argument('--out'); parser.add_argument('--proof')
     a=parser.parse_args(); kit=Path(a.kit).resolve(); current=facts(a.receipt,a.bake,a.app)
@@ -100,9 +122,11 @@ def main():
         archives=[n for n in expected if n.endswith('.a')]
         if len(archives)!=1 or expected[archives[0]]!=current['archive']: raise ValueError('Receipt archive does not match')
         # Do not accept a kit carrying native frameworks or arbitrary external inputs.
+        developer=os.path.realpath(subprocess.check_output(['/usr/bin/xcrun','--sdk','iphoneos','--show-sdk-path'],text=True).strip()).split('/Platforms/', 1)[0]
+        allowed=(str(proof),developer,'/Applications','/usr','/System','/Library')
         for x in commands:
             path = x[2:] if x.startswith(('-L/', '-F/')) else x[1:] if x.startswith('@/') else x
-            if path.startswith('/') and not (path == str(proof) or path.startswith(str(proof)+'/') or path.startswith(('/Applications/', '/usr/', '/System/', '/Library/'))):
+            if path.startswith('/') and not any(os.path.realpath(path)==root or os.path.realpath(path).startswith(root+'/') for root in allowed):
                 raise ValueError('Unowned command path: '+x)
         kit.mkdir(parents=True)
         for n in expected: shutil.copyfile(proof/n,kit/n)
@@ -115,7 +139,7 @@ def main():
         if not a.out: raise ValueError('Link requires --out')
         record=load(kit/'kit.json')
         if record['toolchain'] != toolchain(): raise ValueError('Apple toolchain differs; use normal Exact build')
-        if record['facts'] != current: raise ValueError('Native inputs differ; use normal Exact build')
+        if runtime_grants(record['facts']) != runtime_grants(current): raise ValueError('Native inputs differ; use normal Exact build')
         if any(digest(kit/n)!=h for n,h in record['digests'].items()): raise ValueError('Kit digest mismatch')
         out=Path(a.out).resolve()
         if out.exists(): raise ValueError('Output already exists')
