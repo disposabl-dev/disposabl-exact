@@ -100,8 +100,8 @@ component Apps
       password = ""
       send changedSession = googleSession()
   action cancelGoogle
-    changedSession = none
     googlePending = false
+    send changedSession = cancelGoogleSession()
   action logout
     if not authBusy
       authError = ""

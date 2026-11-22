@@ -20,14 +20,14 @@ declare global {
 type AuthReply = Result<'restoreSession'>;
 type AuthResponse = { viewer: { name: string } | null; google: boolean; session?: string };
 
-async function authRequest<T>(body: object, store: Store): Promise<T> {
+async function authRequest<T>(body: object, store: Store, signal?: AbortSignal): Promise<T> {
   const web = exactHost() === 'web';
   const url = web ? new URL('/api/auth/web', authCallback()).href : `${site}/api/auth/native`;
   const headers = new Headers({ 'Content-Type': 'application/json', 'X-Exact-Auth': '1' });
   const session = web ? null : store.get(sessionKey);
   if (session) headers.set('X-Exact-Session', session);
   const response = await fetch(url, {
-    method: 'POST', headers, body: JSON.stringify(body), redirect: 'error',
+    method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal,
   });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
@@ -68,28 +68,38 @@ function passwordError(error: unknown, create: boolean): string {
   }
 }
 
+let googleAttempt: AbortController | undefined;
+
 async function googleSignIn(store: Store): Promise<AuthReply> {
+  const attempt = new AbortController();
+  googleAttempt = attempt;
   let prepared: string | null = null;
   try {
     if (exactHost() === 'web' && typeof prepareAuthSession === 'function') prepared = prepareAuthSession();
     const callback = authCallback();
     const state = crypto.randomUUID();
-    const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store);
+    const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store, attempt.signal);
+    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
     const options = { callback, state, prepared: prepared ?? undefined };
     const returned = new URL(await openAuthSession(started.redirect, options));
+    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
     const code = returned.searchParams.get('convexAuthCode');
     if (!code || returned.searchParams.has('convexAuthError')) return authFailure('Google sign-in was not completed.');
-    const response = await authRequest<AuthResponse>({ operation: 'googleComplete', code, state: started.state }, store);
+    const response = await authRequest<AuthResponse>({ operation: 'googleComplete', code, state: started.state }, store, attempt.signal);
+    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
     return acceptSession(response, store);
   } catch (error) {
-    if (error instanceof Error && 'status' in error && error.status === 499) return authFailure('Google sign-in was cancelled.');
+    if (attempt.signal.aborted || (error instanceof Error && 'status' in error && error.status === 499)) {
+      return authFailure('Google sign-in was cancelled.');
+    }
     return authFailure('Could not sign in with Google. Try again.');
   } finally {
+    if (googleAttempt === attempt) googleAttempt = undefined;
     if (prepared && typeof cancelAuthSession === 'function') cancelAuthSession(prepared);
   }
 }
 
-export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | 'googleSession' | 'signOut'> = {
+export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | 'googleSession' | 'cancelGoogleSession' | 'signOut'> = {
   restoreSession: async (_args, store) => {
     try {
       return acceptSession(await authRequest<AuthResponse>({ operation: 'status' }, store), store);
@@ -106,6 +116,12 @@ export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | '
     }
   },
   googleSession: (_args, store) => googleSignIn(store),
+  cancelGoogleSession: () => {
+    googleAttempt?.abort();
+    return authFailure(exactHost() === 'web'
+      ? 'Google sign-in cancelled. You can close the Google window.'
+      : 'Google sign-in cancelled.');
+  },
   signOut: async (_args, store) => {
     try {
       return acceptSession(await authRequest<AuthResponse>({ operation: 'signOut' }, store), store);
