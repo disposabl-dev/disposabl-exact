@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if ! command -v zstd >/dev/null; then
-  if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi
-fi
+command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 cd "$EXACT"
 export EXACT_TOOLS_ORIGIN=none
 if [[ "$SETUP_PLATFORM" == web ]]; then
@@ -20,7 +18,7 @@ else
   if [[ "$SETUP_PLATFORM" == android ]]; then
     targets=(x86_64-unknown-linux-gnu aarch64-linux-android)
   else
-    targets=(aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim)
+    targets=(x86_64-unknown-linux-gnu aarch64-apple-ios aarch64-apple-ios-sim)
   fi
   rustup toolchain install "$pin" --profile minimal
   for target in "${targets[@]}"; do rustup target add --toolchain "$pin" "$target"; done

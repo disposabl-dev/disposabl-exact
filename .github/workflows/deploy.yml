@@ -22,7 +22,7 @@ concurrency:
 env:
   EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '3'
+  BUNDLE_VERSION: '2'
   EXACT_TOOLS_ORIGIN: none
   EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
 
@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.deploy.outputs.native_matrix) }}
-    runs-on: ${{ matrix.platform == 'ios' && 'xcode-27' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment:
       name: android-${{ needs.route.outputs.target }}
@@ -133,6 +133,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      - name: Install the iPhone cross-compilation SDK and toolchain
+        if: matrix.platform == 'ios'
+        run: bash .github/actions/exact-setup/scripts/ios-cross-setup.sh
       - uses: ./.github/actions/exact-setup
         with:
           platform: ${{ matrix.platform }}

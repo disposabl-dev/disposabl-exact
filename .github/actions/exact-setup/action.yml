@@ -12,7 +12,7 @@ inputs:
     description: Bun version
   bundle-version:
     description: Published setup bundle version
-    default: '3'
+    default: '2'
   mode:
     default: consume
     description: consume a release or build its bundle
@@ -44,7 +44,7 @@ runs:
         SETUP_MODE: ${{ inputs.mode }}
       run: |
         case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in
-          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;;
+          web:Linux:X64|android:Linux:X64|ios:Linux:X64) ;;
           *) echo "::error::Unexpected runner for $SETUP_PLATFORM"; exit 1 ;;
         esac
         [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]

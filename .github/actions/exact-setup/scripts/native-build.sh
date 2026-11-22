@@ -15,6 +15,11 @@ fi
 [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
 mkdir -p "$artifacts/bake"
 if [[ "$platform" == ios ]]; then
+  probe=$(mktemp -d "$RUNNER_TEMP/ios-sdk-probe.XXXXXX")
+  printf 'import SwiftUI\nprint(Text("Exact"))\n' > "$probe/main.swift"
+  bun "$EXACT/host/apple/toolchain.mjs" --sdk iphoneos swiftc \
+    -target arm64-apple-ios17.0 "$probe/main.swift" -o "$probe/probe"
+  rm -rf "$probe"
   bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
   unzip -tq "$artifacts/apps.ipa" >/dev/null
   unzip -q "$artifacts/apps.ipa" -d "$RUNNER_TEMP/iphone-archive"
@@ -23,9 +28,9 @@ if [[ "$platform" == ios ]]; then
   executable=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
   [[ "$executable" != */* && "$executable" != . && "$executable" != .. ]]
   macho="${apps[0]}/$executable"
-  # Apple tools distinguish a device binary from a simulator arm64 binary.
-  xcrun lipo -verify_arch arm64 "$macho"
-  xcrun vtool -show-build "$macho" > "$RUNNER_TEMP/ios-load-commands"
+  # Both device and simulator binaries can report arm64.
+  "$EXACT_APPLE_LLVM_BIN/llvm-lipo" -verify_arch arm64 "$macho"
+  "$EXACT_APPLE_LLVM_BIN/llvm-objdump" --macho --private-headers "$macho" > "$RUNNER_TEMP/ios-load-commands"
   grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
   receipt="$artifacts/apps.receipt.json"
   bake="$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json"
