@@ -1,0 +1,54 @@
+name: Provision mobile signing
+on:
+  workflow_dispatch:
+    inputs:
+      recipients:
+        description: GitHub environment public keys and the missing secret names
+        type: string
+        required: true
+permissions: {}
+jobs:
+  generate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Generate and encrypt keys
+        env:
+          RECIPIENTS: ${{ inputs.recipients }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install --quiet PyNaCl==1.6.2
+          "$RUNNER_TEMP/tools/bin/python" - <<'PYTHON'
+          import base64, json, os, secrets, subprocess, tempfile
+          from pathlib import Path
+          from nacl.public import PublicKey, SealedBox
+
+          out = Path(os.environ['RUNNER_TEMP'], 'sealed')
+          out.mkdir()
+          for env, spec in json.loads(os.environ['RECIPIENTS']).items():
+              if env not in ('android-production','android-preview'):
+                  raise ValueError('Unknown signing environment')
+              box = SealedBox(PublicKey(base64.b64decode(spec['key'], validate=True)))
+              for name in spec['names']:
+                  if name == 'EXACT_UPDATE_SEED':
+                      value = base64.b64encode(secrets.token_bytes(32))
+                  elif env == 'android-production' and name in ('ANDROID_APK_SIGNING','ANDROID_PLAY_UPLOAD_SIGNING'):
+                      password = secrets.token_hex(32)
+                      with tempfile.TemporaryDirectory() as tmp:
+                          path = Path(tmp, 'signing.p12')
+                          subprocess.run(['keytool','-genkeypair','-noprompt','-storetype','PKCS12',
+                              '-keystore',str(path),'-alias','android','-keyalg','RSA','-keysize','2048',
+                              '-validity','10000','-dname','CN=Android release','-storepass:env','PASS',
+                              '-keypass:env','PASS'],env=dict(os.environ,PASS=password),check=True)
+                          value = json.dumps({'password':password,'keystore':base64.b64encode(path.read_bytes()).decode()}).encode()
+                  else:
+                      raise ValueError('Unknown signing key')
+                  (out / (env + '-' + name + '.json')).write_text(json.dumps({
+                      'key_id': spec['key_id'], 'encrypted_value':base64.b64encode(box.encrypt(value)).decode()}))
+          PYTHON
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sealed-keys
+          path: ${{ runner.temp }}/sealed/
+          if-no-files-found: error
+          retention-days: 1

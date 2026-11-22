@@ -5,7 +5,9 @@
   "id": "com.example.apps-8d662a",
   "start_url": "/",
   "display": "standalone",
-  "env": ["CONVEX_ORIGIN"],
+  "env": [
+    "CONVEX_ORIGIN"
+  ],
   "app": {
     "id": "com.example.apps-8d662a",
     "name": "Apps"
@@ -46,5 +48,14 @@
       "linux": "0",
       "windows": "0"
     }
-  }
+  },
+  "version": "0.1.0",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    }
+  ]
 }
