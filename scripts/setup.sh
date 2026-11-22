@@ -4,6 +4,7 @@ cd "$EXACT"
 export EXACT_TOOLS_ORIGIN=none
 if [[ "$SETUP_PLATFORM" == web ]]; then
   export CHROME="$(command -v google-chrome)"
+  cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target x86_64-unknown-linux-gnu
   bun scripts/exact.mjs setup --platform web
   binaryen_bin=$(bun -p 'import { BINARYEN } from "./host/web/stages.mjs"; `${process.env.HOME}/.cache/exact/binaryen/${BINARYEN.replace(" ", "_")}/bin`')
   export PATH="$binaryen_bin:$PATH"
