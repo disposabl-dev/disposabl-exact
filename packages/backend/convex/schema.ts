@@ -13,6 +13,7 @@ export default defineSchema(
         subFieldOne: v.array(v.number()),
       }),
     }),
+    users: defineTable({ name: v.optional(v.string()) }),
     counters: defineTable({
       name: v.literal("shared"),
       count: v.number(),

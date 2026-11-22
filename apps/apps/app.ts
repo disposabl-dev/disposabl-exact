@@ -1,16 +1,18 @@
 import type { Answer, Result, Sources } from './app.contract.d.ts';
+import { authGrants, authSources } from './auth';
 import { convex } from '@exact/convex';
 import { getFunctionName, makeFunctionReference } from 'convex/server';
 import { convexToJson, jsonToConvex } from 'convex/values';
 
 const origin = import.meta.env.CONVEX_ORIGIN;
-export const grants = `net.websocket ${origin}`;
+export const grants = `net.websocket ${origin}\n${authGrants}`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
 const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
 const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
 
 const sources: Sources = {
+  ...authSources,
   greeting: ([name]): Result<'greeting'> => ({ text: `Hello from ${name}.` }),
   live: () => client.live(),
   counter: ([rev]) => client.query(rev, getCounter, {}),

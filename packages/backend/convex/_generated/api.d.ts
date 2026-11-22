@@ -8,7 +8,10 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
+import type * as authSettings from "../authSettings.js";
 import type * as counter from "../counter.js";
+import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
 
 import type {
@@ -18,7 +21,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
+  authSettings: typeof authSettings;
   counter: typeof counter;
+  http: typeof http;
   myFunctions: typeof myFunctions;
 }>;
 
@@ -50,4 +56,8 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
+  auth: import("@convex-dev/auth/_generated/component.js").ComponentApi<"auth">;
+  authPassword: import("@convex-dev/auth/components/password/_generated/component.js").ComponentApi<"authPassword">;
+  authUsername: import("@convex-dev/auth/components/username/_generated/component.js").ComponentApi<"authUsername">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

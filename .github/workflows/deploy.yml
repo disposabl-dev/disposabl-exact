@@ -27,7 +27,7 @@ env:
     test "wss://${VITE_CONVEX_URL#https://}" = "${EXPECTED_ORIGIN:-wss://${VITE_CONVEX_URL#https://}}" &&
     cd ../../apps/apps &&
     rm -rf dist/convex &&
-    env -u CONVEX_DEPLOY_KEY CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" bun exact.mjs web-build --out dist/convex &&
+    env -u CONVEX_DEPLOY_KEY CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" CONVEX_SITE_ORIGIN="$CONVEX_SITE_ORIGIN" bun exact.mjs web-build --out dist/convex &&
     rm -f dist/convex/.exact-build.json
 
 jobs:
@@ -40,6 +40,7 @@ jobs:
       deployment: false
     outputs:
       convex_origin: ${{ steps.origin.outputs.convex_origin }}
+      convex_site_origin: ${{ steps.origin.outputs.convex_site_origin }}
       public_android: ${{ steps.first.outputs.first == 'true' && '[{"platform":"android","channel":"base-1"}]' || steps.updates.outputs.public_android }}
       native_matrix: ${{ github.event.repository.visibility == 'public' && steps.first.outputs.first == 'true' && '[{"platform":"web"},{"platform":"ios","channel":"base-1"}]' || steps.first.outputs.first == 'true' && '[{"platform":"web"},{"platform":"android","channel":"base-1"},{"platform":"ios","channel":"base-1"}]' || steps.updates.outputs.matrix }}
     steps:
@@ -60,7 +61,10 @@ jobs:
         run: &resolve-origin |
           : "${CONVEX_DEPLOY_KEY:?Set the production CONVEX_DEPLOY_KEY Actions secret}"
           url=$(bun run convex env get CONVEX_CLOUD_URL --prod)
-          [[ "$url" =~ ^https://[a-zA-Z0-9.-]+$ ]]
+          site=$(bun run convex env get CONVEX_SITE_URL --prod)
+          [[ "$url" =~ ^https://[a-zA-Z0-9.-]+$ && "$site" =~ ^https://[a-zA-Z0-9.-]+$ ]]
+          echo "convex_site_origin=$site" >> "$GITHUB_OUTPUT"
+          echo "CONVEX_SITE_ORIGIN=$site" >> "$GITHUB_ENV"
           echo "convex_origin=wss://${url#https://}" >> "$GITHUB_OUTPUT"
           echo "CONVEX_ORIGIN=wss://${url#https://}" >> "$GITHUB_ENV"
       - name: Read existing installer links
@@ -131,6 +135,7 @@ jobs:
         shell: bash
     env: &native-env
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
+      CONVEX_SITE_ORIGIN: ${{ needs.deploy.outputs.convex_site_origin }}
       EXACT_MOBILE_CHANNEL: ${{ matrix.channel }}
       EXACT_UPDATE_TRUST: production
       EXACT_UPDATE_GENESIS: '1'
@@ -157,7 +162,7 @@ jobs:
         working-directory: packages/backend
         run: bun install --frozen-lockfile
       - name: Resolve mobile backend on first push
-        if: matrix.platform != 'web' && needs.deploy.result == 'skipped'
+        if: needs.deploy.result == 'skipped'
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

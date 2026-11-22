@@ -40,7 +40,17 @@ Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UP
 
 ### Run the app locally
 
-Install dependencies in `packages/backend`, then run `bun run convex dev` there to link a development backend. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` in `.env.local` to the development WebSocket URL, for example `wss://your-deployment.convex.cloud`. Start the app with `bun exact.mjs web`. CI derives this value from the production Convex deployment. It also supplies the Exact SDK pin, Bun version, build number, and update channel. No Apple, App Store Connect, TestFlight, Play Console, or AppDrop credentials belong in Actions for the default workflow.
+Install dependencies in `packages/backend`, then run `bun run convex dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
+
+Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
+
+### Authentication
+
+Exact uses Convex Auth `2.1.0` on web, Android, and iOS. Username and password work on a fresh deployment. Google appears after both `AUTH_GOOGLE_CLIENT_ID` and `AUTH_GOOGLE_CLIENT_SECRET` are set on that Convex deployment and the backend is redeployed. Use a Google **web application** client and register `<Convex HTTP actions origin>/oauth/google/callback` as its authorized redirect URI. Set the values through Convex, where the Google component can read them through environment bindings. To disable Google on a configured deployment, blank either value and redeploy before removing the variables. Keep the same Google OAuth client for each deployment's existing accounts.
+
+Android and iOS use the system browser for Google. The Convex callback returns through a fixed app URL scheme, and the app must hold the separate Convex state to redeem the one-time ticket. The web session lives in a Secure, HttpOnly cookie. Native sessions live in the Keychain or Android Keystore-backed storage. Sign-out revokes the backing Convex session before the app clears its session. Queries for account data verify the session server-side.
+
+Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend` against an isolated local deployment. Set `EXPECT_GOOGLE=0` or `EXPECT_GOOGLE=1` to assert the expected Google configuration.
 
 ## Monorepo layout
 
@@ -49,5 +59,4 @@ Install dependencies in `packages/backend`, then run `bun run convex dev` there 
 
 ## Planned features
 
-1. Authentication with Google sign-in
-2. Payments with Autumn.js on the web and in-app purchases on Android, macOS, and iOS
+- Payments with Autumn.js on the web and in-app purchases on Android, macOS, and iOS
