@@ -19,7 +19,7 @@ outputs:
     description: Path to Exact checkout
   source:
     value: ${{ steps.setup.outputs.source }}
-    description: release or source
+    description: cache or release
 runs:
   using: composite
   steps:
