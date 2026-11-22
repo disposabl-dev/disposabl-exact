@@ -41,17 +41,20 @@ if [[ "$platform" == ios ]]; then
   # This pinned SDK compiles its app archive independently of its shared SDK
   # dependencies. Keep their original profiles and their Cargo fingerprints.
   if [[ "${EXACT_REF:-}" == a55c5581c7e1a62cdee1f09367ea2909c74c7292 && "${EXACT_IOS_APP_CGU:-16}" == 16 && -z "${CARGO_PROFILE_BALANCED_CODEGEN_UNITS:-}" && ! -f data/Cargo.toml ]] && jq -e '.game == null' app.json >/dev/null; then
-    (
-      export EXACT_IOS_REAL_CARGO="$(command -v cargo)"
-      wrapper="$RUNNER_TEMP/ios-app-cargo"
-      mkdir -p "$wrapper"
-      scripts=$(cd "$(dirname "$0")" && pwd)
-      ln -sf "$scripts/ios-cargo-app-profile.sh" "$wrapper/cargo"
-      export PATH="$wrapper:$PATH"
-      bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
-    )
+    export EXACT_IOS_REAL_CARGO="$(command -v cargo)"
+    wrapper="$RUNNER_TEMP/ios-app-cargo"
+    mkdir -p "$wrapper"
+    scripts=$(cd "$(dirname "$0")" && pwd)
+    ln -sf "$scripts/ios-cargo-app-profile.sh" "$wrapper/cargo"
+    export PATH="$wrapper:$PATH"
+  fi
+  export EXACT_GENERAL_PROOF="$artifacts/swift-host.json"
+  rm -f "$EXACT_GENERAL_PROOF"
+  bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
+  if [[ -f "$EXACT_GENERAL_PROOF" ]]; then
+    jq -r '"Reused Swift targets: " + (.targets | join(", "))' "$EXACT_GENERAL_PROOF"
   else
-    bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
+    echo "Exact completed the iOS build using the stock link kit or SwiftPM."
   fi
   unzip -tq "$artifacts/apps.ipa" >/dev/null
   unzip -q "$artifacts/apps.ipa" -d "$RUNNER_TEMP/iphone-archive"
