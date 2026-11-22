@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$SETUP_PLATFORM" == ios && ! -f "${EXACT_APPLE_SDK:-$HOME/.swiftpm/swift-sdks/darwin.artifactbundle}/swift-sdk.json" ]]; then
+  echo "::error::Native iOS build required. This Ubuntu runner has no Swift Darwin SDK configured. See the iOS on Ubuntu section in README.md."
+  exit 1
+fi
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
 tag="v${SETUP_BUNDLE_VERSION}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
