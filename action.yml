@@ -32,6 +32,11 @@ runs:
         ref: ${{ inputs.exact-ref }}
         path: .exact-sdk
         persist-credentials: false
+    - name: Restore verified Exact bundle
+      uses: actions/cache@v5
+      with:
+        path: ${{ runner.temp }}/exact-bundles
+        key: exact-bundle-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.release-repo }}-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
     - id: setup
       shell: bash
       env:

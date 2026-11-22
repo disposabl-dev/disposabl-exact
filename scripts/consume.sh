@@ -15,14 +15,22 @@ mv "$GITHUB_WORKSPACE/.exact-sdk" "$EXACT"
 ln -s "$EXACT" "$GITHUB_WORKSPACE/.exact-sdk"
 [[ $(git -C "$EXACT" rev-parse HEAD) == "$SETUP_EXACT_REF" ]] || { echo 'Wrong Exact checkout' >&2; exit 1; }
 source_kind=source
-if gh release download "$tag" --repo "$SETUP_RELEASE_REPO" --pattern "$asset" --pattern "$asset.sha256" --dir "$work"; then
-  (cd "$work" && shasum -a 256 -c "$asset.sha256")
-  zstd -dc "$work/$asset" | tar -xf - -C "$HOME"
+bundles="$RUNNER_TEMP/exact-bundles"
+mkdir -p "$bundles"
+if [[ -f "$bundles/$asset" && -f "$bundles/$asset.sha256" ]]; then
+  source_kind=cache
+elif gh release download "$tag" --repo "$SETUP_RELEASE_REPO" --pattern "$asset" --pattern "$asset.sha256" --dir "$work"; then
+  mv "$work/$asset" "$work/$asset.sha256" "$bundles/"
   source_kind=release
 else
   echo 'No matching release; setting up from source.'
   bash "$SETUP_ACTION_DIR/scripts/setup.sh"
 fi
+if [[ "$source_kind" != source ]]; then
+  (cd "$bundles" && shasum -a 256 -c "$asset.sha256")
+  zstd -dc "$bundles/$asset" | tar -xf - -C "$HOME"
+fi
+echo "Exact $SETUP_PLATFORM setup: $source_kind"
 (cd "$EXACT" && bun install --frozen-lockfile)
 echo "EXACT=$EXACT" >> "$GITHUB_ENV"
 if [[ "$SETUP_PLATFORM" == web ]]; then
