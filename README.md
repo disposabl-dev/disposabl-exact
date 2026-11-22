@@ -1,6 +1,6 @@
 # Disposabl Exact
 
-Starter kit for building apps and agents.
+Starter kit for building apps and agents with Exact and Convex.
 
 ## Build from this template
 
