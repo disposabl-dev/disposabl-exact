@@ -1,0 +1,24 @@
+name: Publish shared Exact tools
+on:
+  workflow_dispatch:
+    inputs:
+      exact-ref:
+        description: Full expo/exact commit to package
+        required: true
+        default: 28f071ca1b04fb4af90af965bab5241fa26d037a
+      bun-version:
+        description: Bun version
+        required: true
+        default: 1.4.4
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.repository == 'disposabl-dev/disposabl-exact' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: disposabl-dev/exact-setup/.github/workflows/publish.yml@6dc3cb0bb16356b28b356df2c766a58db84b15d9
+    with:
+      exact-ref: ${{ inputs.exact-ref }}
+      bun-version: ${{ inputs.bun-version }}
+      producer-ref: 6dc3cb0bb16356b28b356df2c766a58db84b15d9

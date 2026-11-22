@@ -30,7 +30,9 @@ Same-repository PRs deploy to a branch-specific Convex preview and use the previ
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the actual production bake receipt to initialize each stream.
 
-The shared [Exact setup action](https://github.com/disposabl-dev/exact-setup) downloads pinned platform tools from GitHub Releases. Fresh app repositories can use the same tools. App binaries and signing keys stay specific to each application. One minute is the target for a warm compatible deployment; check the workflow's elapsed time to include runner queues and network transfers.
+The shared [Exact setup action](https://github.com/disposabl-dev/exact-setup) downloads pinned platform tools from GitHub Releases. Fresh app repositories can use the same tools. App binaries and signing keys stay specific to each application. Maintainers run **Publish shared Exact tools** in this template to publish a new SDK and Bun combination as a versioned GitHub Release. Update the SDK and action pins in the template after publication. Repositories created from that revision use the new tools on their first deployment. Existing repositories keep their pinned versions until their owners upgrade.
+
+One minute is the target for a warm compatible deployment; check the workflow's elapsed time to include runner queues and network transfers.
 
 ### Optional Google Play build
 
