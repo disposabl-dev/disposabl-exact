@@ -6,7 +6,8 @@ set -euo pipefail
 case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;; *) echo 'Unsupported platform/runner combination' >&2; exit 1;; esac
 command -v zstd >/dev/null || { if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
-tag="v2-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
+format=$(cat "$SETUP_ACTION_DIR/bundle-version")
+tag="v${format}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 # Both the TS baker and its Hermes compiler retain build-time paths.

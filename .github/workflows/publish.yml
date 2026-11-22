@@ -25,6 +25,8 @@ permissions:
   contents: read
 jobs:
   build:
+    outputs:
+      format: ${{ steps.format.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,10 +59,14 @@ jobs:
           path: .exact-sdk
           persist-credentials: false
       - name: Validate pin and configure environment
+        id: format
         shell: bash
         run: |
           [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          format=$(cat bundle-version)
+          [[ "$format" =~ ^[1-9][0-9]*$ ]]
+          echo "version=$format" >> "$GITHUB_OUTPUT"
           exact="$RUNNER_TEMP/exact-sdk"
           mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
           ln -s "$exact" "$GITHUB_WORKSPACE/.exact-sdk"
@@ -99,6 +105,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          FORMAT: ${{ needs.build.outputs.format }}
           EXACT_REF: ${{ inputs.exact-ref }}
           BUN_VERSION: ${{ inputs.bun-version }}
         shell: bash
@@ -106,4 +113,4 @@ jobs:
           [[ "$EXACT_REF" =~ ^[0-9a-f]{40}$ && "$BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
-          gh release create --target "$GITHUB_SHA" "v2-exact-${EXACT_REF}-bun-${BUN_VERSION}" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create --target "$GITHUB_SHA" "v${FORMAT}-exact-${EXACT_REF}-bun-${BUN_VERSION}" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
