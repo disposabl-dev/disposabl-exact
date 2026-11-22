@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 20
     env:
       EXACT: ${{ github.workspace }}/.exact-sdk
+      EXACT_TOOLS_ORIGIN: none
       BUILD_WEB: >-
         cd ../../apps/apps &&
         rm -rf dist/convex &&
@@ -36,7 +37,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: expo/exact
-          ref: f40a26b9d7c07b5a38de9ded2e5a82c65d920ab0
+          ref: 28f071ca1b04fb4af90af965bab5241fa26d037a
           path: .exact-sdk
           persist-credentials: false
 
@@ -44,19 +45,9 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - name: Restore Exact web compiler
+      - name: Set up Exact and install dependencies
         run: |
-          archive="$RUNNER_TEMP/web-tools-linux-x64.tar.zst"
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/disposabl-dev/disposabl-exact/releases/download/exact-seed-v1-f40a26b9/web-tools-linux-x64.tar.zst \
-            --output "$archive"
-          echo "55c94cff7a5279b83a02503d1d7263acbc72f9c74f72f1207f49f95d6fee70df  $archive" | sha256sum --check
-          mkdir -p "$HOME/.cache/exact"
-          tar --zstd --extract --file "$archive" --directory "$HOME/.cache/exact"
-
-      - name: Install dependencies
-        run: |
-          (cd "$EXACT" && bun install --frozen-lockfile)
+          (cd "$EXACT" && CHROME="$(command -v google-chrome)" bun scripts/exact.mjs setup --platform web)
           (cd packages/backend && bun install --frozen-lockfile)
           (cd apps/apps && mkdir -p .exact && ln -s "$EXACT" .exact/checkout && bun install --frozen-lockfile)
 
