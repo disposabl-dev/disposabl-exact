@@ -11,7 +11,7 @@ The [web workflow](.github/workflows/convex-web.yml) builds the Exact app and up
 - `CONVEX_DEPLOY_KEY` is the production deploy key. Every push to `main`, including PR merges, deploys production.
 - `CONVEX_DEPLOY_KEY_PREVIEW` is the project preview key. Opening or updating a same-repository PR from another branch deploys a preview named for the branch.
 
-The **Deploy web to Convex** run uses the matching Convex backend for each build and prints the live URL after upload. It checks out the pinned Exact SDK and compiles its web tools from source on the runner.
+The **Deploy web to Convex** run uses the matching Convex backend for each build and prints the live URL after upload. It builds the pinned Exact SDK’s web tools from source on a cache miss and reuses them through GitHub Actions.
 
 ### Run the app locally
 
