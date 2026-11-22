@@ -135,7 +135,12 @@ const tools = publishTools ? { graph: resolve(publishTools, 'exact-bake'), types
 // The Linux publisher uses the same pinned native inputs as the builder. The SDK
 // compares evidence against workspace paths; reading that evidence needs no Cargo.
 const workspace = app.generated ? resolve(app.dir, '.exact/shells') : app.workspace;
-const candidateApp = Object.create(app, { workspace: { value: workspace } });
+// Exact spreads this object when inspecting Apple assets. Keep dir enumerable
+// without reading the inherited getters that prepare the native workspace.
+const candidateApp = Object.create(app, {
+  dir: { value: app.dir, enumerable: true },
+  workspace: { value: workspace },
+});
 const candidates = await streamCandidates(candidateApp, origin, selected, { ...env, EXACT_UPDATE_TRUST: 'production', EXACT_GAME_PROOF_PROFILE: 'release' }, { tools });
 const compatible = [];
 for (const update of candidates) {
