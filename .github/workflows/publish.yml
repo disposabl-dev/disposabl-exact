@@ -83,6 +83,8 @@ jobs:
             ${{ runner.temp }}/exact-*.tar.zst
             ${{ runner.temp }}/exact-*.tar.zst.sha256
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
   release:
     needs: build
     runs-on: ubuntu-24.04
