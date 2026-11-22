@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$SETUP_PLATFORM" == ios && ! -f "${EXACT_APPLE_SDK:-$HOME/.swiftpm/swift-sdks/darwin.artifactbundle}/swift-sdk.json" ]]; then
-  echo "::error::Native iOS build required. This Ubuntu runner has no Swift Darwin SDK configured. See the iOS on Ubuntu section in README.md."
-  exit 1
+if [[ "$SETUP_PLATFORM" == ios ]]; then
+  [[ "$RUNNER_OS:$RUNNER_ARCH" == macOS:ARM64 ]] || { echo '::error::iOS builds require a macOS ARM64 runner'; exit 1; }
+  if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer
+    echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+  fi
+  xcodebuild -version
+  xcrun --sdk iphoneos --show-sdk-version
 fi
-command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
+if ! command -v zstd >/dev/null; then
+  if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi
+fi
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
 tag="v${SETUP_BUNDLE_VERSION}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")

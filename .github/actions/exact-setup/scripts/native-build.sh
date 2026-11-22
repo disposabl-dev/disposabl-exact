@@ -23,12 +23,22 @@ if [[ "$platform" == ios ]]; then
   executable=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
   [[ "$executable" != */* && "$executable" != . && "$executable" != .. ]]
   macho="${apps[0]}/$executable"
-  file "$macho" | grep -Eq 'Mach-O 64-bit.*arm64'
-  "${EXACT_APPLE_LLVM_BIN:-/usr/lib/llvm-23/bin}/llvm-objdump" --macho --private-headers "$macho" > "$RUNNER_TEMP/ios-load-commands"
+  # Apple tools distinguish a device binary from a simulator arm64 binary.
+  xcrun lipo -verify_arch arm64 "$macho"
+  xcrun vtool -show-build "$macho" > "$RUNNER_TEMP/ios-load-commands"
   grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
-  jq -e '.platform == "ios" and .target == "aarch64-apple-ios" and .build.trust == "production"' "$artifacts/apps.receipt.json" >/dev/null
-  jq -e '.trust == "production" and .compat.target == "aarch64-apple-ios" and .compat.inputs.platform == "ios"' "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json" >/dev/null
-  [[ $(jq -r .compatibilityId "$artifacts/apps.receipt.json") == "$(jq -r .compat.id "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json")" ]]
+  receipt="$artifacts/apps.receipt.json"
+  bake="$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json"
+  jq -e --slurpfile bake "$bake" '
+    .platform == "ios" and .target == "aarch64-apple-ios" and
+    .build.trust == "production" and .compatibilityId == $bake[0].compat.id and
+    .build == $bake[0] and $bake[0].compat.target == "aarch64-apple-ios" and
+    $bake[0].compat.inputs.platform == "ios"
+  ' "$receipt" >/dev/null
+  jq -e --slurpfile receipt "$receipt" '
+    .platform == "ios" and .target == "aarch64-apple-ios" and
+    .compatibilityId == $receipt[0].compatibilityId and .build.trust == "production"
+  ' "${apps[0]}/receipt.json" >/dev/null
   exit
 fi
 [[ "$platform" == android ]]
