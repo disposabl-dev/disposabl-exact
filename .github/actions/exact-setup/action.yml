@@ -8,7 +8,7 @@ inputs:
     required: true
     description: Full Exact commit SHA
   bun-version:
-    default: '1.4.4'
+    default: '1.4.5'
     description: Bun version
   bundle-version:
     description: Published setup bundle version
@@ -26,10 +26,10 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: oven-sh/setup-bun@v2
+    - uses: oven-sh/setup-bun@v2.2.0
       with:
         bun-version: ${{ inputs.bun-version }}
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7.0.1
       with:
         repository: expo/exact
         ref: ${{ inputs.exact-ref }}
@@ -53,7 +53,7 @@ runs:
         echo "exact-path=$exact" >> "$GITHUB_OUTPUT"
     - name: Restore Exact bundle
       if: inputs.mode == 'consume'
-      uses: actions/cache@v5
+      uses: actions/cache@v6.1.0
       with:
         path: ${{ runner.temp }}/exact-bundles
         key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
