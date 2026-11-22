@@ -58,7 +58,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
       - uses: ./.github/actions/exact-setup
         with:
@@ -89,8 +88,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.version.outputs.tag }}
-          MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
-          gh release create --target "$MERGED_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create --target "$GITHUB_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*

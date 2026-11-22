@@ -130,8 +130,8 @@ jobs:
         id: native-build
         working-directory: apps/apps
         env:
-          ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
-          ANDROID_PLAY_UPLOAD_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_PLAY_UPLOAD_SIGNING || '' }}
+          ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && github.event_name == 'push' && secrets.ANDROID_APK_SIGNING || '' }}
+          ANDROID_PLAY_UPLOAD_SIGNING: ${{ matrix.platform == 'android' && github.event_name == 'push' && vars.ANDROID_PLAY_CONNECTED == 'true' && secrets.ANDROID_PLAY_UPLOAD_SIGNING || '' }}
           ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
         run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/native-build.sh" "${{ matrix.platform }}"
       - name: Upload native artifacts

@@ -15,9 +15,6 @@ fi
 [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
 mkdir -p "$artifacts/bake"
 if [[ "$platform" == ios ]]; then
-  [[ "$RUNNER_OS" == Linux && -f "${EXACT_APPLE_SDK:-$HOME/.swiftpm/swift-sdks/darwin.artifactbundle}/swift-sdk.json" ]] || {
-    echo '::error::A native iPhone build requires the configured iPhone SDK; see the iOS section in the template README.'; exit 1;
-  }
   bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
   unzip -tq "$artifacts/apps.ipa" >/dev/null
   unzip -q "$artifacts/apps.ipa" -d "$RUNNER_TEMP/iphone-archive"
@@ -25,7 +22,10 @@ if [[ "$platform" == ios ]]; then
   [[ ${#apps[@]} == 1 && -f "${apps[0]}/Info.plist" ]]
   executable=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
   [[ "$executable" != */* && "$executable" != . && "$executable" != .. ]]
-  file "${apps[0]}/$executable" | grep -Eq 'Mach-O 64-bit.*arm64.*executable'
+  macho="${apps[0]}/$executable"
+  file "$macho" | grep -Eq 'Mach-O 64-bit.*arm64'
+  "${EXACT_APPLE_LLVM_BIN:-/usr/lib/llvm-23/bin}/llvm-objdump" --macho --private-headers "$macho" > "$RUNNER_TEMP/ios-load-commands"
+  grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
   jq -e '.platform == "ios" and .target == "aarch64-apple-ios" and .build.trust == "production"' "$artifacts/apps.receipt.json" >/dev/null
   jq -e '.trust == "production" and .compat.target == "aarch64-apple-ios" and .compat.inputs.platform == "ios"' "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json" >/dev/null
   [[ $(jq -r .compatibilityId "$artifacts/apps.receipt.json") == "$(jq -r .compat.id "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json")" ]]
@@ -48,18 +48,21 @@ build() (
     jq -er '.keystore' <<< "$signing" | base64 --decode > "$EXACT_KEYSTORE"
   fi
   bun exact.mjs android "$@" --json > "$signing_dir/build.json"
-  cp "$(jq -er '.path' "$signing_dir/build.json")" "$artifacts/$output"
+  cp "$(jq -er '.path' "$signing_dir/build.json")" "$output"
 )
 if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-  build '' android-preview.apk --release --no-install
+  build '' "$artifacts/android-preview.apk" --release --no-install
 else
-  build "$ANDROID_APK_SIGNING" android-production.apk --release --no-install
+  build "$ANDROID_APK_SIGNING" "$artifacts/android-production.apk" --release --no-install
 fi
 "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$artifacts/"*.apk
 echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
 if [[ "$GITHUB_EVENT_NAME" == push && "$ANDROID_PLAY_CONNECTED" == true ]]; then
   [[ -n "$ANDROID_PLAY_UPLOAD_SIGNING" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
-  EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$ANDROID_PLAY_UPLOAD_SIGNING" android-production.aab --bundle
-  cmp <(jq -Sc '{compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}' "$EXACT_BAKE_OUTPUT"/android-*.build.json) \
-      <(jq -Sc '{compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}' "$RUNNER_TEMP/play-bake"/android-*.build.json)
+  EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$ANDROID_PLAY_UPLOAD_SIGNING" "$signing_dir/play.aab" --bundle
+  evidence='select(.compat.id and .binary.sha256 and .graph.sources) | {compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}'
+  jq -eSc "$evidence" "$EXACT_BAKE_OUTPUT"/android-*.build.json > "$signing_dir/apk.receipt"
+  jq -eSc "$evidence" "$RUNNER_TEMP/play-bake"/android-*.build.json > "$signing_dir/aab.receipt"
+  cmp "$signing_dir/apk.receipt" "$signing_dir/aab.receipt"
+  mv "$signing_dir/play.aab" "$artifacts/android-production.aab"
 fi
