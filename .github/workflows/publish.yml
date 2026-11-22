@@ -1,8 +1,7 @@
 name: Publish shared Exact tools
 on:
-  pull_request_target:
+  push:
     branches: [main]
-    types: [closed]
     paths:
       - .github/workflows/publish.yml
       - .github/actions/exact-setup/**
@@ -21,7 +20,10 @@ env:
 
 jobs:
   version:
-    if: github.repository == 'disposabl-dev/disposabl-exact' && github.event.pull_request.merged
+    if: github.repository == 'disposabl-dev/disposabl-exact'
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -31,6 +33,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Only a reviewed merge into main can publish, including squash and rebase merges.
+          pulls=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls")
+          if ! jq -es --arg sha "$GITHUB_SHA" 'any(.[][]; .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha)' <<< "$pulls" >/dev/null; then
+            echo "Direct push: skipping tool publication."
+            exit 0
+          fi
           tag="v${BUNDLE_VERSION}-exact-${EXACT_REF}-bun-${BUN_VERSION}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           status=$(curl -sS -o "$RUNNER_TEMP/release.json" -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")

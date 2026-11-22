@@ -20,6 +20,7 @@ concurrency:
 env:
   EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
   BUN_VERSION: 1.4.4
+  BUNDLE_VERSION: '2'
   EXACT_TOOLS_ORIGIN: none
   EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
   EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
@@ -54,6 +55,7 @@ jobs:
           platform: web
           exact-ref: ${{ env.EXACT_REF }}
           bun-version: ${{ env.BUN_VERSION }}
+          bundle-version: ${{ env.BUNDLE_VERSION }}
       - name: Install app and backend dependencies
         run: |
           (cd packages/backend && bun install --frozen-lockfile)
@@ -113,6 +115,7 @@ jobs:
           platform: ${{ matrix.platform }}
           exact-ref: ${{ env.EXACT_REF }}
           bun-version: ${{ env.BUN_VERSION }}
+          bundle-version: ${{ env.BUNDLE_VERSION }}
       - name: Install app dependencies
         working-directory: apps/apps
         run: |
