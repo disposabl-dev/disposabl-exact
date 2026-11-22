@@ -20,8 +20,8 @@ concurrency:
   queue: max
 
 env:
-  EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
-  BUN_VERSION: 1.4.4
+  EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
+  BUN_VERSION: 1.4.5
   BUNDLE_VERSION: '2'
   EXACT_TOOLS_ORIGIN: none
   EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
