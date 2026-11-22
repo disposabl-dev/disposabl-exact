@@ -4,6 +4,8 @@ cd "$EXACT"
 paths=()
 if [[ "$SETUP_PLATFORM" == web ]]; then
   paths=(.cache/exact/tools ".cache/exact/publisher/$SETUP_EXACT_REF")
+  while IFS= read -r compiler; do paths+=("$compiler"); done < <(cd "$HOME" && find .cargo/hermes-lean-sys -name hermesc -type f)
+  (( ${#paths[@]} > 2 )) || { echo 'Missing host Hermes compiler' >&2; exit 1; }
 else
   pin=$(bun -p 'Bun.TOML.parse(await Bun.file("rust-toolchain.toml").text()).toolchain.channel')
   case "$RUNNER_OS:$RUNNER_ARCH" in Linux:X64) triple=x86_64-unknown-linux-gnu;; macOS:ARM64) triple=aarch64-apple-darwin;; *) exit 1;; esac

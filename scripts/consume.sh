@@ -6,10 +6,13 @@ set -euo pipefail
 case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;; *) echo 'Unsupported platform/runner combination' >&2; exit 1;; esac
 command -v zstd >/dev/null || { if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
-tag="exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
+tag="v2-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-export EXACT="$GITHUB_WORKSPACE/.exact-sdk"
+# Both the TS baker and its Hermes compiler retain build-time paths.
+export EXACT="$RUNNER_TEMP/exact-sdk"
+mv "$GITHUB_WORKSPACE/.exact-sdk" "$EXACT"
+ln -s "$EXACT" "$GITHUB_WORKSPACE/.exact-sdk"
 [[ $(git -C "$EXACT" rev-parse HEAD) == "$SETUP_EXACT_REF" ]] || { echo 'Wrong Exact checkout' >&2; exit 1; }
 source_kind=source
 if gh release download "$tag" --repo "$SETUP_RELEASE_REPO" --pattern "$asset" --pattern "$asset.sha256" --dir "$work"; then
