@@ -17,8 +17,8 @@ jobs:
     if: github.repository == 'disposabl-dev/disposabl-exact' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    uses: disposabl-dev/exact-setup/.github/workflows/publish.yml@6dc3cb0bb16356b28b356df2c766a58db84b15d9
+    uses: disposabl-dev/exact-setup/.github/workflows/publish.yml@9243de0c9230f5f8f999500148702071d7b24c78
     with:
       exact-ref: ${{ inputs.exact-ref }}
       bun-version: ${{ inputs.bun-version }}
-      producer-ref: 6dc3cb0bb16356b28b356df2c766a58db84b15d9
+      producer-ref: 9243de0c9230f5f8f999500148702071d7b24c78
