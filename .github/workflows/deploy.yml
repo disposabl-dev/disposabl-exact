@@ -8,6 +8,13 @@ on:
       CONVEX_DEPLOY_KEY_PREVIEW:
         required: true
 
+      EXACT_UPDATE_SEED:
+        required: false
+      ANDROID_APK_SIGNING:
+        required: false
+      ANDROID_PLAY_UPLOAD_SIGNING:
+        required: false
+
 permissions:
   contents: read
 

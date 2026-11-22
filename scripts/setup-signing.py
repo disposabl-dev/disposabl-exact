@@ -36,7 +36,7 @@ if not recipients:
     raise SystemExit
 
 run_url = gh("workflow", "run", "deploy.yml", "--repo", repo, "--ref", ref, "--json",
-             payload={"operation": "provision-signing", "recipients": json.dumps(recipients)})
+             payload={"recipients": json.dumps(recipients)})
 run = run_url.rstrip("/").split("/")[-1]
 if not run.isdecimal():
     raise ValueError(f"Unexpected GitHub workflow response: {run_url}")
