@@ -10,6 +10,10 @@ on:
         options:
           - production
           - play-upload
+      environment_key:
+        description: GitHub environment public key JSON for encrypted export
+        type: string
+        required: false
 
 permissions: {}
 
@@ -19,7 +23,7 @@ concurrency:
 
 jobs:
   provision:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.environment_key == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: android-production
@@ -83,3 +87,64 @@ jobs:
           name: android-play-upload-certificate
           path: ${{ runner.temp }}/android-play-upload.pem
           if-no-files-found: error
+
+  seal:
+    if: inputs.environment_key != '' && inputs.target == 'production'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Generate the production key and encrypt it for GitHub
+        env:
+          ENVIRONMENT_KEY: ${{ inputs.environment_key }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/signing-tools"
+          "$RUNNER_TEMP/signing-tools/bin/pip" install --quiet --disable-pip-version-check PyNaCl==1.6.2
+          "$RUNNER_TEMP/signing-tools/bin/python" - <<'PYTHON'
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import secrets
+          import subprocess
+          import tempfile
+
+          from nacl.public import PublicKey, SealedBox
+
+          recipient = json.loads(os.environ["ENVIRONMENT_KEY"])
+          box = SealedBox(PublicKey(base64.b64decode(recipient["key"], validate=True)))
+          password = secrets.token_hex(32)
+          keytool_env = dict(os.environ, KEYSTORE_PASSWORD=password)
+          with tempfile.TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
+              keystore = Path(directory, "signing.p12")
+              subprocess.run([
+                  "keytool", "-genkeypair", "-storetype", "PKCS12",
+                  "-keystore", str(keystore), "-alias", "android",
+                  "-storepass:env", "KEYSTORE_PASSWORD", "-keypass:env", "KEYSTORE_PASSWORD",
+                  "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+                  "-dname", "CN=" + os.environ["GITHUB_REPOSITORY"] + " (production)", "-noprompt",
+              ], env=keytool_env, check=True)
+              payload = json.dumps({
+                  "keystore": base64.b64encode(keystore.read_bytes()).decode(),
+                  "password": password,
+              }, separators=(",", ":")).encode()
+              encrypted = box.encrypt(payload)
+              certificate = subprocess.check_output([
+                  "keytool", "-exportcert", "-keystore", str(keystore), "-alias", "android",
+                  "-storepass:env", "KEYSTORE_PASSWORD",
+              ], env=keytool_env)
+
+          Path(os.environ["RUNNER_TEMP"], "sealed-signing.json").write_text(json.dumps({
+              "key_id": recipient["key_id"],
+              "encrypted_value": base64.b64encode(encrypted).decode(),
+          }))
+          print("Production signing certificate SHA-256:", hashlib.sha256(certificate).hexdigest())
+          PYTHON
+
+      - name: Upload the encrypted secret
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-production-signing-encrypted
+          path: ${{ runner.temp }}/sealed-signing.json
+          if-no-files-found: error
+          retention-days: 1
