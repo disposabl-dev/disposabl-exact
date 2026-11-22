@@ -10,7 +10,7 @@ Open **Releases** in the generated repository for the commit's `web.zip`, `andro
 
 Starter maintainers can publish the three cache archives using **Actions → Publish portable build seeds → Run workflow**.
 
-## Enable automatic updates in a generated repo
+## Enable automatic updates
 
 Enable GitHub Pages from the root of a `gh-pages` branch containing `.nojekyll`. Create a separate Ed25519 signing key for each app. From the generated app repository, with `EXACT` pointing to the pinned SDK checkout, run:
 
@@ -19,14 +19,25 @@ key_id="app-updates"
 key_dir="$HOME/.config/exact/keys/$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 public_key=$(bun "$EXACT/scripts/deploy.mjs" keygen "$key_id" --keys "$key_dir" --json | jq -r .publicKey)
 gh secret set EXACT_OTA_SIGNING_KEY < "$key_dir/$key_id.pem"
-node scripts/configure-updates.mjs "$(gh api 'repos/{owner}/{repo}/pages' --jq .html_url)" "$key_id" "$public_key"
+bun scripts/configure-updates.mjs "$(gh api 'repos/{owner}/{repo}/pages' --jq .html_url)" "$key_id" "$public_key"
 gh variable set EXACT_OTA_ENABLED --body true
 git add apps/apps/app.json
 git commit -m '[native] Enable signed updates'
 git push origin main
 ```
 
-The first build publishes a base APK and unsigned IPA. Its production receipts initialize both update streams. Later app edits on `main` publish a web build and signed updates for compatible installed mobile apps. The Pages site serves the web app at its root and the download links at `downloads/`. Keep the private key outside Git. The publisher compares changes with the signed compatibility receipt of each installed base. It requests a replacement binary for affected platforms when native inputs change. A `[native]` commit forces fresh builds. Android requires a stable APK signing key for in-place binary upgrades. OTA signing uses a separate key.
+The first build publishes an Android APK, unsigned iOS IPA, macOS app ZIP, and Linux tarball. Their production receipts initialize the signed update streams. Install these bases to receive compatible updates automatically. The iOS archive needs Apple signing before installation. For macOS distribution, sign and notarize the app before sharing it. Use a stable Android APK signing key for in-place binary upgrades. Keep the separate OTA private key outside Git.
+
+Later app edits on `main` publish the web build to Pages and signed updates to compatible installs. Browsers get the new web build on navigation or refresh. The Pages site lists base downloads under `downloads/`. Changes to native inputs trigger replacement builds for affected platforms. A `[native]` commit forces fresh bases.
+
+### Windows
+
+Windows 11 checks for newer signed MSIX packages on launch and in the background after users install through the App Installer feed. Configure an Azure Blob container with public read access and set `WINDOWS_UPDATE_ORIGIN` to its HTTPS URL, including the trailing slash. Set the following GitHub Actions secrets.
+
+- `WINDOWS_MSIX_PFX` and `WINDOWS_MSIX_PASSWORD` for a base64-encoded PFX with a code-signing certificate trusted by the runner and users' devices.
+- `WINDOWS_UPDATE_STORAGE_SAS_TOKEN` for write access scoped to the update container.
+
+The **Publish Windows updates** workflow publishes on app edits to `main` once `EXACT_OTA_ENABLED` and the Windows origin are set. Install from `windows.appinstaller` in that container. Keep the package's app ID and certificate publisher identity stable across releases.
 
 ## Monorepo layout
 
