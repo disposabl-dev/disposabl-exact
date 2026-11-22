@@ -87,6 +87,16 @@ if [[ $platform == ios ]]; then
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
 elif [[ $platform == android ]]; then
+  # Resolve the pinned host plugins while Exact bakes and compiles Rust. Keep
+  # Gradle's project state separate from the real app and its dependency locks.
+  (
+    prime="$RUNNER_TEMP/gradle-prime"
+    cp -R "$EXACT/host/android" "$prime"
+    metadata="$GITHUB_WORKSPACE/apps/apps/gradle-verification.xml"
+    if [[ -f "$metadata" ]]; then cp "$metadata" "$prime/gradle/verification-metadata.xml"; fi
+    cd "$prime"
+    exec ./gradlew --offline --daemon --no-watch-fs --dependency-verification=strict help
+  ) > "$RUNNER_TEMP/gradle-prime.log" 2>&1 < /dev/null &
   bash "$scripts/android-fast-profile.sh"
   echo 'org.gradle.caching=true' >> "$HOME/.gradle/gradle.properties"
   if [[ ! -f "$ANDROID_HOME/ndk/27.3.13750724/source.properties" || ! -f "$ANDROID_HOME/platforms/android-37.2/source.properties" || ! -f "$ANDROID_HOME/build-tools/37.0.0/source.properties" ]]; then
