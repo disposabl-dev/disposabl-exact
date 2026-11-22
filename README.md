@@ -6,7 +6,7 @@ Starter kit for building apps and agents.
 
 Use **Use this template → Create a new repository** and clone it. Link `packages/backend` to your Convex project with `bun run convex dev` from that directory after installing dependencies.
 
-The [web workflow](.github/workflows/convex-web.yml) builds the Exact app and uploads `apps/apps/dist.convex` to Convex Static Hosting. Set two repository secrets in **Settings → Secrets and variables → Actions**.
+The [web workflow](.github/workflows/convex-web.yml) builds the Exact app and uploads `apps/apps/dist/convex` to Convex Static Hosting. Set two repository secrets in **Settings → Secrets and variables → Actions**.
 
 - `CONVEX_DEPLOY_KEY` is the production deploy key. Every push to `main`, including PR merges, deploys production.
 - `CONVEX_DEPLOY_KEY_PREVIEW` is the project preview key. Opening or updating a same-repository PR from another branch deploys a preview named for the branch.
