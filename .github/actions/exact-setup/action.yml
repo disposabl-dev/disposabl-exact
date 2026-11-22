@@ -12,7 +12,7 @@ inputs:
     description: Bun version
   bundle-version:
     description: Published setup bundle version
-    default: '7'
+    default: '8'
   bun-ready:
     description: Bun is already installed at the selected version
     default: 'false'
