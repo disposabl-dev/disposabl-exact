@@ -1,18 +1,43 @@
 name: Publish shared Exact tools
 on:
-  workflow_dispatch:
-    inputs:
-      exact-ref:
-        required: true
-        default: 28f071ca1b04fb4af90af965bab5241fa26d037a
-      bun-version:
-        required: true
-        default: '1.4.4'
+  pull_request:
+    branches: [main]
+    types: [closed]
+    paths:
+      - .github/workflows/publish.yml
+      - .github/actions/exact-setup/**
+
 permissions:
   contents: read
+
+env:
+  EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
+  BUN_VERSION: 1.4.4
+
 jobs:
+  version:
+    if: github.repository == 'disposabl-dev/disposabl-exact' && github.event.pull_request.merged
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      missing: ${{ steps.release.outputs.missing }}
+    steps:
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v2-exact-${EXACT_REF}-bun-${BUN_VERSION}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          case "$status" in
+            200) echo 'missing=false' >> "$GITHUB_OUTPUT" ;;
+            404) echo 'missing=true' >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::GitHub release lookup returned $status"; exit 1 ;;
+          esac
+
   build:
-    if: github.repository == 'disposabl-dev/disposabl-exact' && github.ref == 'refs/heads/main'
+    needs: version
+    if: needs.version.outputs.missing == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -27,8 +52,8 @@ jobs:
         with:
           mode: build
           platform: ${{ matrix.platform }}
-          exact-ref: ${{ inputs.exact-ref }}
-          bun-version: ${{ inputs.bun-version }}
+          exact-ref: ${{ env.EXACT_REF }}
+          bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/upload-artifact@v6
         with:
           name: bundle-${{ matrix.platform }}
@@ -37,7 +62,8 @@ jobs:
           retention-days: 1
           compression-level: 0
   release:
-    needs: build
+    needs: [version, build]
+    concurrency: publish-${{ needs.version.outputs.tag }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -50,10 +76,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          EXACT_REF: ${{ inputs.exact-ref }}
-          BUN_VERSION: ${{ inputs.bun-version }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          [[ "$EXACT_REF" =~ ^[0-9a-f]{40}$ && "$BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
-          gh release create --target "$GITHUB_SHA" "v2-exact-${EXACT_REF}-bun-${BUN_VERSION}" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
+          gh release create --target "$GITHUB_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
