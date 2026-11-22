@@ -21,8 +21,8 @@ asset() {
 extract() {
   local name=$1 directory=$2 file=$3
   shift 3
-  asset "$name" "$file"
-  mkdir -p "$directory"
+  asset "$name" "$file" || return 1
+  mkdir -p "$directory" || return 1
   zstd -dc "$file" | tar -xf - -C "$directory" "$@"
 }
 source_tree() {

@@ -50,5 +50,5 @@ test -d "$packages"
 cp -R "$packages" "$HOME/.cache/exact/ios-link-kit/$EXACT_REF/packages-kept"
 COPYFILE_DISABLE=1 tar -C "$HOME/.cache/exact/ios-link-kit/$EXACT_REF" -cf - . | zstd -T0 -3 -o "$RUNNER_TEMP/kit-out/ios-link-kit.zst"
 
-# SDK-only Swift host catalog for the two measured release graphs.
+# SDK-only Swift host catalog for production capability combinations.
 bash "$scripts/ios-host-catalog-publish.sh"
