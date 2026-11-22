@@ -150,18 +150,16 @@ jobs:
 
       - name: Restore Android setup
         id: android-setup
-        uses: actions/cache@v5
-        with:
+        uses: actions/cache/restore@v5
+        with: &android-setup-cache
           path: |
             ~/.rustup/toolchains/[0-9]*
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             ~/.cargo/hermes-lean-sys
-            ~/.gradle/caches
-            ~/.gradle/wrapper
             .exact-sdk/node_modules
-          key: exact-android-setup-v2-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-bun-${{ env.BUN_VERSION }}-${{ env.ANDROID_PLATFORM }}-ndk-${{ env.ANDROID_NDK_VERSION }}-tools-${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+          key: exact-android-setup-v3-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-bun-${{ env.BUN_VERSION }}-${{ env.ANDROID_PLATFORM }}-ndk-${{ env.ANDROID_NDK_VERSION }}-tools-${{ env.ANDROID_BUILD_TOOLS_VERSION }}
 
       - name: Set up Android and Exact
         working-directory: .exact-sdk
@@ -189,6 +187,20 @@ jobs:
             echo "Exact Android setup restored and ready"
           fi
 
+      - name: Save Android setup
+        if: steps.android-setup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with: *android-setup-cache
+
+      - name: Restore Android Gradle dependencies
+        uses: actions/cache/restore@v5
+        id: android-gradle
+        with: &android-gradle-cache
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: exact-android-gradle-v1-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-ndk-${{ env.ANDROID_NDK_VERSION }}
+
       - name: Install app dependencies
         working-directory: apps/apps
         run: |
@@ -212,8 +224,9 @@ jobs:
             exit 1
           fi
           if [[ "$GITHUB_EVENT_NAME" == push && -z "$ANDROID_APK_SIGNING" ]]; then
-            echo "::error::Run the Android signing setup workflow for production"
-            exit 1
+            echo "::warning::Production APK skipped. Run Set up Android signing to enable it."
+            echo "Production APK skipped because Android signing is not configured." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
           signing_dir=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
@@ -261,3 +274,8 @@ jobs:
           name: android-${{ github.event_name == 'push' && 'production' || 'preview' }}
           path: ${{ runner.temp }}/android-artifacts/
           if-no-files-found: error
+
+      - name: Save Android Gradle dependencies
+        if: success() && steps.android-build.outputs.apk_verified == 'true' && steps.android-gradle.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with: *android-gradle-cache
