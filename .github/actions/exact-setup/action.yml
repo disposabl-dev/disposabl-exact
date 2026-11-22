@@ -1,5 +1,5 @@
 name: Exact setup
-description: Install or publish pinned Exact tools for Ubuntu
+description: Install or publish pinned Exact tools for the selected runner
 inputs:
   platform:
     required: true
@@ -43,7 +43,11 @@ runs:
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
         SETUP_MODE: ${{ inputs.mode }}
       run: |
-        [[ "$RUNNER_OS:$RUNNER_ARCH" == Linux:X64 && "$SETUP_PLATFORM" =~ ^(web|android|ios)$ && "$SETUP_MODE" =~ ^(consume|build)$ ]]
+        case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in
+          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;;
+          *) echo "::error::Unexpected runner for $SETUP_PLATFORM"; exit 1 ;;
+        esac
+        [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]
         [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
         exact="$RUNNER_TEMP/exact-sdk"
         mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
@@ -77,7 +81,7 @@ runs:
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/setup.sh"
         bash "$GITHUB_ACTION_PATH/scripts/pack.sh"
-    - name: Check iOS cross toolchain
+    - name: Check iPhone device toolchain
       if: inputs.mode == 'consume' && inputs.platform == 'ios'
       shell: bash
       run: cd "$EXACT" && bun scripts/exact.mjs setup --check --platform ios --device
