@@ -10,6 +10,11 @@ on:
         options:
           - production
           - play-upload
+          - ota
+      recipients:
+        description: Public GitHub environment keys for encrypted OTA key generation
+        type: string
+        required: false
 
 permissions: {}
 
@@ -19,7 +24,7 @@ concurrency:
 
 jobs:
   provision:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.target != 'ota'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: android-production
@@ -83,3 +88,36 @@ jobs:
           name: android-play-upload-certificate
           path: ${{ runner.temp }}/android-play-upload.pem
           if-no-files-found: error
+
+  ota:
+    if: inputs.target == 'ota'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Generate independent update keys and seal them for GitHub
+        env:
+          RECIPIENTS: ${{ inputs.recipients }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install --quiet PyNaCl==1.6.2
+          "$RUNNER_TEMP/tools/bin/python" - <<'PYTHON'
+          import base64, json, os, secrets
+          from pathlib import Path
+          from nacl.public import PublicKey, SealedBox
+
+          recipients = json.loads(os.environ["RECIPIENTS"])
+          for environment, recipient in recipients.items():
+              if environment not in ("android-preview", "android-production"):
+                  raise ValueError("unknown environment")
+              box = SealedBox(PublicKey(base64.b64decode(recipient["key"], validate=True)))
+              encrypted = box.encrypt(base64.b64encode(secrets.token_bytes(32)))
+              Path(os.environ["RUNNER_TEMP"], environment + ".json").write_text(json.dumps({
+                  "key_id": recipient["key_id"],
+                  "encrypted_value": base64.b64encode(encrypted).decode(),
+              }))
+          PYTHON
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sealed-ota-keys
+          path: ${{ runner.temp }}/android-*.json
+          if-no-files-found: error
+          retention-days: 1
