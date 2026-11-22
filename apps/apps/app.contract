@@ -18,6 +18,9 @@ shape AuthReply
   google: bool
   error: string
 
+shape GoogleReply
+  error: string
+
 routes nav
   home "/"
 
@@ -28,6 +31,7 @@ component Apps
   mutation incremented as shape IncrementReply
   mutation checkedSession as shape AuthReply then sessionChecked
   mutation changedSession as shape AuthReply then sessionChanged
+  mutation googleBrowser as shape GoogleReply then googleBrowserFinished
   state authReady = false
   state authAttempted = false
   state signedIn = false
@@ -37,14 +41,14 @@ component Apps
   state username = ""
   state password = ""
   state creating = false
-  state googlePending = false
-  derive authBusy = pending(changedSession) or pending(checkedSession)
+  derive authChanging = pending(changedSession) or pending(googleBrowser)
+  derive authBusy = authChanging or pending(checkedSession)
   state liked = false
   state waited = 0
   state wait = 1
   task restore when not authAttempted
     after(1, checkSession)
-  task renew when authReady and not pending(changedSession)
+  task renew when authReady and not authChanging
     every(30000, checkSession)
   task reconnect when live.status == "closed"
     every(1000, retry)
@@ -68,7 +72,6 @@ component Apps
       case none
         authError = "Could not check your session. Try again."
   action sessionChanged
-    googlePending = false
     match changedSession
       case some(result)
         authError = result.error
@@ -95,13 +98,21 @@ component Apps
       password = ""
   action submitGoogle
     if googleAvailable and not authBusy
-      googlePending = true
       authError = ""
       password = ""
-      send changedSession = googleSession()
+      send googleBrowser = openGoogleSession()
   action cancelGoogle
-    googlePending = false
-    send changedSession = cancelGoogleSession()
+    if pending(googleBrowser)
+      send googleBrowser = cancelGoogleSession()
+  action googleBrowserFinished
+    match googleBrowser
+      case some(result)
+        if result.error == ""
+          send changedSession = finishGoogleSession()
+        else
+          authError = result.error
+      case none
+        authError = "Could not sign in with Google. Try again."
   action logout
     if not authBusy
       authError = ""
@@ -142,16 +153,16 @@ component Apps
                   button press=logout disabled=authBusy testId="logout"
                     text (pending(changedSession) ? "Signing out…" : "Sign out")
                 else if authReady
-                  input id="username" value=username input=editUsername autocomplete="username" placeholder="Username" aria-label="Username" testId="username" disabled=pending(changedSession)
-                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder="Password" aria-label="Password" testId="password" disabled=pending(changedSession)
+                  input id="username" value=username input=editUsername autocomplete="username" placeholder="Username" aria-label="Username" testId="username" disabled=authChanging
+                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder="Password" aria-label="Password" testId="password" disabled=authChanging
                   if creating
                     text "Use at least 15 characters for your password." font="-exact-footnote" color="-exact-secondary-label"
                   button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
                     text (creating ? "Create account" : "Sign in")
-                  button press=toggleCreate disabled=pending(changedSession) testId="toggle-create"
+                  button press=toggleCreate disabled=authChanging testId="toggle-create"
                     text (creating ? "Back to sign in" : "Create an account")
                   if googleAvailable
-                    if googlePending
+                    if pending(googleBrowser)
                       button press=cancelGoogle testId="cancel-google"
                         text "Cancel Google sign-in"
                     else

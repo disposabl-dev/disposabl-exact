@@ -69,37 +69,39 @@ function passwordError(error: unknown, create: boolean): string {
 }
 
 let googleAttempt: AbortController | undefined;
+let googleTicket: { code: string; state: string } | undefined;
+const googleError = 'Could not sign in with Google. Try again.';
 
-async function googleSignIn(store: Store): Promise<AuthReply> {
+async function openGoogleSession(store: Store): Promise<Result<'openGoogleSession'>> {
   const attempt = new AbortController();
   googleAttempt = attempt;
+  googleTicket = undefined;
   let prepared: string | null = null;
   try {
     if (exactHost() === 'web' && typeof prepareAuthSession === 'function') prepared = prepareAuthSession();
     const callback = authCallback();
     const state = crypto.randomUUID();
     const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store, attempt.signal);
-    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
+    if (attempt.signal.aborted) return { error: 'Google sign-in was cancelled.' };
     const options = { callback, state, prepared: prepared ?? undefined };
     const returned = new URL(await openAuthSession(started.redirect, options));
-    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
+    if (attempt.signal.aborted) return { error: 'Google sign-in was cancelled.' };
     const code = returned.searchParams.get('convexAuthCode');
-    if (!code || returned.searchParams.has('convexAuthError')) return authFailure('Google sign-in was not completed.');
-    const response = await authRequest<AuthResponse>({ operation: 'googleComplete', code, state: started.state }, store, attempt.signal);
-    if (attempt.signal.aborted) return authFailure('Google sign-in was cancelled.');
-    return acceptSession(response, store);
+    if (!code || returned.searchParams.has('convexAuthError')) return { error: 'Google sign-in was not completed.' };
+    googleTicket = { code, state: started.state };
+    return { error: '' };
   } catch (error) {
     if (attempt.signal.aborted || (error instanceof Error && 'status' in error && error.status === 499)) {
-      return authFailure('Google sign-in was cancelled.');
+      return { error: 'Google sign-in was cancelled.' };
     }
-    return authFailure('Could not sign in with Google. Try again.');
+    return { error: googleError };
   } finally {
     if (googleAttempt === attempt) googleAttempt = undefined;
     if (prepared && typeof cancelAuthSession === 'function') cancelAuthSession(prepared);
   }
 }
 
-export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | 'googleSession' | 'cancelGoogleSession' | 'signOut'> = {
+export const authSources = {
   restoreSession: async (_args, store) => {
     try {
       return acceptSession(await authRequest<AuthResponse>({ operation: 'status' }, store), store);
@@ -115,12 +117,24 @@ export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | '
       return authFailure(passwordError(error, create));
     }
   },
-  googleSession: (_args, store) => googleSignIn(store),
+  openGoogleSession: (_args, store) => openGoogleSession(store),
   cancelGoogleSession: () => {
     googleAttempt?.abort();
-    return authFailure(exactHost() === 'web'
+    googleTicket = undefined;
+    return { error: exactHost() === 'web'
       ? 'Google sign-in cancelled. You can close the Google window.'
-      : 'Google sign-in cancelled.');
+      : 'Google sign-in cancelled.' };
+  },
+  finishGoogleSession: async (_args, store) => {
+    const ticket = googleTicket;
+    googleTicket = undefined;
+    if (!ticket) return authFailure(googleError);
+    try {
+      const response = await authRequest<AuthResponse>({ operation: 'googleComplete', ...ticket }, store);
+      return acceptSession(response, store);
+    } catch {
+      return authFailure(googleError);
+    }
   },
   signOut: async (_args, store) => {
     try {
@@ -129,4 +143,4 @@ export const authSources: Pick<Sources, 'restoreSession' | 'passwordSession' | '
       return authFailure('Could not sign out. Try again to end your session.');
     }
   },
-};
+} satisfies Pick<Sources, 'restoreSession' | 'passwordSession' | 'openGoogleSession' | 'cancelGoogleSession' | 'finishGoogleSession' | 'signOut'>;

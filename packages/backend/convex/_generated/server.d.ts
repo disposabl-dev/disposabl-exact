@@ -32,7 +32,6 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly AUTH_GOOGLE_CLIENT_ID: string | undefined;
   readonly AUTH_GOOGLE_CLIENT_SECRET: string | undefined;
-  readonly AUTH_WEB_ORIGIN: string | undefined;
 };
 
 /**

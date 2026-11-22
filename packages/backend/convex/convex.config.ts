@@ -15,7 +15,6 @@ const app = defineApp({
   env: {
     AUTH_GOOGLE_CLIENT_ID: googleCredential,
     AUTH_GOOGLE_CLIENT_SECRET: googleCredential,
-    AUTH_WEB_ORIGIN: v.optional(v.string()),
   },
 });
 app.use(staticHosting);

@@ -4,7 +4,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
 import { api, components, internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
-import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, webOrigin } from "./authSettings";
+import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, siteOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
 const cookieOptions = { path: "/", secure: true, httpOnly: true, sameSite: "strict" } as const;
@@ -69,7 +69,7 @@ const session = httpAction(async (ctx, request) => {
   const origin = request.headers.get("Origin");
   // Web mutations require the exact, configured origin and a preflight-only
   // header. No cross-origin or browser-to-native requests are accepted.
-  if (request.headers.get("X-Exact-Auth") !== "1" || (web ? origin !== webOrigin() : origin !== null)) {
+  if (request.headers.get("X-Exact-Auth") !== "1" || (web ? origin !== siteOrigin() : origin !== null)) {
     return reply({ error: "FORBIDDEN" }, 403);
   }
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
@@ -98,7 +98,7 @@ const session = httpAction(async (ctx, request) => {
   switch (body.operation) {
     case "status": {
       if (!active) return reply({ viewer: null, google });
-      if (!isTokenExpiring(active.accessToken, 5)) {
+      if (!isTokenExpiring(active.accessToken)) {
         const account = await viewer(active.accessToken);
         return account ? reply({ viewer: account, google }) : signedOut();
       }
@@ -142,12 +142,13 @@ const session = httpAction(async (ctx, request) => {
 const nativeReturn = httpAction(async (_ctx, request) => {
   if (!googleEnabled()) return authError("GOOGLE_DISABLED");
   const params = new URL(request.url).searchParams;
-  const [state] = params.getAll("state");
-  const [code] = params.getAll("convexAuthCode");
-  const [error] = params.getAll("convexAuthError");
-  if (!state || params.getAll("state").length !== 1 || !statePattern.test(state) ||
-      params.getAll("convexAuthCode").length + params.getAll("convexAuthError").length !== 1 ||
-      (code ? !tokenPattern.test(code) : !error)) return authError("INVALID_REQUEST");
+  const states = params.getAll("state");
+  const codes = params.getAll("convexAuthCode");
+  const errors = params.getAll("convexAuthError");
+  const [state] = states;
+  const [code] = codes;
+  if (states.length !== 1 || !statePattern.test(state) || codes.length + errors.length !== 1 ||
+      (code ? !tokenPattern.test(code) : !errors[0])) return authError("INVALID_REQUEST");
 
   // The native app holds the separate Convex redemption state in memory.
   // Receiving the app link alone does not let another app redeem the ticket.

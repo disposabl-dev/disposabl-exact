@@ -7,7 +7,7 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { internalMutation, query, type MutationCtx } from "./_generated/server";
 import {
-  GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleComponent, googleEnabled, siteOrigin, webOrigin,
+  GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleComponent, googleEnabled, siteOrigin,
 } from "./authSettings";
 
 const auth = setupConvexAuth({
@@ -23,7 +23,7 @@ const password = setupUsernamePassword(auth, {
 
 const google = setupGoogle(auth, {
   component: googleComponent,
-  allowedRedirectOrigins: [siteOrigin(), webOrigin()],
+  allowedRedirectOrigins: [siteOrigin()],
 }).attachUserCallbacks({ createUser: internal.auth.createGoogleUser });
 
 const limits = new RateLimiter(components.rateLimiter, {
@@ -105,7 +105,7 @@ export const beginGoogle = internalMutation({
   handler: async (ctx, { web, callbackState }) => {
     if (!googleEnabled()) return { error: "GOOGLE_DISABLED" };
     if (!(await limits.limit(ctx, "googleStart")).ok) return { error: "RATE_LIMITED" };
-    const redirect = new URL(web ? GOOGLE_WEB_RETURN : GOOGLE_NATIVE_RETURN, web ? webOrigin() : siteOrigin());
+    const redirect = new URL(web ? GOOGLE_WEB_RETURN : GOOGLE_NATIVE_RETURN, siteOrigin());
     redirect.searchParams.set("state", callbackState);
     return runAuthMethod(google.startSignInWithGoogle, ctx, { redirectTo: redirect.href });
   },
