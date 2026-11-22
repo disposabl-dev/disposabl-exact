@@ -32,7 +32,8 @@ if [[ "$platform" == ios ]]; then
   exit
 fi
 [[ "$platform" == android ]]
-if [[ "$GITHUB_EVENT_NAME" == push && -z "$ANDROID_APK_SIGNING" ]]; then
+[[ "${DEPLOY_TARGET:-}" == preview || "${DEPLOY_TARGET:-}" == production ]] || { echo '::error::Invalid deployment target'; exit 1; }
+if [[ "$DEPLOY_TARGET" == production && -z "$ANDROID_APK_SIGNING" ]]; then
   echo '::error::Production Android signing is not configured'; exit 1
 fi
 signing_dir=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
@@ -50,19 +51,37 @@ build() (
   bun exact.mjs android "$@" --json > "$signing_dir/build.json"
   cp "$(jq -er '.path' "$signing_dir/build.json")" "$output"
 )
-if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+if [[ "$DEPLOY_TARGET" == preview ]]; then
   build '' "$artifacts/android-preview.apk" --release --no-install
 else
   build "$ANDROID_APK_SIGNING" "$artifacts/android-production.apk" --release --no-install
 fi
 "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$artifacts/"*.apk
 echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
-if [[ "$GITHUB_EVENT_NAME" == push && "$ANDROID_PLAY_CONNECTED" == true ]]; then
-  [[ -n "$ANDROID_PLAY_UPLOAD_SIGNING" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
-  EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$ANDROID_PLAY_UPLOAD_SIGNING" "$signing_dir/play.aab" --bundle
-  evidence='select(.compat.id and .binary.sha256 and .graph.sources) | {compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}'
-  jq -eSc "$evidence" "$EXACT_BAKE_OUTPUT"/android-*.build.json > "$signing_dir/apk.receipt"
-  jq -eSc "$evidence" "$RUNNER_TEMP/play-bake"/android-*.build.json > "$signing_dir/aab.receipt"
-  cmp "$signing_dir/apk.receipt" "$signing_dir/aab.receipt"
+if [[ "$DEPLOY_TARGET" == production ]]; then
+  aab_signing=$ANDROID_APK_SIGNING
+  if [[ "${ANDROID_PLAY_CONNECTED:-}" == true ]]; then
+    [[ -n "${ANDROID_PLAY_UPLOAD_SIGNING:-}" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
+    aab_signing=$ANDROID_PLAY_UPLOAD_SIGNING
+  fi
+  EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$aab_signing" "$signing_dir/play.aab" --bundle
+  # Compare exactly the frozen cohort Exact signs into the update stream.
+  bun -e '
+    import { readFileSync, readdirSync } from "node:fs";
+    import { resolve } from "node:path";
+    const { cohortReceipt } = await import(resolve(process.env.EXACT, "scripts/deploy-heads.mjs"));
+    const { canonicalJson } = await import(resolve(process.env.EXACT, "scripts/deploy-signing.mjs"));
+    const read = dir => {
+      const files = readdirSync(dir).filter(name => /^android-.*\.build\.json$/.test(name)).sort();
+      if (!files.length) throw Error("Missing Android build receipt");
+      return files.map(name => {
+        const build = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
+        if (build.trust !== "production" || build.compat?.inputs?.platform !== "android") throw Error("Invalid Android production receipt");
+        return cohortReceipt(build);
+      });
+    };
+    const apk = read(process.env.EXACT_BAKE_OUTPUT), bundle = read(process.env.RUNNER_TEMP + "/play-bake");
+    if (canonicalJson(apk) !== canonicalJson(bundle)) throw Error("APK and AAB update cohorts differ");
+  '
   mv "$signing_dir/play.aab" "$artifacts/android-production.aab"
 fi
