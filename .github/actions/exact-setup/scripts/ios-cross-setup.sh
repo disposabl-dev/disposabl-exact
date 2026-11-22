@@ -55,7 +55,8 @@ tar -xzf "$work/apple.tar.gz" -C "$work/apple" iphoneos darwin
 mv "$work/apple/iphoneos" "$device_sdk"
 mv "$work/apple/darwin" "$resources/clang/lib/darwin"
 ln -s "$device_sdk/usr/lib/swift" "$resources/iphoneos"
-ln -s "$device_sdk/usr/lib/swift/shims" "$resources/shims"
+# With no resource-level shims directory, Swift searches the target SDK for SwiftShims.
+test -r "$device_sdk/usr/lib/swift/shims/module.modulemap"
 swift_resource=$("$install_dir/swift/usr/bin/swiftc" -print-target-info | jq -er '.paths.runtimeResourcePath')
 ln -s "$swift_resource/clang/include" "$resources/clang/include"
 
