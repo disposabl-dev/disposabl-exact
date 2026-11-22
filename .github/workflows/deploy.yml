@@ -32,6 +32,8 @@ jobs:
       convex_origin: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
       android_native: ${{ steps.updates.outputs.android_native }}
       ios_native: ${{ steps.updates.outputs.ios_native }}
+      ios_channel: ${{ steps.updates.outputs.ios_channel }}
+      android_channel: ${{ steps.updates.outputs.android_channel }}
     env:
       EXACT_TOOLS_ORIGIN: none
       EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -88,7 +90,7 @@ jobs:
           git worktree add --quiet --detach "$ios" HEAD
           mkdir -p "$ios/apps/apps/.exact"
           ln -s "$EXACT" "$ios/apps/apps/.exact/checkout"
-          ln -s "$GITHUB_WORKSPACE/apps/apps/node_modules" "$ios/apps/apps/node_modules"
+          (cd "$ios/apps/apps" && bun install --frozen-lockfile)
           (cd "$ios/apps/apps" && bun ../../scripts/mobile-updates.mjs deliver ios) &
           ios_pid=$!
           status=0
@@ -113,6 +115,7 @@ jobs:
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
       EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
       EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
+      EXACT_MOBILE_CHANNEL: ${{ needs.deploy.outputs.android_channel }}
       EXACT_UPDATE_TRUST: production
       EXACT_UPDATE_GENESIS: '1'
       EXACT_BUILD_NUMBER: ${{ github.run_number }}
@@ -190,6 +193,7 @@ jobs:
             ${{ runner.temp }}/android-artifacts/*.apk
             ${{ runner.temp }}/android-artifacts/*.aab
           if-no-files-found: error
+          overwrite: true
       - name: Seed Android update stream
         working-directory: apps/apps
         env:
@@ -213,6 +217,7 @@ jobs:
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
       EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
       EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
+      EXACT_MOBILE_CHANNEL: ${{ needs.deploy.outputs.ios_channel }}
       EXACT_UPDATE_TRUST: production
       EXACT_UPDATE_GENESIS: '1'
       EXACT_BUILD_NUMBER: ${{ github.run_number }}
@@ -255,11 +260,7 @@ jobs:
             ${{ runner.temp }}/ios-artifacts/*.ipa
             ${{ runner.temp }}/ios-artifacts/*.receipt.json
           if-no-files-found: error
-      - name: Seed iOS update stream
-        working-directory: apps/apps
-        env:
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: bun ../../scripts/mobile-updates.mjs seed ios
+          overwrite: true
       - name: Publish iPhone install link
         working-directory: ${{ runner.temp }}
         run: |
@@ -270,3 +271,8 @@ jobs:
           fi
           url=$(node -e 'const fs=require("fs"); try {const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const u=new URL(v.url);if(u.protocol!=="https:"||!["appdrop.app","www.appdrop.app"].includes(u.hostname)||u.port||u.username||u.password||u.search||u.hash||!/^\/d\/[A-Za-z0-9]+\/?$/.test(u.pathname))process.exit(1);process.stdout.write(u.origin+u.pathname.replace(/\/$/,""))}catch{process.exit(1)}' "$private_dir/result.json") || { echo '::error::AppDrop returned an invalid install URL'; exit 1; }
           printf '[Install the iPhone app](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Seed iOS update stream
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: bun ../../scripts/mobile-updates.mjs seed ios

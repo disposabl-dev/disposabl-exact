@@ -43,42 +43,49 @@ const privateKey = createPrivateKey({
 });
 keyBytes.fill(0);
 const publicKey = createPublicKey(privateKey).export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64');
-manifest.deploy = { ...manifest.deploy,
-  store: { ...manifest.deploy.store, [platform]: 'A' },
-  channels: { prod: 'appdrop' },
-  signing: { key: 'mobile', keys: { mobile: publicKey } },
-};
-writeFileSync('app.json', JSON.stringify(manifest, null, 2) + '\n');
-if (command === 'configure') {
-  appendFileSync(env.GITHUB_ENV, 'EXACT_VERSION=' + manifest.version + '\n');
-  process.exit(0);
-}
-
-const [{ resolveApp, readBuilds, classifyArtifacts }, { openOrigin, channelOrigin },
+const [{ resolveApp, readBuilds, classifyArtifacts }, { openOrigin, appdropOrigin },
   { streams, streamCandidates, publishStream, defaultRelease }, { canonicalBytes }] = await Promise.all(
   ['app', 'origin', 'publisher', 'deploy-signing'].map(name => import(resolve(EXACT, 'scripts', name + '.mjs'))));
-const app = resolveApp(process.cwd());
+manifest.deploy = { ...manifest.deploy,
+  store: { ...manifest.deploy.store, [platform]: 'A' },
+  signing: { key: 'mobile', keys: { mobile: publicKey } },
+};
+const origin = openOrigin(appdropOrigin(manifest));
 const signer = {
   keyId: 'mobile', publicKey,
   signBytes: bytes => sign(null, bytes, privateKey),
   sign: head => ({ keyId: 'mobile', ed25519: sign(null, canonicalBytes(head), privateKey).toString('base64') }),
 };
-const origin = openOrigin(channelOrigin(app.manifest, 'prod'));
 origin.useSigner(signer);
-const names = await origin.list('.exact/prod');
-if (!Array.isArray(names)) throw Error('AppDrop returned an invalid stream listing');
-function native(reason) {
+let channel = env.EXACT_MOBILE_CHANNEL;
+function native(reason, nextChannel) {
   if (command === 'seed') throw Error('Built binary cannot establish its update stream: ' + reason);
-  appendFileSync(env.GITHUB_OUTPUT, platform + '_native=true\n');
-  console.log(platform + ' needs a binary: ' + reason);
+  appendFileSync(env.GITHUB_OUTPUT, platform + '_native=true\n' + platform + '_channel=' + nextChannel + '\n');
+  console.log(platform + ' needs a binary: ' + reason + ' (' + nextChannel + ')');
 }
-if (command === 'deliver' && !names.length) {
-  native('first build of this native version');
+if (command === 'deliver') {
+  const names = await origin.list('.exact');
+  if (!Array.isArray(names)) throw Error('AppDrop returned an invalid channel listing');
+  const channels = names.filter(name => /^base-[1-9][0-9]*$/.test(name));
+  channels.sort((a, b) => Number(a.slice(5)) - Number(b.slice(5)));
+  channel = channels.at(-1);
+  if (!channel) {
+    native('first build of this native version', 'base-1');
+    process.exit(0);
+  }
+}
+if (!/^base-[1-9][0-9]*$/.test(channel || '')) throw Error('Missing native update channel');
+manifest.deploy.channel = channel;
+manifest.deploy.channels = { [channel]: 'appdrop' };
+writeFileSync('app.json', JSON.stringify(manifest, null, 2) + '\n');
+if (command === 'configure') {
+  appendFileSync(env.GITHUB_ENV, 'EXACT_VERSION=' + manifest.version + '\n');
   process.exit(0);
 }
+const app = resolveApp(process.cwd());
 const builds = command === 'seed' ? readBuilds(app).filter(b => b.trust === 'production' && b.compat.inputs.platform === platform) : [];
 if (command === 'seed' && !builds.length) throw Error('Missing production build receipt for ' + platform);
-const found = await streams(origin, app, 'prod', { platforms: [platform], builds });
+const found = await streams(origin, app, channel, { platforms: [platform], builds });
 const selected = command === 'seed' ? found.filter(s => builds.some(b => b.compat.id === s.stream.compatibilityId)) : found;
 const publishTools = env.EXACT_PUBLISH_TOOLS;
 const tools = publishTools ? { graph: resolve(publishTools, 'exact-bake'), typescript: resolve(publishTools, 'exact-js-bake') } : null;
@@ -112,7 +119,7 @@ for (const update of candidates) {
   compatible.push(update);
 }
 if (!compatible.length) {
-  native('the installed runtime cannot apply this change');
+  native('the installed runtime cannot apply this change', 'base-' + (Number(channel.slice(5)) + 1));
 } else {
   for (const update of compatible) {
     const result = await publishStream({ origin, ...update, app, signer,
