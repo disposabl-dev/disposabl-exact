@@ -60,7 +60,7 @@ class SwiftPMDifferential(unittest.TestCase):
         package = Path(os.environ['EXACT_GRAPH_SDK']) / 'host/apple'
         base = dict(EXACT_APPLE_LINK='all', EXACT_APP_COMPOSITION='updating', EXACT_UPDATE_TRUST='production', EXACT_WIDGET_GALLERY='0', EXACT_APPLE_INTENT_FILES='0', EXACT_WATCH_SYNC='0')
         def dump(**changes):
-            env=os.environ.copy(); env.update(base); env.update(changes)
+            env={k:v for k,v in os.environ.items() if not k.startswith('EXACT_')}; env.update(base); env.update(changes)
             return graph.extract(json.loads(subprocess.check_output(['swift','package','dump-package'], cwd=package, env=env)), product='ExactIOS')
         standard=dump()
         self.assertIn('CExactLaunch', standard['targets'])
@@ -72,6 +72,46 @@ class SwiftPMDifferential(unittest.TestCase):
         self.assertNotEqual(standard['targets']['ExactLaunchParts'], dump(EXACT_LAUNCH_PARTS_TARGET='arm64-apple-ios17.0')['targets']['ExactLaunchParts'])
 
     @unittest.skipUnless(os.environ.get('EXACT_GRAPH_SDK'), 'set EXACT_GRAPH_SDK to an Exact checkout')
+    def test_combinations_match_singleton_unions(self):
+        import random, re
+        package = Path(os.environ['EXACT_GRAPH_SDK']) / 'host/apple'
+        roster = re.findall(r'^    \("([a-z_]+)", "Exact[^"\n]+"\),?$', (package / 'Package.swift').read_text(), re.M)
+        self.assertEqual(len(roster), len(set(roster)))
+        self.assertGreater(len(roster), 30)
+        def dump(links):
+            env={k:v for k,v in os.environ.items() if not k.startswith('EXACT_')}; env.update(EXACT_APPLE_LINK=links, EXACT_APP_COMPOSITION='updating', EXACT_UPDATE_TRUST='production', EXACT_WIDGET_GALLERY='0', EXACT_APPLE_INTENT_FILES='0', EXACT_WATCH_SYNC='0')
+            result=json.loads(subprocess.check_output(['swift','package','dump-package'], cwd=package, env=env))
+            return graph.extract(result, targets=['ExactComposition'])
+        empty=dump('')
+        single={name:dump(name) for name in roster + ['io', 'modules', 'format']}
+        def assert_union(label, names, result):
+            union=dict(empty['targets']); definitions=set(empty['composition_defines'])
+            for name in names:
+                g=single[name]; definitions.update(g['composition_defines'])
+                for key, value in g['targets'].items():
+                    if key == 'ExactComposition': continue
+                    if key in union: self.assertEqual(union[key], value, (label,key))
+                    union[key]=value
+            actual=dict(result['targets']); actual.pop('ExactComposition')
+            union.pop('ExactComposition')
+            self.assertEqual(actual, union, label)
+            self.assertEqual(set(result['composition_defines']), definitions, label)
+        self.assertEqual(empty['roots'], ['ExactComposition'])
+        assert_union('all', roster, dump('all'))
+        cases={
+            'paperstack':['markdown','io'], 'trail':['io','modules','native_views'],
+            'aperture-field':['effects','io','modules','svg','images','native_views'],
+            'voice':['format','io','modules','native_views','video'],
+            'tools-markdown-sound':['tools','markdown','sound'],
+            'auth-notifications-drag':['auth_session','notifications','drag'],
+            'surfaces-effects-navigation':['surfaces','effects','navigation'],
+        }
+        rng=random.Random(19317)
+        for i in range(6): cases['random-'+str(i)]=rng.sample(roster, rng.randint(2,9))
+        for label,names in cases.items():
+            with self.subTest(label=label, capabilities=names): assert_union(label,names,dump(','.join(names)))
+
+    @unittest.skipUnless(os.environ.get('EXACT_GRAPH_SDK'), 'set EXACT_GRAPH_SDK to an Exact checkout')
     def test_every_capability_against_universal_graph(self):
         sdk = Path(os.environ['EXACT_GRAPH_SDK'])
         package = sdk / 'host/apple'
@@ -80,7 +120,7 @@ class SwiftPMDifferential(unittest.TestCase):
         roster = re.findall(r'^    \("([a-z_]+)", "Exact[^"\n]+"\),?$', source, re.M)
         self.assertGreater(len(roster), 30, 'SDK capability roster not recognized')
         def dump(links):
-            env = os.environ.copy(); env.update(EXACT_APPLE_LINK=links, EXACT_APP_COMPOSITION='updating', EXACT_UPDATE_TRUST='production', EXACT_WIDGET_GALLERY='0', EXACT_APPLE_INTENT_FILES='0', EXACT_WATCH_SYNC='0')
+            env = {k:v for k,v in os.environ.items() if not k.startswith('EXACT_')}; env.update(EXACT_APPLE_LINK=links, EXACT_APP_COMPOSITION='updating', EXACT_UPDATE_TRUST='production', EXACT_WIDGET_GALLERY='0', EXACT_APPLE_INTENT_FILES='0', EXACT_WATCH_SYNC='0')
             return json.loads(subprocess.check_output(['swift','package','dump-package'], cwd=package, env=env))
         universal = graph.extract(dump('all'), targets=['ExactComposition'])
         for capability in roster:
