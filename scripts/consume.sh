@@ -37,17 +37,6 @@ echo "EXACT=$EXACT" >> "$GITHUB_ENV"
 if [[ "$SETUP_PLATFORM" == web ]]; then
   echo "EXACT_PUBLISH_TOOLS=$HOME/.cache/exact/publisher/${SETUP_EXACT_REF}" >> "$GITHUB_ENV"
 fi
-if [[ "$SETUP_PLATFORM:$RUNNER_OS" == ios:Linux ]]; then
-  bash "$SETUP_ACTION_DIR/scripts/ios-linux-tools.sh"
-  bash "$SETUP_ACTION_DIR/scripts/ios-linux-sdk.sh"
-elif [[ "$SETUP_PLATFORM" == ios ]]; then
-  if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
-    export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer
-    echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
-  fi
-  xcodebuild -version
-  xcrun --sdk iphoneos --show-sdk-version
-fi
 if [[ "$SETUP_PLATFORM" == android ]]; then
   sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
   if [[ ! -f "$ANDROID_HOME/ndk/27.3.13750724/source.properties" || ! -f "$ANDROID_HOME/platforms/android-37.2/source.properties" || ! -f "$ANDROID_HOME/build-tools/37.0.0/source.properties" ]]; then
