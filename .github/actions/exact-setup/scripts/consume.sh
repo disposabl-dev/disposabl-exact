@@ -12,6 +12,7 @@ if ! command -v zstd >/dev/null; then
   if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi
 fi
 tag="v${SETUP_BUNDLE_VERSION}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
+release="https://github.com/disposabl-dev/disposabl-exact/releases/download/$tag"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 bundles="$RUNNER_TEMP/exact-bundles"
@@ -22,7 +23,8 @@ extract_bundle() {
   shift
   asset="exact-${SETUP_EXACT_REF}-${platform}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
   if [[ ! -f "$bundles/$asset" || ! -f "$bundles/$asset.sha256" ]]; then
-    gh release download "$tag" --repo disposabl-dev/disposabl-exact --pattern "$asset" --pattern "$asset.sha256" --dir "$work"
+    curl -fsSL --retry 3 "$release/$asset.sha256" -o "$work/$asset.sha256"
+    curl -fsSL --retry 3 "$release/$asset" -o "$work/$asset"
     mv "$work/$asset" "$work/$asset.sha256" "$bundles/"
     source_kind=release
   fi

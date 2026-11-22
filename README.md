@@ -4,7 +4,7 @@ Starter kit for building apps and agents with Exact and Convex.
 
 ## First deployment from a new repository
 
-Create a repository from this template and enable GitHub Actions. Use a Convex project with Static Hosting enabled. Configure the following GitHub Actions secrets before the push that starts your first deployment.
+Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex project with Static Hosting enabled. Configure the following GitHub Actions secrets before the push that starts your first deployment.
 
 | Scope | Name | Value |
 | --- | --- | --- |

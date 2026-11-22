@@ -82,7 +82,6 @@ runs:
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
         SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
-        GH_TOKEN: ${{ github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/consume.sh"
     - name: Build bundle
       if: inputs.mode == 'build'
