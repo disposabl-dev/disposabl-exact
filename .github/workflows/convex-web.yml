@@ -24,6 +24,7 @@ jobs:
     env:
       EXACT: ${{ github.workspace }}/.exact-sdk
       EXACT_TOOLS_ORIGIN: none
+      BUN_VERSION: 1.4.4
       BUILD_WEB: >-
         cd ../../apps/apps &&
         rm -rf dist/convex &&
@@ -35,6 +36,7 @@ jobs:
           persist-credentials: false
 
       - uses: actions/checkout@v6
+        id: exact-sdk
         with:
           repository: expo/exact
           ref: 28f071ca1b04fb4af90af965bab5241fa26d037a
@@ -43,17 +45,39 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.4
+          bun-version: ${{ env.BUN_VERSION }}
 
-      - name: Cache wasm-bindgen
+      - name: Restore Exact setup
+        id: exact-setup
         uses: actions/cache@v5
         with:
-          path: ~/.cargo/bin/wasm-bindgen
-          key: exact-wasm-bindgen-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('.exact-sdk/rust-toolchain.toml', '.exact-sdk/game/Cargo.toml') }}
+          path: |
+            ~/.rustup/toolchains/[0-9]*
+            ~/.rustup/toolchains/nightly-*
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/exact/binaryen
+            ~/.cache/exact/tools
+            ~/.cache/ms-playwright
+            .exact-sdk/node_modules
+          key: exact-web-setup-v1-ubuntu-24.04-${{ runner.arch }}-${{ steps.exact-sdk.outputs.commit }}-bun-${{ env.BUN_VERSION }}
 
       - name: Set up Exact
         working-directory: .exact-sdk
-        run: CHROME="$(command -v google-chrome)" bun scripts/exact.mjs setup --platform web
+        env:
+          SETUP_CACHE_HIT: ${{ steps.exact-setup.outputs.cache-hit }}
+        run: |
+          export CHROME="$(command -v google-chrome)"
+          binaryen_bin=$(bun -p 'import { BINARYEN } from "./host/web/stages.mjs"; `${process.env.HOME}/.cache/exact/binaryen/${BINARYEN.replace(" ", "_")}/bin`')
+          export PATH="$binaryen_bin:$PATH"
+          if [[ "$SETUP_CACHE_HIT" != true ]] || ! bun scripts/exact.mjs setup --check --platform web; then
+            bun scripts/exact.mjs setup --platform web
+            bun scripts/tools.mjs keep
+          fi
+          echo "$binaryen_bin" >> "$GITHUB_PATH"
 
       - name: Install app and backend dependencies
         run: |
