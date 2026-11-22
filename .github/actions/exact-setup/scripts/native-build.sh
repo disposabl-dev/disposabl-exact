@@ -15,10 +15,18 @@ fi
 [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
 mkdir -p "$artifacts/bake"
 if [[ "$platform" == ios ]]; then
+  verify_ios_binary() {
+    local binary=$1
+    # Both device and simulator binaries can report arm64.
+    "$EXACT_APPLE_LLVM_BIN/llvm-lipo" "$binary" -verify_arch arm64
+    "$EXACT_APPLE_LLVM_BIN/llvm-objdump" --macho --private-headers "$binary" > "$RUNNER_TEMP/ios-load-commands"
+    grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
+  }
   probe=$(mktemp -d "$RUNNER_TEMP/ios-sdk-probe.XXXXXX")
   printf 'import SwiftUI\nprint(Text("Exact"))\n' > "$probe/main.swift"
   bun "$EXACT/host/apple/toolchain.mjs" --sdk iphoneos swiftc \
     -target arm64-apple-ios17.0 "$probe/main.swift" -o "$probe/probe"
+  verify_ios_binary "$probe/probe"
   rm -rf "$probe"
   bun exact.mjs ios --device --release --unsigned --archive "$artifacts/apps.ipa" --json > "$artifacts/build.json"
   unzip -tq "$artifacts/apps.ipa" >/dev/null
@@ -27,11 +35,7 @@ if [[ "$platform" == ios ]]; then
   [[ ${#apps[@]} == 1 && -f "${apps[0]}/Info.plist" ]]
   executable=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
   [[ "$executable" != */* && "$executable" != . && "$executable" != .. ]]
-  macho="${apps[0]}/$executable"
-  # Both device and simulator binaries can report arm64.
-  "$EXACT_APPLE_LLVM_BIN/llvm-lipo" -verify_arch arm64 "$macho"
-  "$EXACT_APPLE_LLVM_BIN/llvm-objdump" --macho --private-headers "$macho" > "$RUNNER_TEMP/ios-load-commands"
-  grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
+  verify_ios_binary "${apps[0]}/$executable"
   receipt="$artifacts/apps.receipt.json"
   bake="$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json"
   jq -e --slurpfile bake "$bake" '
