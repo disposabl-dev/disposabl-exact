@@ -12,7 +12,7 @@ inputs:
     description: Bun version
   bundle-version:
     description: Published setup bundle version
-    default: '2'
+    default: '3'
   mode:
     default: consume
     description: consume a release or build its bundle

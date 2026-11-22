@@ -22,7 +22,7 @@ concurrency:
 env:
   EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '2'
+  BUNDLE_VERSION: '3'
   EXACT_TOOLS_ORIGIN: none
   EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
 
@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.deploy.outputs.native_matrix) }}
-    runs-on: ${{ matrix.platform == 'ios' && (vars.EXACT_IOS_UBUNTU_RUNNER || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.platform == 'ios' && 'xcode-27' || 'ubuntu-24.04' }}
     timeout-minutes: 90
     environment:
       name: android-${{ needs.route.outputs.target }}
