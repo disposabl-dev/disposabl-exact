@@ -1,0 +1,44 @@
+name: Exact setup
+description: Install pinned Exact tools on a clean hosted runner
+inputs:
+  platform:
+    required: true
+    description: web, android, or ios
+  exact-ref:
+    required: true
+    description: Full Exact commit SHA
+  bun-version:
+    default: '1.4.4'
+    description: Bun version
+  release-repo:
+    default: disposabl-dev/exact-setup
+    description: Repository holding setup releases
+outputs:
+  exact-path:
+    value: ${{ steps.setup.outputs.exact-path }}
+    description: Path to Exact checkout
+  source:
+    value: ${{ steps.setup.outputs.source }}
+    description: release or source
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+    - uses: actions/checkout@v6
+      with:
+        repository: expo/exact
+        ref: ${{ inputs.exact-ref }}
+        path: .exact-sdk
+        persist-credentials: false
+    - id: setup
+      shell: bash
+      env:
+        SETUP_PLATFORM: ${{ inputs.platform }}
+        SETUP_EXACT_REF: ${{ inputs.exact-ref }}
+        SETUP_BUN_VERSION: ${{ inputs.bun-version }}
+        SETUP_RELEASE_REPO: ${{ inputs.release-repo }}
+        SETUP_ACTION_DIR: ${{ github.action_path }}
+        GH_TOKEN: ${{ github.token }}
+      run: bash "$SETUP_ACTION_DIR/scripts/consume.sh"
