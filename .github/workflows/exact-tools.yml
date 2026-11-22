@@ -1,9 +1,0 @@
-name: Publish shared Exact tools
-on: workflow_dispatch
-
-jobs:
-  publish:
-    if: github.repository == 'disposabl-dev/disposabl-exact' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    uses: disposabl-dev/disposabl-exact/.github/workflows/publish.yml@d6d3f7d3c2aa5acda6d34c09830abdd39ffb5c3e
