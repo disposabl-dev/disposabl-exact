@@ -49,3 +49,6 @@ packages="$CARGO_TARGET_DIR/apple-swift/ios-17.0-balanced/packages-kept"
 test -d "$packages"
 cp -R "$packages" "$HOME/.cache/exact/ios-link-kit/$EXACT_REF/packages-kept"
 COPYFILE_DISABLE=1 tar -C "$HOME/.cache/exact/ios-link-kit/$EXACT_REF" -cf - . | zstd -T0 -3 -o "$RUNNER_TEMP/kit-out/ios-link-kit.zst"
+
+# SDK-only Swift host catalog for the two measured release graphs.
+bash "$scripts/ios-host-catalog-publish.sh"

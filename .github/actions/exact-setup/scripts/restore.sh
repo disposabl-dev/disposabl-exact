@@ -49,6 +49,13 @@ case "$platform" in
     mkdir -p "$ios_tools"
     extract cargo-ios.zst "$cargo_target" "$staging/cargo.zst" & pids+=($!)
     extract ios-link-kit.zst "$ios_tools/link" "$staging/link.zst" & pids+=($!)
+    if python3 - "$manifest" <<'PY_HOST'
+import json,sys
+raise SystemExit(0 if 'ios-host-catalog.zst' in json.load(open(sys.argv[1])) else 1)
+PY_HOST
+    then
+      (extract ios-host-catalog.zst "$ios_tools/host-catalog" "$staging/host-catalog.zst" || { rm -rf "$ios_tools/host-catalog"; echo 'Host catalog unavailable; using stock or normal build.'; }) & pids+=($!)
+    fi
     for file in ios-source-times.json ios-baker.json; do
       asset "$file" "$ios_tools/$file" & pids+=($!)
     done
@@ -82,7 +89,12 @@ if [[ $platform == ios ]]; then
   (cd "$EXACT" && git ls-files -z | xargs -0 touch -t 202001010000)
   find "$EXACT" -type d -not -path '*/.git*' -exec touch -t 202001010000 {} +
   {
-    echo "EXACT_LINK_KIT_PROOF=$scripts/ios-link-kit.py"
+    if [[ -f "$ios_tools/host-catalog/manifest.json" ]]; then
+      echo "EXACT_HOST_CATALOG=$ios_tools/host-catalog"
+      echo "EXACT_LINK_KIT_PROOF=$scripts/ios-host-select.py"
+    else
+      echo "EXACT_LINK_KIT_PROOF=$scripts/ios-link-kit.py"
+    fi
     echo "EXACT_LINK_KIT=$ios_tools/link"
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
