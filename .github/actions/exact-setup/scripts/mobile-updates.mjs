@@ -1,12 +1,55 @@
 // GitHub Actions runs this from the Exact app directory.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign } from 'node:crypto';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const [command, platform] = process.argv.slice(2);
+if (command === 'plan' && !platform) {
+  const { EXACT, EXACT_UPDATE_SEED, GITHUB_OUTPUT } = process.env;
+  if (!EXACT || !EXACT_UPDATE_SEED || !GITHUB_OUTPUT) throw Error('Missing Exact checkout, update seed or output path');
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.EXACT_UPDATE_SEED;
+  const tmp = mkdtempSync(resolve(tmpdir(), 'exact-update-plan-'));
+  const worktree = resolve(tmp, 'ios');
+  const appDir = resolve(worktree, 'apps/apps');
+  let added = false;
+  try {
+    execFileSync('git', ['worktree', 'add', '--quiet', '--detach', worktree, 'HEAD'], { env: cleanEnv, stdio: 'inherit' });
+    added = true;
+    mkdirSync(resolve(appDir, '.exact'), { recursive: true });
+    symlinkSync(EXACT, resolve(appDir, '.exact/checkout'));
+    execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: appDir, env: cleanEnv, stdio: 'inherit' });
+    const platforms = [['android', process.cwd()], ['ios', appDir]];
+    const results = await Promise.allSettled(platforms.map(([name, cwd]) => new Promise((resolveChild, reject) => {
+      const output = resolve(tmp, `${name}.output`);
+      writeFileSync(output, '');
+      const child = spawn(process.execPath, [import.meta.filename, 'deliver', name], {
+        cwd, env: { ...cleanEnv, EXACT_UPDATE_SEED, GITHUB_OUTPUT: output }, stdio: 'inherit',
+      });
+      child.on('error', reject);
+      child.on('close', code => {
+        if (code !== 0) return reject(Error(`${name} update delivery failed (${code})`));
+        const values = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('=')));
+        if (!['true', 'false'].includes(values[`${name}_native`])) return reject(Error(`${name} did not report its native decision`));
+        if (values[`${name}_native`] === 'false') return resolveChild(null);
+        const channel = values[`${name}_channel`];
+        if (!/^base-[1-9][0-9]*$/.test(channel ?? '')) return reject(Error(`${name} returned an invalid channel`));
+        resolveChild({ platform: name, channel });
+      });
+    })));
+    const failed = results.filter(result => result.status === 'rejected');
+    if (failed.length) throw new AggregateError(failed.map(result => result.reason), 'Mobile update delivery failed');
+    appendFileSync(GITHUB_OUTPUT, `matrix=${JSON.stringify(results.map(result => result.value).filter(Boolean))}\n`);
+  } finally {
+    if (added) execFileSync('git', ['worktree', 'remove', '--force', worktree], { env: cleanEnv, stdio: 'inherit' });
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
 if (!['configure', 'deliver', 'seed'].includes(command) || !['ios', 'android'].includes(platform))
-  throw Error('expected configure|deliver|seed ios|android');
+  throw Error('expected plan or configure|deliver|seed ios|android');
 
 const env = process.env;
 const { EXACT, EXACT_REF, EXACT_PR_NUMBER, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;

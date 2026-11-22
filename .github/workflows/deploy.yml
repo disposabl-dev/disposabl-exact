@@ -20,6 +20,9 @@ concurrency:
 env:
   EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
   BUN_VERSION: 1.4.4
+  EXACT_TOOLS_ORIGIN: none
+  EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
+  EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
 
 jobs:
   deploy:
@@ -34,11 +37,8 @@ jobs:
       deployment: false
     outputs:
       convex_origin: ${{ steps.web.outputs.convex_origin }}
-      native_matrix: ${{ steps.native-matrix.outputs.matrix }}
+      native_matrix: ${{ steps.updates.outputs.matrix }}
     env:
-      EXACT_TOOLS_ORIGIN: none
-      EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
-      EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
       BUILD_WEB: >-
         cd ../../apps/apps &&
         rm -rf dist/convex &&
@@ -62,7 +62,7 @@ jobs:
         id: web
         working-directory: packages/backend
         env:
-          CONVEX_DEPLOY_KEY: ${{ github.event_name == 'push' && secrets.CONVEX_DEPLOY_KEY || secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
+          CONVEX_DEPLOY_KEY: ${{ secrets[github.event_name == 'push' && 'CONVEX_DEPLOY_KEY' || 'CONVEX_DEPLOY_KEY_PREVIEW'] }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             IFS=: read -r _ team project <<< "${CONVEX_DEPLOY_KEY%%|*}"
@@ -79,35 +79,8 @@ jobs:
         env:
           CONVEX_ORIGIN: ${{ steps.web.outputs.convex_origin }}
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: |
-          # Exact reads each platform's manifest from disk while baking.
-          ios="$RUNNER_TEMP/ios-publisher"
-          git worktree add --quiet --detach "$ios" HEAD
-          mkdir -p "$ios/apps/apps/.exact"
-          ln -s "$EXACT" "$ios/apps/apps/.exact/checkout"
-          (cd "$ios/apps/apps" && bun install --frozen-lockfile)
-          (cd "$ios/apps/apps" && bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" deliver ios) &
-          ios_pid=$!
-          status=0
-          (cd apps/apps && bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" deliver android) || status=$?
-          wait "$ios_pid" || status=$?
-          exit "$status"
-      - name: Select native builds
-        id: native-matrix
-        env:
-          ANDROID_NATIVE: ${{ steps.updates.outputs.android_native }}
-          IOS_NATIVE: ${{ steps.updates.outputs.ios_native }}
-          ANDROID_CHANNEL: ${{ steps.updates.outputs.android_channel }}
-          IOS_CHANNEL: ${{ steps.updates.outputs.ios_channel }}
-        run: |
-          [[ "$ANDROID_NATIVE" == true || "$ANDROID_NATIVE" == false ]]
-          [[ "$IOS_NATIVE" == true || "$IOS_NATIVE" == false ]]
-          [[ "$ANDROID_NATIVE" != true || "$ANDROID_CHANNEL" =~ ^base-[1-9][0-9]*$ ]]
-          [[ "$IOS_NATIVE" != true || "$IOS_CHANNEL" =~ ^base-[1-9][0-9]*$ ]]
-          matrix=$(jq -cn --arg android "$ANDROID_NATIVE" --arg ios "$IOS_NATIVE" --arg android_channel "$ANDROID_CHANNEL" --arg ios_channel "$IOS_CHANNEL" '
-            [if $android == "true" then {platform:"android",channel:$android_channel} else empty end,
-             if $ios == "true" then {platform:"ios",channel:$ios_channel} else empty end]')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+        working-directory: apps/apps
+        run: bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" plan
 
   native:
     name: Build ${{ matrix.platform }} ${{ github.event_name == 'push' && 'production' || 'preview' }}
@@ -126,10 +99,7 @@ jobs:
       run:
         shell: bash
     env:
-      EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
-      EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
-      EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
       EXACT_MOBILE_CHANNEL: ${{ matrix.channel }}
       EXACT_UPDATE_TRUST: production
       EXACT_UPDATE_GENESIS: '1'
@@ -160,8 +130,8 @@ jobs:
         id: native-build
         working-directory: apps/apps
         env:
-          ANDROID_APK_SIGNING: ${{ secrets.ANDROID_APK_SIGNING }}
-          ANDROID_PLAY_UPLOAD_SIGNING: ${{ secrets.ANDROID_PLAY_UPLOAD_SIGNING }}
+          ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
+          ANDROID_PLAY_UPLOAD_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_PLAY_UPLOAD_SIGNING || '' }}
           ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
         run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/native-build.sh" "${{ matrix.platform }}"
       - name: Upload native artifacts
