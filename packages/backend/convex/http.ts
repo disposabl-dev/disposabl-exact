@@ -1,4 +1,4 @@
-import { httpCookies, isTokenExpiring, serializeCookie } from "@convex-dev/auth/ssr";
+import { httpCookies, isTokenExpiring, type HttpCookies, type TokenBundle } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
@@ -7,31 +7,23 @@ import { env, httpAction } from "./_generated/server";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, webOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
+const cookieOptions = { path: "/", secure: true, httpOnly: true, sameSite: "strict" } as const;
 const sessionHeader = "X-Exact-Session";
 const privateHeaders = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 const statePattern = /^[a-f0-9-]{36}$/;
 const tokenPattern = /^[a-zA-Z0-9._-]{1,2048}$/;
 
-type Session = { accessToken: string; refreshToken: string };
-
-async function existingSession(request: Request, web: boolean): Promise<Session | null> {
-  const raw = web
-    ? await httpCookies(request).get(cookieName)
-    : request.headers.get(sessionHeader);
+function readSession(raw: string | null | undefined) {
   const parts = raw?.split("~");
   if (parts?.length !== 2 || !parts.every((part) => tokenPattern.test(part))) return null;
   const [accessToken, refreshToken] = parts;
   return { accessToken, refreshToken };
 }
 
-function reply(body: object, status = 200, cookie?: string) {
-  const headers = new Headers(privateHeaders);
-  if (cookie !== undefined) headers.set("Set-Cookie", cookie);
-  return Response.json(body, { status, headers });
-}
-
-function sessionCookie(value: string, maxAge: number) {
-  return serializeCookie(cookieName, value, { maxAge, path: "/", secure: true, httpOnly: true, sameSite: "strict" });
+function reply(body: object, status = 200, cookies?: HttpCookies) {
+  const response = Response.json(body, { status, headers: privateHeaders });
+  cookies?.applyTo(response.headers);
+  return response;
 }
 
 function authError(error: string) {
@@ -86,17 +78,21 @@ const session = httpAction(async (ctx, request) => {
   const body = await readBody(request);
   if (body === null) return authError("INVALID_REQUEST");
 
-  const active = await existingSession(request, web);
+  const cookies = web ? httpCookies(request) : undefined;
+  const active = readSession(cookies ? await cookies.get(cookieName) : request.headers.get(sessionHeader));
   const google = await googleAvailable();
-  const signedOut = () => reply({ viewer: null, google }, 200, web ? sessionCookie("", 0) : undefined);
-  const signedIn = async (tokens: Session & { refreshTokenExpiresAt: number }) => {
+  const signedOut = async () => {
+    // __Host- cookies also require Secure when they are expired.
+    await cookies?.set(cookieName, "", { ...cookieOptions, maxAge: 0 });
+    return reply({ viewer: null, google }, 200, cookies);
+  };
+  const signedIn = async (tokens: TokenBundle) => {
     const account = await viewer(tokens.accessToken);
     if (account === null) return signedOut();
     const value = `${tokens.accessToken}~${tokens.refreshToken}`;
-    const maxAge = Math.max(0, Math.floor((tokens.refreshTokenExpiresAt - Date.now()) / 1000));
-    return web
-      ? reply({ viewer: account, google }, 200, sessionCookie(value, maxAge))
-      : reply({ viewer: account, google, session: value });
+    if (!cookies) return reply({ viewer: account, google, session: value });
+    await cookies.set(cookieName, value, { ...cookieOptions, expires: new Date(tokens.refreshTokenExpiresAt) });
+    return reply({ viewer: account, google }, 200, cookies);
   };
 
   switch (body.operation) {
