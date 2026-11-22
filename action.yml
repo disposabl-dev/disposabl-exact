@@ -11,7 +11,7 @@ inputs:
     default: '1.4.4'
     description: Bun version
   release-repo:
-    default: disposabl-dev/exact-setup
+    default: disposabl-dev/disposabl-exact
     description: Repository holding setup releases
 outputs:
   exact-path:

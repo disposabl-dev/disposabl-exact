@@ -1,5 +1,17 @@
 name: Build Exact setup bundles
 on:
+  workflow_call:
+    inputs:
+      exact-ref:
+        required: true
+        type: string
+      bun-version:
+        required: true
+        type: string
+      producer-ref:
+        description: Pinned exact-setup source commit
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       exact-ref:
@@ -32,6 +44,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          repository: disposabl-dev/exact-setup
+          ref: ${{ inputs.producer-ref || github.sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
@@ -90,4 +104,4 @@ jobs:
           [[ "$EXACT_REF" =~ ^[0-9a-f]{40}$ && "$BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
-          gh release create "v2-exact-${EXACT_REF}-bun-${BUN_VERSION}" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create --target "$GITHUB_SHA" "v2-exact-${EXACT_REF}-bun-${BUN_VERSION}" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
