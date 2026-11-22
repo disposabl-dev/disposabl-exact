@@ -16,18 +16,20 @@ permissions:
 env:
   EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '6'
+  BUNDLE_VERSION: '7'
+  BASE_TOOLS_VERSION: '5'
 
 jobs:
   version:
     if: github.repository == 'disposabl-dev/disposabl-exact' && !github.event.forced && !github.event.created && !github.event.deleted
     permissions:
-      contents: write
+      contents: read
       pull-requests: read
     runs-on: blacksmith-2vcpu-ubuntu-2604
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       missing: ${{ steps.release.outputs.missing }}
+      reuse: ${{ steps.release.outputs.reuse }}
     steps:
       - id: release
         env:
@@ -51,10 +53,13 @@ jobs:
               ' "$RUNNER_TEMP/release.json" >/dev/null
               echo 'missing=false' >> "$GITHUB_OUTPUT" ;;
             404)
-              if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
-                gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
-              fi
-              gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha | grep -Fx "$GITHUB_SHA"
+              base="v${BASE_TOOLS_VERSION}-exact-${EXACT_REF}-bun-${BUN_VERSION}"
+              base_status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$base")
+              case "$base_status" in
+                200) echo 'reuse=true' >> "$GITHUB_OUTPUT" ;;
+                404) echo 'reuse=false' >> "$GITHUB_OUTPUT" ;;
+                *) echo "::error::Base tool lookup returned $base_status"; exit 1 ;;
+              esac
               echo 'missing=true' >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::GitHub release lookup returned $status"; exit 1 ;;
           esac
@@ -74,8 +79,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/exact-setup
         with:
-          mode: build
-          bundle-version: ${{ env.BUNDLE_VERSION }}
+          mode: ${{ needs.version.outputs.reuse == 'true' && 'consume' || 'build' }}
+          bundle-version: ${{ needs.version.outputs.reuse == 'true' && env.BASE_TOOLS_VERSION || env.BUNDLE_VERSION }}
           platform: ${{ matrix.platform }}
           exact-ref: ${{ env.EXACT_REF }}
           bun-version: ${{ env.BUN_VERSION }}
@@ -124,4 +129,4 @@ jobs:
               files[file.name] = {"size": file.stat().st_size, "sha256": checksum.read_text().split()[0]}
           Path("inputs.json").write_text(json.dumps(files, sort_keys=True) + "\n")
           PY_INPUTS
-          gh release create "$TAG" --verify-tag --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
