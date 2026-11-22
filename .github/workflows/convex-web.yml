@@ -129,7 +129,7 @@ jobs:
         shell: bash
     env:
       EXACT_TOOLS_ORIGIN: none
-      ANDROID_NDK_VERSION: 27.1.12297006
+      ANDROID_NDK_VERSION: 27.3.13750724
       ANDROID_BUILD_TOOLS_VERSION: 37.0.0
       ANDROID_PLATFORM: android-37.2
     steps:
@@ -161,7 +161,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             .exact-sdk/node_modules
-          key: exact-android-setup-v1-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-bun-${{ env.BUN_VERSION }}
+          key: exact-android-setup-v2-ubuntu-24.04-${{ runner.arch }}-${{ env.EXACT_REF }}-bun-${{ env.BUN_VERSION }}-${{ env.ANDROID_PLATFORM }}-ndk-${{ env.ANDROID_NDK_VERSION }}-tools-${{ env.ANDROID_BUILD_TOOLS_VERSION }}
 
       - name: Set up Android and Exact
         working-directory: .exact-sdk
@@ -179,13 +179,14 @@ jobs:
 
           pin=$(bun -p 'Bun.TOML.parse(await Bun.file("rust-toolchain.toml").text()).toolchain.channel')
           target=aarch64-linux-android
-          if [[ "$SETUP_CACHE_HIT" != true ]] ||
-             ! rustup target list --installed --toolchain "$pin" | grep -Fxq "$target" ||
-             ! cargo +"$pin" fetch --locked --offline; then
+          if [[ "$SETUP_CACHE_HIT" != true || ! -d node_modules || ! -d "${CARGO_HOME:-$HOME/.cargo}/hermes-lean-sys" ]] ||
+             ! rustup target list --installed --toolchain "$pin" | grep -Fxq "$target"; then
             rustup toolchain install "$pin" --profile minimal --target "$target"
             bun install --frozen-lockfile
             cargo +"$pin" run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target "$target"
             cargo +"$pin" fetch --locked
+          else
+            echo "Exact Android setup restored and ready"
           fi
 
       - name: Install app dependencies
