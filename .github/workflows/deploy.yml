@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: convex-web-${{ github.event_name }}-${{ github.head_ref || 'main' }}
-  cancel-in-progress: false
+  queue: max
 
 env:
   EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
