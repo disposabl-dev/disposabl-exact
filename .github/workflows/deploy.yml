@@ -50,7 +50,7 @@ jobs:
 
   deploy:
     needs: route
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 45
     environment:
       name: android-${{ needs.route.outputs.target }}
@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.deploy.outputs.native_matrix) }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 90
     environment:
       name: android-${{ needs.route.outputs.target }}

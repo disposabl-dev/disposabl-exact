@@ -12,17 +12,24 @@ download_verified() {
   printf '%s  %s\n' "$sha" "$file" | sha256sum -c -
 }
 
+. /etc/os-release
+case "$VERSION_ID" in
+  24.04) swift_distro=ubuntu2404; gcc_version=13 ;;
+  26.04) swift_distro=ubuntu2604; gcc_version=15 ;;
+  *) echo "::error::Unsupported Ubuntu release for the iPhone compiler: $VERSION_ID"; exit 1 ;;
+esac
+
 download_verified https://apt.llvm.org/llvm-snapshot.gpg.key \
   8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d "$work/llvm.key"
 gpg --batch --dearmor < "$work/llvm.key" | sudo tee /usr/share/keyrings/exact-llvm.gpg > /dev/null
-echo 'deb [signed-by=/usr/share/keyrings/exact-llvm.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' |
+echo "deb [signed-by=/usr/share/keyrings/exact-llvm.gpg] https://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME-23 main" |
   sudo tee /etc/apt/sources.list.d/exact-llvm.list > /dev/null
 sudo apt-get update
 sudo apt-get install -y clang-23 lld-23 llvm-23 libcurl4-openssl-dev libedit2 \
-  libgcc-13-dev libncurses-dev libpython3-dev libsqlite3-0 libstdc++-13-dev \
+  "libgcc-$gcc_version-dev" libncurses-dev libpython3-dev libsqlite3-0 "libstdc++-$gcc_version-dev" \
   libxml2-dev libz3-dev unzip zip zlib1g-dev
 
-swift_url=https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu24.04.tar.gz
+swift_url=https://download.swift.org/swift-6.4.2-release/$swift_distro/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu$VERSION_ID.tar.gz
 curl -fsSL --retry 3 "$swift_url" -o "$work/swift.tar.gz"
 curl -fsSL --retry 3 "$swift_url.sig" -o "$work/swift.tar.gz.sig"
 mkdir -m 700 "$work/gpg"

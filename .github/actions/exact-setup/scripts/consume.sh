@@ -26,6 +26,7 @@ if [[ "$SETUP_PLATFORM" == web ]]; then
 fi
 if [[ "$SETUP_PLATFORM" == android ]]; then
   sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+  if [[ ! -x "$sdkmanager" ]]; then sdkmanager=$(command -v sdkmanager); fi
   if [[ ! -f "$ANDROID_HOME/ndk/27.3.13750724/source.properties" || ! -f "$ANDROID_HOME/platforms/android-37.2/source.properties" || ! -f "$ANDROID_HOME/build-tools/37.0.0/source.properties" ]]; then
     (set +o pipefail; yes | "$sdkmanager" --licenses >/dev/null)
     "$sdkmanager" --install "platforms;android-37.2" "build-tools;37.0.0" "ndk;27.3.13750724"
