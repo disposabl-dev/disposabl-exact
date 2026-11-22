@@ -20,7 +20,7 @@ Set the Convex key at repository scope. To provision the mobile signing secrets,
 python3 .github/actions/exact-setup/scripts/setup-signing.py
 ```
 
-Push or merge to `main` to deploy. The first deployment builds Android and iOS. Download the mobile artifacts from **Deploy app**. The iOS job also publishes an unlisted AppDrop install link in its summary. Anyone with that link can access the archive. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
+Push or merge to `main` to deploy. The first deployment starts web, Android and iOS in parallel. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
 
 ## iPhone builds
 
@@ -28,7 +28,7 @@ Blacksmith macOS 27 with Xcode builds the first IPA and any replacement native b
 
 ## Subsequent deployments
 
-Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the actual production bake receipt to initialize each stream.
+Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the production build receipt to initialize each stream. For a new phone, use the existing install link. Compatible deployments keep that link in the Actions summary. CI saves it in the Convex environment as `EXACT_INSTALL_ANDROID` or `EXACT_INSTALL_IOS` after a successful native build.
 
 Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. Clones download the published bundles on their first deployment and cache them for later runs.
 
@@ -36,7 +36,7 @@ The one-minute target covers web deployment and compatible mobile updates, inclu
 
 ### Android App Bundles and Google Play
 
-Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UPLOAD_SIGNING` environment secret. Set the `ANDROID_PLAY_CONNECTED` Actions **variable** to `true` in `android-production` and bump the app version for the first Play build. Production native builds always produce a signed APK and AAB. By default both use the standalone release key. A Play-connected build signs the AAB with its upload key. If the artifacts have incompatible native receipts, CI keeps the verified APK and fails the job before publishing the AAB. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
+Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UPLOAD_SIGNING` environment secret. Set the `ANDROID_PLAY_CONNECTED` Actions **variable** to `true` in `android-production` and bump the app version for the first Play build. The default Android build produces a release APK signed with the app’s standalone key. A Play-connected build also produces an AAB signed with the Play upload key. If the artifacts have incompatible native receipts, CI keeps the verified APK and fails the job before publishing the AAB. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
 
 ### Run the app locally
 
