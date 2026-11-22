@@ -49,8 +49,10 @@ runs:
         esac
         [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]
         [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-        exact="$RUNNER_TEMP/exact-sdk"
-        mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
+        # Prebuilt publisher tools embed the SDK checkout path used to compile them.
+        exact="$HOME/work/_temp/exact-sdk"
+        mkdir -p "$(dirname "$exact")"
+        mv -T "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
         ln -s "$exact" "$GITHUB_WORKSPACE/.exact-sdk"
         [[ $(git -C "$exact" rev-parse HEAD) == "$SETUP_EXACT_REF" ]]
         echo "EXACT=$exact" >> "$GITHUB_ENV"
