@@ -1,6 +1,6 @@
 name: Publish shared Exact tools
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
     types: [closed]
     paths:
@@ -13,6 +13,7 @@ permissions:
 env:
   EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
   BUN_VERSION: 1.4.4
+  BUNDLE_VERSION: '2'
 
 jobs:
   version:
@@ -26,7 +27,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v2-exact-${EXACT_REF}-bun-${BUN_VERSION}"
+          tag="v${BUNDLE_VERSION}-exact-${EXACT_REF}-bun-${BUN_VERSION}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
           case "$status" in
@@ -47,10 +48,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
       - uses: ./.github/actions/exact-setup
         with:
           mode: build
+          bundle-version: ${{ env.BUNDLE_VERSION }}
           platform: ${{ matrix.platform }}
           exact-ref: ${{ env.EXACT_REF }}
           bun-version: ${{ env.BUN_VERSION }}
@@ -77,8 +80,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.version.outputs.tag }}
+          MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           cd bundles
           for checksum in *.sha256; do sha256sum -c "$checksum"; done
           if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
-          gh release create --target "$GITHUB_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*
+          gh release create --target "$MERGED_SHA" "$TAG" --title "Exact ${EXACT_REF} / Bun ${BUN_VERSION}" --notes 'App-independent Exact setup bundles.' ./*

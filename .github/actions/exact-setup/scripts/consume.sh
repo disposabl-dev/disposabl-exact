@@ -2,7 +2,7 @@
 set -euo pipefail
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
-tag="v2-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
+tag="v${SETUP_BUNDLE_VERSION}-exact-${SETUP_EXACT_REF}-bun-${SETUP_BUN_VERSION}"
 work=$(mktemp -d "$RUNNER_TEMP/exact-setup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 bundles="$RUNNER_TEMP/exact-bundles"

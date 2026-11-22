@@ -16,7 +16,7 @@ Create a repository from this template and enable GitHub Actions. Use a Convex p
 
 Create both environments in **Settings → Environments**. Restrict `android-production` to the `main` branch. Both mobile platforms use these environments. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
-Set the two Convex secrets yourself. To provision the other three secrets, run the following once from your clone with a repository administrator's GitHub CLI login. GitHub-hosted runners generate the keys. The client receives ciphertext encrypted to the environment's GitHub public key and saves it using your existing login. Repeating the command keeps existing keys.
+Same-repository contributors who can edit workflows are trusted with repository secrets. A public repository can additionally scope the production Convex key to the branch-restricted production environment. Set the two Convex secrets yourself. To provision the other three secrets, run the following once from your clone with a repository administrator's GitHub CLI login. GitHub-hosted runners generate the keys. The client receives ciphertext encrypted to the environment's GitHub public key and saves it using your existing login. Repeating the command keeps existing keys.
 
 ```sh
 python3 .github/actions/exact-setup/scripts/setup-signing.py
@@ -36,7 +36,7 @@ Apple’s standard Xcode agreement limits use to Apple-branded hardware running 
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the actual production bake receipt to initialize each stream.
 
-The shared [Exact setup action](.github/actions/exact-setup/action.yml) downloads pinned platform tools from GitHub Releases. Fresh clones run only the deployment workflow on pull requests and pushes to main. It downloads the pinned tools on its first run and reuses its repository cache afterward. Only `disposabl-dev/disposabl-exact` can run the tools publisher. App binaries and signing keys stay specific to each application. Maintainers run the [publish.yml](.github/workflows/publish.yml) workflow on this template’s `main` branch to publish a new SDK and Bun combination as a versioned GitHub Release. The deployment workflow pins the Exact SDK and Bun versions. Update those pins after publishing a new tool release. Repositories created from that revision use the new tools on their first deployment. Existing repositories keep their pinned versions until their owners upgrade.
+Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. This lets preview and production use the same tested bundle. Clones download it on their first deployment and reuse their own GitHub Actions cache afterward.
 
 The warm deployment target is one minute including queueing and transfers.
 

@@ -10,6 +10,9 @@ inputs:
   bun-version:
     default: '1.4.4'
     description: Bun version
+  bundle-version:
+    description: Published setup bundle version
+    default: '2'
   mode:
     default: consume
     description: consume a release or build its bundle
@@ -53,7 +56,7 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ runner.temp }}/exact-bundles
-        key: exact-bundle-v2-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
+        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
     - id: consume
       if: inputs.mode == 'consume'
       shell: bash
@@ -61,6 +64,7 @@ runs:
         SETUP_PLATFORM: ${{ inputs.platform }}
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
+        SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
         GH_TOKEN: ${{ github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/consume.sh"
     - name: Build bundle
