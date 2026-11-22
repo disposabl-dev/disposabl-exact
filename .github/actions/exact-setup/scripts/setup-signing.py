@@ -1,6 +1,9 @@
 """Provision missing mobile update keys with the user's existing GitHub CLI login."""
-import json
 import argparse
+import base64
+import json
+import os
+import secrets
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,10 +14,47 @@ def gh(*args, payload=None):
                                    input=json.dumps(payload) if payload is not None else None).strip()
 
 
-repo = gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
+def generate_for_runner():
+    from nacl.public import PublicKey, SealedBox
+
+    destination = Path(os.environ["RUNNER_TEMP"], "sealed")
+    destination.mkdir(exist_ok=True)
+    for environment, recipient in json.loads(os.environ["RECIPIENTS"]).items():
+        if environment not in ("android-production", "android-preview"):
+            raise ValueError("Unknown signing environment")
+        box = SealedBox(PublicKey(base64.b64decode(recipient["key"], validate=True)))
+        for name in recipient["names"]:
+            if name == "EXACT_UPDATE_SEED":
+                plaintext = base64.b64encode(secrets.token_bytes(32))
+            elif environment == "android-production" and name in ("ANDROID_APK_SIGNING", "ANDROID_PLAY_UPLOAD_SIGNING"):
+                password = secrets.token_hex(32)
+                with tempfile.TemporaryDirectory() as directory:
+                    keystore = Path(directory, "signing.p12")
+                    subprocess.run([
+                        "keytool", "-genkeypair", "-noprompt", "-storetype", "PKCS12",
+                        "-keystore", str(keystore), "-alias", "android", "-keyalg", "RSA",
+                        "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android release",
+                        "-storepass:env", "PASS", "-keypass:env", "PASS",
+                    ], env=dict(os.environ, PASS=password), check=True)
+                    plaintext = json.dumps({
+                        "password": password, "keystore": base64.b64encode(keystore.read_bytes()).decode(),
+                    }).encode()
+            else:
+                raise ValueError(f"Unknown signing secret for {environment}")
+            (destination / f"{environment}-{name}.json").write_text(json.dumps({
+                "key_id": recipient["key_id"], "encrypted_value": base64.b64encode(box.encrypt(plaintext)).decode(),
+            }))
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--play", action="store_true", help="also provision the optional Play upload key")
+parser.add_argument("--generate-on-runner", action="store_true", help=argparse.SUPPRESS)
 args = parser.parse_args()
+if args.generate_on_runner:
+    generate_for_runner()
+    raise SystemExit
+
+repo = gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
 ref = "main"
 sha = gh("api", f"repos/{repo}/commits/{ref}", "--jq", ".sha")
 
