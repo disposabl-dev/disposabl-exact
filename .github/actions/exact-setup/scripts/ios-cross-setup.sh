@@ -26,9 +26,12 @@ swift_url=https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-
 curl -fsSL --retry 3 "$swift_url" -o "$work/swift.tar.gz"
 curl -fsSL --retry 3 "$swift_url.sig" -o "$work/swift.tar.gz.sig"
 mkdir -m 700 "$work/gpg"
-curl -fsSL --retry 3 https://swift.org/keys/all-keys.asc |
-  gpg --homedir "$work/gpg" --batch --import
-gpg --homedir "$work/gpg" --batch --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
+swift_release_key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F
+curl -fsSL --retry 3 "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x$swift_release_key" \
+  -o "$work/swift-release-key.asc"
+gpg --homedir "$work/gpg" --batch --import "$work/swift-release-key.asc"
+gpg --homedir "$work/gpg" --batch --status-fd 1 --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz" |
+  awk -v key="$swift_release_key" '$2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'
 tar -xzf "$work/swift.tar.gz" --strip-components=1 -C "$install_dir/swift"
 rm "$work/swift.tar.gz"
 
