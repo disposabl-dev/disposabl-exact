@@ -1,0 +1,310 @@
+name: Deploy app
+
+on:
+  workflow_call:
+    secrets:
+      CONVEX_DEPLOY_KEY:
+        required: true
+      CONVEX_DEPLOY_KEY_PREVIEW:
+        required: true
+      EXACT_UPDATE_SEED:
+        required: true
+      EXACT_IOS_SDK_URL:
+        required: false
+      ANDROID_APK_SIGNING:
+        required: false
+      ANDROID_PLAY_UPLOAD_SIGNING:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: convex-web-${{ github.event_name }}-${{ github.head_ref || 'main' }}
+  cancel-in-progress: false
+
+env:
+  EXACT_REF: 28f071ca1b04fb4af90af965bab5241fa26d037a
+  BUN_VERSION: 1.4.4
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.head_ref != 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: ${{ github.event_name == 'push' && 'android-production' || 'android-preview' }}
+      deployment: false
+    outputs:
+      convex_origin: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
+      android_native: ${{ steps.updates.outputs.android_native }}
+      ios_native: ${{ steps.updates.outputs.ios_native }}
+      ios_channel: ${{ steps.updates.outputs.ios_channel }}
+      android_channel: ${{ steps.updates.outputs.android_channel }}
+    env:
+      EXACT_TOOLS_ORIGIN: none
+      EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
+      BUILD_WEB: >-
+        cd ../../apps/apps &&
+        rm -rf dist/convex &&
+        env -u CONVEX_DEPLOY_KEY -u EXACT_VARIANT CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" bun exact.mjs web-build --out dist/convex &&
+        rm -f dist/convex/.exact-build.json &&
+        printf 'convex_origin=wss://%s\n' "${VITE_CONVEX_URL#https://}" >> "$GITHUB_OUTPUT"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check out pinned setup action
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .exact-action
+          persist-credentials: false
+      - uses: ./.exact-action
+        with:
+          platform: web
+          exact-ref: ${{ env.EXACT_REF }}
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install app and backend dependencies
+        run: |
+          (cd packages/backend && bun install --frozen-lockfile)
+          (cd apps/apps && mkdir -p .exact && ln -s "$EXACT" .exact/checkout && bun install --frozen-lockfile)
+      - name: Deploy production
+        id: production
+        if: github.event_name == 'push'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+      - name: Deploy preview
+        id: preview
+        if: github.event_name == 'pull_request'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
+        run: |
+          IFS=: read -r _ team project <<< "${CONVEX_DEPLOY_KEY%%|*}"
+          CONVEX_DEPLOY_KEY=$(curl -fsS https://api.convex.dev/api/claim_preview_deployment \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            --json "$(jq -nc --arg branch "$GITHUB_HEAD_REF" --arg team "$team" --arg project "$project" \
+              '{identifier:$branch,reuse:true,projectSelection:{kind:"teamAndProjectSlugs",teamSlug:$team,projectSlug:$project}}')" \
+            | jq -er 'select(.deploymentName and .adminKey) | "preview:\(.deploymentName)|\(.adminKey | split("|")[-1])"')
+          echo "::add-mask::$CONVEX_DEPLOY_KEY"
+          bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+      - name: Publish compatible mobile updates
+        id: updates
+        env:
+          CONVEX_ORIGIN: ${{ steps.production.outputs.convex_origin || steps.preview.outputs.convex_origin }}
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: |
+          # Exact reads each platform's manifest from disk while baking.
+          ios="$RUNNER_TEMP/ios-publisher"
+          git worktree add --quiet --detach "$ios" HEAD
+          mkdir -p "$ios/apps/apps/.exact"
+          ln -s "$EXACT" "$ios/apps/apps/.exact/checkout"
+          (cd "$ios/apps/apps" && bun install --frozen-lockfile)
+          (cd "$ios/apps/apps" && bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" deliver ios) &
+          ios_pid=$!
+          status=0
+          (cd apps/apps && bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" deliver android) || status=$?
+          wait "$ios_pid" || status=$?
+          exit "$status"
+
+  android:
+    name: Build Android ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    needs: deploy
+    if: needs.deploy.outputs.android_native == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ github.event_name == 'push' && 'android-production' || 'android-preview' }}
+      deployment: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXACT_TOOLS_ORIGIN: none
+      CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
+      EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
+      EXACT_MOBILE_CHANNEL: ${{ needs.deploy.outputs.android_channel }}
+      EXACT_UPDATE_TRUST: production
+      EXACT_UPDATE_GENESIS: '1'
+      EXACT_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check out pinned setup action
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .exact-action
+          persist-credentials: false
+      - uses: ./.exact-action
+        with:
+          platform: android
+          exact-ref: ${{ env.EXACT_REF }}
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install app dependencies
+        working-directory: apps/apps
+        run: |
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+      - name: Set Android bake output
+        run: echo "EXACT_BAKE_OUTPUT=$RUNNER_TEMP/android-artifacts/bake" >> "$GITHUB_ENV"
+      - name: Configure Android updates
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" configure android
+      - name: Build signed Android artifacts
+        id: android-build
+        working-directory: apps/apps
+        env:
+          ANDROID_APK_SIGNING: ${{ secrets.ANDROID_APK_SIGNING }}
+          ANDROID_PLAY_UPLOAD_SIGNING: ${{ secrets.ANDROID_PLAY_UPLOAD_SIGNING }}
+          ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
+        run: |
+          [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == push && -z "$ANDROID_APK_SIGNING" ]]; then
+            echo '::error::Production Android signing is not configured'; exit 1
+          fi
+          signing_dir=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
+          trap 'rm -rf "$signing_dir"' EXIT
+          artifacts="$RUNNER_TEMP/android-artifacts"
+          mkdir -p "$artifacts/bake"
+          build() (
+            signing=$1
+            output=$2
+            shift 2
+            if [[ -n "$signing" ]]; then
+              export EXACT_KEYSTORE="$signing_dir/signing.p12" EXACT_KEY_ALIAS=android
+              EXACT_KEYSTORE_PASSWORD=$(jq -er '.password' <<< "$signing")
+              echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
+              export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
+              jq -er '.keystore' <<< "$signing" | base64 --decode > "$EXACT_KEYSTORE"
+            fi
+            bun exact.mjs android "$@" --json > "$signing_dir/build.json"
+            cp "$(jq -er '.path' "$signing_dir/build.json")" "$artifacts/$output"
+          )
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            build "" android-preview.apk --release --no-install
+          else
+            build "$ANDROID_APK_SIGNING" android-production.apk --release --no-install
+          fi
+          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$artifacts/"*.apk
+          echo 'apk_verified=true' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == push && "$ANDROID_PLAY_CONNECTED" == true ]]; then
+            [[ -n "$ANDROID_PLAY_UPLOAD_SIGNING" ]] || { echo '::error::Play upload signing is not configured'; exit 1; }
+            EXACT_BAKE_OUTPUT="$RUNNER_TEMP/play-bake" build "$ANDROID_PLAY_UPLOAD_SIGNING" android-production.aab --bundle
+            cmp <(jq -Sc '{compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}' "$EXACT_BAKE_OUTPUT"/android-*.build.json) \
+                <(jq -Sc '{compat, binary: .binary.sha256, sourceInputs: .binary.sourceInputs, sources: .graph.sources}' "$RUNNER_TEMP/play-bake"/android-*.build.json)
+          fi
+      - name: Upload Android artifacts
+        if: ${{ !cancelled() && steps.android-build.outputs.apk_verified == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-${{ github.event_name == 'push' && 'production' || 'preview' }}
+          path: |
+            ${{ runner.temp }}/android-artifacts/*.apk
+            ${{ runner.temp }}/android-artifacts/*.aab
+          if-no-files-found: error
+          overwrite: true
+      - name: Seed Android update stream
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" seed android
+
+  ios:
+    name: Build iOS ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    needs: deploy
+    if: needs.deploy.outputs.ios_native == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment:
+      name: ${{ github.event_name == 'push' && 'android-production' || 'android-preview' }}
+      deployment: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXACT_TOOLS_ORIGIN: none
+      CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
+      EXACT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      EXACT_VARIANT: ${{ github.event_name == 'pull_request' && 'preview' || '' }}
+      EXACT_MOBILE_CHANNEL: ${{ needs.deploy.outputs.ios_channel }}
+      EXACT_UPDATE_TRUST: production
+      EXACT_UPDATE_GENESIS: '1'
+      EXACT_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check out pinned setup action
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .exact-action
+          persist-credentials: false
+      - uses: ./.exact-action
+        with:
+          platform: ios
+          ios-sdk-url: ${{ secrets.EXACT_IOS_SDK_URL }}
+          exact-ref: ${{ env.EXACT_REF }}
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install app dependencies
+        working-directory: apps/apps
+        run: |
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+      - name: Set iOS bake output
+        run: echo "EXACT_BAKE_OUTPUT=$RUNNER_TEMP/ios-artifacts/bake" >> "$GITHUB_ENV"
+      - name: Configure iOS updates
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" configure ios
+      - name: Build unsigned iPhone archive
+        working-directory: apps/apps
+        run: |
+          [[ "$CONVEX_ORIGIN" == wss://* ]] || { echo '::error::Invalid Convex WebSocket origin'; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ios-artifacts/bake"
+          bun exact.mjs ios --device --release --unsigned --archive "$RUNNER_TEMP/ios-artifacts/apps.ipa" --json > "$RUNNER_TEMP/ios-artifacts/build.json"
+          python3 "$GITHUB_WORKSPACE/.exact-action/scripts/verify-ios-archive.py" "$RUNNER_TEMP/ios-artifacts/apps.ipa"
+          test -s "$RUNNER_TEMP/ios-artifacts/apps.receipt.json"
+          test -s "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json"
+      - name: Upload iOS archive and build receipts
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-${{ github.event_name == 'push' && 'production' || 'preview' }}
+          path: |
+            ${{ runner.temp }}/ios-artifacts/*.ipa
+            ${{ runner.temp }}/ios-artifacts/*.receipt.json
+          if-no-files-found: error
+          overwrite: true
+      - name: Publish iPhone install link
+        working-directory: ${{ runner.temp }}
+        run: |
+          private_dir=$(mktemp -d "$RUNNER_TEMP/appdrop.XXXXXX")
+          trap 'rm -rf "$private_dir"' EXIT
+          if ! npx --yes appdrop@0.8 "$RUNNER_TEMP/ios-artifacts/apps.ipa" --json > "$private_dir/result.json" 2> "$private_dir/log"; then
+            echo '::error::AppDrop upload failed'; exit 1
+          fi
+          url=$(node -e 'const fs=require("fs"); try {const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const u=new URL(v.url);if(u.protocol!=="https:"||!["appdrop.app","www.appdrop.app"].includes(u.hostname)||u.port||u.username||u.password||u.search||u.hash||!/^\/d\/[A-Za-z0-9]+\/?$/.test(u.pathname))process.exit(1);process.stdout.write(u.origin+u.pathname.replace(/\/$/,""))}catch{process.exit(1)}' "$private_dir/result.json") || { echo '::error::AppDrop returned an invalid install URL'; exit 1; }
+          printf '[Install the iPhone app](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Seed iOS update stream
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: bun "$GITHUB_WORKSPACE/.exact-action/scripts/mobile-updates.mjs" seed ios
