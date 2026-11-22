@@ -13,6 +13,10 @@ export default defineSchema(
         subFieldOne: v.array(v.number()),
       }),
     }),
+    counters: defineTable({
+      name: v.literal("shared"),
+      count: v.number(),
+    }).index("by_name", ["name"]),
   },
   // If you ever get an error about schema mismatch
   // between your data and your schema, and you cannot
