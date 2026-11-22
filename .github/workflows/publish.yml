@@ -3,15 +3,13 @@ on:
   workflow_call:
     inputs:
       exact-ref:
-        required: true
+        required: false
         type: string
+        default: 28f071ca1b04fb4af90af965bab5241fa26d037a
       bun-version:
-        required: true
+        required: false
         type: string
-      producer-ref:
-        description: Pinned exact-setup source commit
-        required: true
-        type: string
+        default: '1.4.4'
   workflow_dispatch:
     inputs:
       exact-ref:
@@ -36,7 +34,7 @@ jobs:
           - platform: android
             runner: ubuntu-24.04
           - platform: ios
-            runner: xcode-27
+            runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -46,8 +44,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          repository: disposabl-dev/exact-setup
-          ref: ${{ inputs.producer-ref || github.sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:

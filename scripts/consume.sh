@@ -3,7 +3,7 @@ set -euo pipefail
 [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ ]] || { echo 'exact-ref must be a full lowercase commit SHA' >&2; exit 1; }
 [[ "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 [[ "$SETUP_RELEASE_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || exit 1
-case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;; *) echo 'Unsupported platform/runner combination' >&2; exit 1;; esac
+case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in web:Linux:X64|android:Linux:X64|ios:macOS:ARM64|ios:Linux:X64) ;; *) echo 'Unsupported platform/runner combination' >&2; exit 1;; esac
 command -v zstd >/dev/null || { if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
 asset="exact-${SETUP_EXACT_REF}-${SETUP_PLATFORM}-${RUNNER_OS}-${RUNNER_ARCH}-bun-${SETUP_BUN_VERSION}.tar.zst"
 format=$(cat "$SETUP_ACTION_DIR/bundle-version")
@@ -37,7 +37,10 @@ echo "EXACT=$EXACT" >> "$GITHUB_ENV"
 if [[ "$SETUP_PLATFORM" == web ]]; then
   echo "EXACT_PUBLISH_TOOLS=$HOME/.cache/exact/publisher/${SETUP_EXACT_REF}" >> "$GITHUB_ENV"
 fi
-if [[ "$SETUP_PLATFORM" == ios ]]; then
+if [[ "$SETUP_PLATFORM:$RUNNER_OS" == ios:Linux ]]; then
+  bash "$SETUP_ACTION_DIR/scripts/ios-linux-tools.sh"
+  bash "$SETUP_ACTION_DIR/scripts/ios-linux-sdk.sh"
+elif [[ "$SETUP_PLATFORM" == ios ]]; then
   if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
     export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer
     echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"

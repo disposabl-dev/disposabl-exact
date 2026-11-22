@@ -19,6 +19,8 @@ else
     (set +o pipefail; yes | "$sdkmanager" --licenses >/dev/null)
     "$sdkmanager" --install 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.3.13750724'
     targets=(x86_64-unknown-linux-gnu aarch64-linux-android)
+  elif [[ "$RUNNER_OS" == Linux ]]; then
+    targets=(x86_64-unknown-linux-gnu aarch64-apple-ios aarch64-apple-ios-sim)
   else
     targets=(aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim)
   fi

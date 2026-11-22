@@ -10,6 +10,9 @@ inputs:
   bun-version:
     default: '1.4.4'
     description: Bun version
+  ios-sdk-url:
+    default: ''
+    description: Private HTTPS URL to a tar.gz containing darwin.artifactbundle
   release-repo:
     default: disposabl-dev/disposabl-exact
     description: Repository holding setup releases
@@ -49,9 +52,14 @@ runs:
       shell: bash
       env:
         SETUP_PLATFORM: ${{ inputs.platform }}
+        EXACT_IOS_SDK_URL: ${{ inputs.ios-sdk-url }}
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
         SETUP_RELEASE_REPO: ${{ inputs.release-repo }}
         SETUP_ACTION_DIR: ${{ github.action_path }}
         GH_TOKEN: ${{ github.token }}
       run: bash "$SETUP_ACTION_DIR/scripts/consume.sh"
+    - name: Check iOS cross toolchain
+      if: inputs.platform == 'ios' && runner.os == 'Linux'
+      shell: bash
+      run: cd "$EXACT" && bun scripts/exact.mjs setup --check --platform ios --device
