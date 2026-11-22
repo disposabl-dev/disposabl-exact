@@ -36,7 +36,7 @@ Web uploads to Convex Static Hosting on every deployment. Android and iOS use Ex
 
 Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. Clones download the published bundles on their first deployment and cache them for later runs.
 
-The warm deployment target is one minute including queueing and transfers.
+The one-minute target covers web deployment and compatible mobile updates, including queueing and transfers.
 
 ### Android App Bundles and Google Play
 
