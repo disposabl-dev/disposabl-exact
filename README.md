@@ -56,12 +56,14 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 Exact follows the browser or device language at launch and falls back to English. The language picker can override it locally and can return to the device language. Arabic inherits Exact's right-to-left layout.
 
-Put app-authored copy in `apps/apps/strings/{en,ar,hi}.json` and render it with `t("key")`. Pass structured status or error codes from the data module and choose the localized message in Contract. The PR localization check uses Exact's parser to flag raw copy in Contract views, including options, accessibility labels, and input placeholders. It also rejects missing, blank, or extra catalog entries and requires the same message placeholders in every translation. Keep user content and server data separate from app-authored strings.
+Put app-authored copy in `apps/apps/strings/<locale>.json` and render it with `t("key")`. Write placeholders as `{name}` in the catalog and supply them with `t("key", name=value)`. Exact also accepts the MessageFormat 2 spelling `{$name}`. Pass error codes from the data module and map them to literal translation keys in `authErrorText` in Contract. Add a mapping there when an auth code needs its own message.
 
-Run the check locally from the repository root with the Rust toolchain in the Exact checkout's `rust-toolchain.toml`.
+To add a language, add its catalog and a `LanguageChoice` in `app.contract`. Write the picker label in the language itself so people can find it from any locale. The installed app name comes from `app.json` and uses the same name across locales at this Exact version.
+
+Exact validates translation calls and catalog syntax when it compiles the app. From `apps/apps`, run the Contract tests to check language switching, persistence, and fallback.
 
 ```sh
-cargo +1.99.1 run --locked --manifest-path apps/apps/tools/localization/Cargo.toml
+bun exact.mjs test web
 ```
 
 ## Monorepo layout

@@ -29,3 +29,9 @@ command confused you, record it: `bun exact.mjs feedback note "<what happened>"`
 exact2's commit and the last exit code, never output or code. `bun exact.mjs feedback status` says
 whether notes are sent and whether to keep a diary; under `never`, skip all of this.
 <!-- exact:end -->
+
+## Translations
+
+- Use `t("key")` for app-authored UI copy in Contract, including headings, buttons, errors, placeholders, and accessibility labels. Add or update the key in every catalog under `strings/`.
+- Use `{name}` for placeholders in catalog messages and pass the value as `t("key", name=value)`. Keep the same placeholder names in every language.
+- Render user content as data. Map application error codes to literal `t()` keys in Contract. Write picker language names in each language itself in the `LanguageChoice` list.

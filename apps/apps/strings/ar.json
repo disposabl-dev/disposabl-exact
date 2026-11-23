@@ -42,9 +42,6 @@
   "counter.saveFailed": "تعذّر حفظ العدد. حاول مرة أخرى.",
   "counter.saving": "جارٍ الحفظ…",
   "counter.title": "العدّاد المباشر",
-  "language.ar": "العربية",
-  "language.en": "English",
-  "language.hi": "हिन्दी",
   "language.picker": "اللغة، {name}",
   "language.system": "استخدام لغة الجهاز"
 }

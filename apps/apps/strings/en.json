@@ -42,9 +42,6 @@
   "counter.saveFailed": "Could not save the count. Try again.",
   "counter.saving": "Saving…",
   "counter.title": "Live counter",
-  "language.ar": "العربية",
-  "language.en": "English",
-  "language.hi": "हिन्दी",
   "language.picker": "Language, {name}",
   "language.system": "Use device language"
 }

@@ -6,6 +6,10 @@ use ConvexLive from "@exact/convex"
 shape Language
   resolvedLocale: string
 
+shape LanguageChoice
+  tag: string
+  label: string
+
 shape Counter
   count: number
 
@@ -28,6 +32,8 @@ style LanguagePanel
   padding=12 gap=4 border-radius=14
   background-color="-exact-secondary-background"
 
+// Exact checks literal t() keys at compile time. Map the codes from auth.ts
+// here so new errors get a localized message and unknown codes fall back safely.
 fn authErrorText(code: string): string = (
   code == "session-check" ? t("auth.error.sessionCheck") :
   code == "session-update" ? t("auth.error.sessionUpdate") :
@@ -49,7 +55,16 @@ fn authErrorText(code: string): string = (
 
 component Apps
   resource language = exactTime() as shape Language
-  derive languageName = language.resolvedLocale == "ar" ? t("language.ar") : language.resolvedLocale == "hi" ? t("language.hi") : t("language.en")
+  derive defaultLanguage = LanguageChoice(tag="en", label="English")
+  derive languages = [
+    defaultLanguage,
+    LanguageChoice(tag="ar", label="العربية"),
+    LanguageChoice(tag="hi", label="हिन्दी"),
+  ]
+  derive languageName = match first(languages.filter(choice => choice.tag == language.resolvedLocale)) {
+    case some(choice) => choice.label,
+    case none => defaultLanguage.label
+  }
   state languageOpen = false
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
@@ -180,14 +195,11 @@ component Apps
               column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
                 button press=toggleLanguage aria-label=t("language.picker", name=languageName) aria-expanded=languageOpen testId="language-picker"
                   image "symbol:translate"
-                  text languageName
+                  text languageName testId="language-name"
                 if languageOpen
-                  button press=chooseLanguage("en") aria-pressed=(language.resolvedLocale == "en") testId="language-en"
-                    text t("language.en")
-                  button press=chooseLanguage("ar") aria-pressed=(language.resolvedLocale == "ar") testId="language-ar"
-                    text t("language.ar")
-                  button press=chooseLanguage("hi") aria-pressed=(language.resolvedLocale == "hi") testId="language-hi"
-                    text t("language.hi")
+                  for choice in languages key=choice.tag
+                    button press=chooseLanguage(choice.tag) aria-pressed=(language.resolvedLocale == choice.tag) testId=`language-${choice.tag}`
+                      text choice.label
                   button press=chooseLanguage("") testId="language-system"
                     text t("language.system")
               column gap=10 width="100%" max-width="26.25rem"

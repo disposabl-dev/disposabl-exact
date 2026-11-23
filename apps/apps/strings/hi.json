@@ -42,9 +42,6 @@
   "counter.saveFailed": "गिनती सेव नहीं हो सकी। फिर कोशिश करें।",
   "counter.saving": "सेव हो रहा है…",
   "counter.title": "लाइव काउंटर",
-  "language.ar": "العربية",
-  "language.en": "English",
-  "language.hi": "हिन्दी",
   "language.picker": "भाषा, {name}",
   "language.system": "डिवाइस की भाषा इस्तेमाल करें"
 }
