@@ -79,7 +79,10 @@ case "$mode" in
     ' EXIT
     unzip -p "$archive" compiler-key > "$bundle/compiler-key"
     # The pinned ZIP digest authenticates its header and the entire encrypted entry.
-    unzip -p "$archive" compiler.tar.zst.enc       | openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000           -pass "file:$RUNNER_TEMP/ios-cache-passphrase"       | zstd -dc | tar --no-same-owner -xf - -C "$staged"
+    unzip -p "$archive" compiler.tar.zst.enc \
+      | openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 \
+          -pass "file:$RUNNER_TEMP/ios-cache-passphrase" \
+      | zstd -dc | tar --no-same-owner -xf - -C "$staged"
     if [[ "$mode" == stage ]]; then
       keep_staged=true
       exit
