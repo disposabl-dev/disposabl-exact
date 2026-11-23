@@ -14,6 +14,9 @@ bun "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/configure-app.mjs"
 ipa="$dir/apps.ipa"
 mkdir -p "$(dirname "$ipa")"
 if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
+  if [[ "${GITHUB_REF_NAME:-}" == *-ios-cache-sticky-read ]]; then
+    export CARGO_LOG=cargo::core::compiler::fingerprint=info
+  fi
   export IOS_REAL_CARGO=$(command -v cargo)
   export IOS_EVIDENCE_PUBLIC_SEED=1 IOS_EVIDENCE_DIR="$dir/cargo-evidence"
   mkdir -p "$dir/capture-bin"
