@@ -92,7 +92,7 @@ jobs:
         if: env.EXACT_IOS_COMPILER_DISK_MODE != ''
         uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
         with:
-          key: exact-ios-compiler-${{ steps.pin.outputs.ios-cache-digest }}
+          key: exact-ios-compiler-${{ env.EXACT_IOS_SWIFT_CACHE == 'true' && steps.pin.outputs.ios-cas-cache-digest || steps.pin.outputs.ios-cache-digest }}
           path: /tmp/exact-ios-compiler-disk
       - name: Install Linux compiler tools
         run: |
