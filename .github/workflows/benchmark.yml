@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON(endsWith(github.ref_name, '-suite') && '["paperstack","trail","field","aperture","voice","template"]' || (contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
+        app: ${{ fromJSON(endsWith(github.ref_name, '-suite') && '["paperstack","trail","field","aperture","voice","template"]' || contains(github.ref_name, '-full-catalog-voice-') && '["voice"]' || (contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
         target: ${{ fromJSON(contains(github.ref_name, '-together') && '["both"]' || contains(github.ref_name, '-split') && '["android","ios"]' || contains(github.ref_name, '-macos') && '["macos"]' || '["ios"]') }}
     env:
       SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
