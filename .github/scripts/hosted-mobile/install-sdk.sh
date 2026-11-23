@@ -19,11 +19,44 @@ printf '%s\n' "${material[0]}" > "$private/passphrase"
 curl -fSs --retry 3 --max-time 240 "$SDK_RELAY/sdk.tar.zst.enc" -o "$private/sdk.enc"
 printf '%s  %s\n' "${material[1]}" "$private/sdk.enc" | sha256sum -c -
 openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/sdk.enc" \
-  | zstd -dc | tar --no-same-owner -xf - -C "$private"
+  | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
 xtool --version
 xtool sdk install "$private/darwin.xtoolsdk"
 xtool sdk status
-sdk=${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/swiftpm}
-sdk="${sdk:-$HOME/.swiftpm}/swift-sdks/darwin.artifactbundle"
-jq -e '.targetTriples["arm64-apple-ios"].sdkRootPath' "$sdk/swift-sdk.json" >/dev/null
+sdk="${XDG_CONFIG_HOME:-$HOME/.config}/xtool/darwin.xtoolsdk"
+# Pinned Exact expects the Swift SDK JSON that xTool 1 wrote. Point it at the
+# corresponding files installed by xTool 2 without altering the compiler.
+python3 - "$sdk" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+developer = root / "Xcode.app/Contents/Developer"
+resources = developer / "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift"
+assert (resources / "clang/lib/darwin/libclang_rt.ios.a").is_file()
+target_triples = {}
+for platform, target in (("iPhoneOS", "arm64-apple-ios"), ("MacOSX", "arm64-apple-macosx")):
+    platform_developer = developer / "Platforms" / f"{platform}.platform" / "Developer"
+    sdk_root, = platform_developer.glob(f"SDKs/{platform}[0-9]*.sdk")
+    assert (sdk_root / "SDKSettings.json").is_file()
+    server = platform_developer / "usr/bin/swift-plugin-server"
+    server.parent.mkdir(parents=True, exist_ok=True)
+    if not server.exists():
+        server.symlink_to(root / "toolset/bin/OpenAppleMacrosServer")
+    target_triples[target] = {
+        "sdkRootPath": str(sdk_root.relative_to(root)),
+        "swiftResourcesPath": str(resources.relative_to(root)),
+        "swiftStaticResourcesPath": str(resources.with_name("swift_static").relative_to(root)),
+        "toolsetPaths": ["toolset.json"],
+    }
+(root / "swift-sdk.json").write_text(json.dumps({"schemaVersion": "4.0", "targetTriples": target_triples}))
+(root / "toolset.json").write_text(json.dumps({
+    "schemaVersion": "1.0",
+    "rootPath": "toolset/bin",
+    "linker": {"path": "ld64.lld"},
+    "librarian": {"path": "llvm-lib"},
+    "swiftCompiler": {"extraCLIOptions": ["-Xfrontend", "-enable-cross-import-overlays", "-use-ld=lld"]},
+}))
+PYTHON
 printf 'EXACT_APPLE_SDK=%s\n' "$sdk" >> "$GITHUB_ENV"
