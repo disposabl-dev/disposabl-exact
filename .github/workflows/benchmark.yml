@@ -2,7 +2,7 @@ name: Benchmark Exact builds
 
 on:
   push:
-    branches: [ci/exact-ubuntu-benchmark]
+    branches: [ci/exact-ubuntu-benchmark, ci/exact-ubuntu-web-verify, ci/exact-boat-benchmark]
   workflow_dispatch:
     inputs:
       runner:
@@ -50,8 +50,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
-        platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || '["web","android"]') }}
+        runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || github.ref_name == 'ci/exact-boat-benchmark' && '["boat-large"]' || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
+        platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || github.ref_name == 'ci/exact-ubuntu-web-verify' && '["web"]' || '["web","android"]') }}
         app:
           - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
           - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 30806e698e0c2f888ced2d758fedfb6e25246013}
@@ -100,7 +100,7 @@ jobs:
       - name: Run feature smoke test
         if: matrix.platform == 'web'
         working-directory: fixture/apps/apps
-        run: bun exact.mjs test web
+        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/test-web.sh"
       - name: Prepare APK signing
         if: matrix.platform == 'android'
         run: |
