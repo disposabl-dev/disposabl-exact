@@ -1,31 +1,31 @@
 name: Exact setup
-description: Restore the published Exact build caches, or build the tools for a new release.
+description: Install or publish pinned Exact tools for the selected runner
 inputs:
   platform:
+    required: true
     description: web, android, ios, or ios-linux
-    required: true
   exact-ref:
-    description: Exact SDK commit SHA
     required: true
+    description: Full Exact commit SHA
   bun-version:
-    description: Bun version
     default: '1.4.5'
+    description: Bun version
   bundle-version:
     description: Published setup bundle version
-    default: '10'
+    default: '9'
   bun-ready:
     description: Bun is already installed at the selected version
     default: 'false'
   mode:
-    description: consume a published bundle or build its tools
     default: consume
+    description: consume a release or build its bundle
 outputs:
   exact-path:
-    description: Path to the Exact SDK
-    value: ${{ steps.setup.outputs.exact-path }}
+    value: ${{ steps.checkout-exact.outputs.exact-path }}
+    description: Path to Exact checkout
   source:
+    value: ${{ steps.consume.outputs.source }}
     description: cache or release
-    value: ${{ steps.setup.outputs.source }}
 runs:
   using: composite
   steps:
@@ -34,34 +34,80 @@ runs:
       with:
         bun-version: ${{ inputs.bun-version }}
     - uses: actions/checkout@v7.0.1
-      if: inputs.mode == 'build'
+      if: inputs.mode == 'build' || fromJSON(inputs.bundle-version) < 6
       with:
         repository: expo/exact
         ref: ${{ inputs.exact-ref }}
         path: .exact-sdk
         persist-credentials: false
-    - name: Cache the web tools archive
-      if: inputs.mode == 'consume' && inputs.platform == 'web'
-      uses: actions/cache@v6.1.0
-      with:
-        path: ${{ runner.temp }}/exact-bundles
-        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-web-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}
-    - id: android-sdk
-      if: inputs.platform == 'android'
-      shell: bash
-      run: |
-        if [[ ! -x "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" ]]; then
-          echo 'install=true' >> "$GITHUB_OUTPUT"
-        fi
-    - uses: android-actions/setup-android@v4.0.4
-      if: steps.android-sdk.outputs.install == 'true'
-    - name: Set up Exact
-      id: setup
+    - id: checkout-exact
       shell: bash
       env:
         SETUP_PLATFORM: ${{ inputs.platform }}
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}
-        SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
         SETUP_MODE: ${{ inputs.mode }}
-      run: bash "$GITHUB_ACTION_PATH/install.sh"
+        SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
+      run: |
+        case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in
+          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64|ios-linux:Linux:X64) ;;
+          *) echo "::error::Unexpected runner for $SETUP_PLATFORM"; exit 1 ;;
+        esac
+        [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]
+        [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+        # Prebuilt publisher tools embed the SDK checkout path used to compile them.
+        exact="$RUNNER_TEMP/exact-sdk"
+        if [[ "$RUNNER_OS" == Linux ]]; then exact="$HOME/work/_temp/exact-sdk"; fi
+        mkdir -p "$(dirname "$exact")"
+        [[ ! -e "$exact" ]]
+        if [[ "$SETUP_MODE" == build || "$SETUP_BUNDLE_VERSION" -lt 6 ]]; then
+          mv "$GITHUB_WORKSPACE/.exact-sdk" "$exact"
+          ln -s "$exact" "$GITHUB_WORKSPACE/.exact-sdk"
+          [[ $(git -C "$exact" rev-parse HEAD) == "$SETUP_EXACT_REF" ]]
+        fi
+        echo "EXACT=$exact" >> "$GITHUB_ENV"
+        echo "exact-path=$exact" >> "$GITHUB_OUTPUT"
+    - name: Restore Exact bundle
+      if: inputs.mode == 'consume' && (inputs.platform == 'web' || fromJSON(inputs.bundle-version) < 6)
+      uses: actions/cache@v6.1.0
+      with:
+        path: ${{ runner.temp }}/exact-bundles
+        key: exact-bundle-v${{ inputs.bundle-version }}-${{ runner.os }}-${{ runner.arch }}-disposabl-dev/disposabl-exact-${{ inputs.platform }}-${{ inputs.exact-ref }}-bun-${{ inputs.bun-version }}${{ inputs.platform == 'android' && '-with-publisher' || '' }}
+    - id: android-sdk
+      if: inputs.mode == 'consume' && inputs.platform == 'android'
+      shell: bash
+      run: |
+        if [[ -z "${ANDROID_HOME:-}" || ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]]; then
+          echo "install=true" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: android-actions/setup-android@v4.0.4
+      if: steps.android-sdk.outputs.install == 'true'
+    - name: Prepare the xTool SDK
+      if: inputs.platform == 'ios-linux' && inputs.mode == 'consume'
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/scripts/setup-linux-ios.sh"
+    - id: consume
+      if: inputs.mode == 'consume'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SETUP_PLATFORM: ${{ inputs.platform }}
+        SETUP_EXACT_REF: ${{ inputs.exact-ref }}
+        SETUP_BUN_VERSION: ${{ inputs.bun-version }}
+        SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
+      run: |
+        if [[ "$SETUP_BUNDLE_VERSION" -ge 6 ]]; then
+          bash "$GITHUB_ACTION_PATH/scripts/restore.sh"
+        else
+          bash "$GITHUB_ACTION_PATH/scripts/consume.sh"
+        fi
+    - name: Build bundle
+      if: inputs.mode == 'build'
+      shell: bash
+      env:
+        SETUP_PLATFORM: ${{ inputs.platform }}
+        SETUP_EXACT_REF: ${{ inputs.exact-ref }}
+        SETUP_BUN_VERSION: ${{ inputs.bun-version }}
+      run: |
+        bash "$GITHUB_ACTION_PATH/scripts/setup.sh"
+        bash "$GITHUB_ACTION_PATH/scripts/pack.sh"

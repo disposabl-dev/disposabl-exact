@@ -3,6 +3,7 @@
 set -euo pipefail
 scripts=$(cd "$(dirname "$0")" && pwd)
 platform=$SETUP_PLATFORM
+app_checkout=${EXACT_APP_CHECKOUT:-$GITHUB_WORKSPACE}
 ref=$SETUP_EXACT_REF
 tag="v${SETUP_BUNDLE_VERSION}-exact-${ref}-bun-$SETUP_BUN_VERSION"
 release="https://github.com/disposabl-dev/disposabl-exact/releases/download/$tag"
@@ -41,7 +42,9 @@ source_tree() {
 }
 source_tree &
 pids=($!)
-bundle="exact-$ref-$platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
+bundle_platform=$platform
+if [[ $platform == ios-linux ]]; then bundle_platform=web; fi
+bundle="exact-$ref-$bundle_platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
 source_kind=release
 if [[ -f "$cache/$bundle" ]]; then source_kind=cache; fi
 extract "$bundle" "$HOME" "$cache/$bundle" &
@@ -66,7 +69,7 @@ case "$platform" in
       asset "$file" "$ios_tools/$file" & pids+=($!)
     done
     ;;
-  web) ;;
+  web|ios-linux) ;;
   *) exit 2 ;;
 esac
 status=0
@@ -108,13 +111,20 @@ if [[ $platform == ios ]]; then
     fi
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
+elif [[ $platform == ios-linux ]]; then
+  (
+    cd "$EXACT"
+    rustup target add aarch64-apple-ios
+    cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target aarch64-apple-ios
+    bun scripts/exact.mjs setup --check --platform ios --device
+  )
 elif [[ $platform == android ]]; then
   # Resolve the pinned host plugins while Exact bakes and compiles Rust. Keep
   # Gradle's project state separate from the real app and its dependency locks.
   (
     prime="$RUNNER_TEMP/gradle-prime"
     cp -R "$EXACT/host/android" "$prime"
-    metadata="$GITHUB_WORKSPACE/apps/apps/gradle-verification.xml"
+    metadata="$app_checkout/apps/apps/gradle-verification.xml"
     if [[ -f "$metadata" ]]; then cp "$metadata" "$prime/gradle/verification-metadata.xml"; fi
     cd "$prime"
     exec ./gradlew --offline --daemon --no-watch-fs --dependency-verification=strict help
@@ -131,7 +141,7 @@ elif [[ $platform == android ]]; then
 fi
 if [[ $platform != web ]]; then
   app="$HOME/exact-native/apps/apps"
-  git worktree add --quiet --detach "$HOME/exact-native" HEAD
+  git -C "$app_checkout" worktree add --quiet --detach "$HOME/exact-native" HEAD
   mkdir -p "$app/.exact"
   ln -s "$EXACT" "$app/.exact/checkout"
   (cd "$app" && bun install --frozen-lockfile)

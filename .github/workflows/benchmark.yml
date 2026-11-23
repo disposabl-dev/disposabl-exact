@@ -18,21 +18,46 @@ permissions:
   contents: read
 
 jobs:
+  tools:
+    name: Wait for the pinned Exact caches
+    runs-on: ubuntu-26.04
+    timeout-minutes: 145
+    outputs:
+      exact-ref: ${{ steps.pin.outputs.exact-ref }}
+      bun-version: ${{ steps.pin.outputs.bun-version }}
+      bundle-version: ${{ steps.pin.outputs.bundle-version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - name: Verify cache publication
+        env:
+          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
+          BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
+          BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
+        run: |
+          python3 .github/actions/exact-setup/scripts/release-manifest.py \
+            "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" \
+            --wait 8400 --producer-sha 82a8a19b779bc6f60012f3994981520707c5523f
+
   build:
     name: ${{ matrix.app.name }} / ${{ matrix.platform }} / ${{ matrix.runner }}
     runs-on: ${{ matrix.runner == 'boat-large' && (vars.EXACT_BOAT_RUNNER || 'boat-large') || matrix.runner }}
     timeout-minutes: 30
+    needs: tools
     strategy:
       fail-fast: false
       matrix:
         runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
         platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || '["web","android"]') }}
         app:
-          - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 8c0d8501ff1d545e77307a4a30331e18d2be841a}
-          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 89e33722664312c29c653cda4a41b915510c657f}
-          - {name: Field Journal, repo: exact-first-field-hosts, ref: d4f38769b2916c4e728f0487d965648d022ee288}
-          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: 76d595c491b5ff4302809aeb03af0e70575fe0cc}
-          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 13c2b03c1a602242f01b0ec4fc966511ab37c792}
+          - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
+          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 30806e698e0c2f888ced2d758fedfb6e25246013}
+          - {name: Field Journal, repo: exact-first-field-hosts, ref: 6e267e6a266d9be6af2351b91614c837ed191c4e}
+          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: b26e698abface1fa97b38da2c27c61a8fde72e47}
+          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 0707cd8eac0b90e34ef1a27c0ee249a9a8595b0d}
     env:
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
@@ -56,7 +81,9 @@ jobs:
           EXACT_XCODE_XIP: ${{ vars.EXACT_XCODE_XIP }}
         with:
           platform: ${{ matrix.platform }}
-          exact-ref: a55c5581c7e1a62cdee1f09367ea2909c74c7292
+          exact-ref: ${{ needs.tools.outputs.exact-ref }}
+          bun-version: ${{ needs.tools.outputs.bun-version }}
+          bundle-version: ${{ needs.tools.outputs.bundle-version }}
       - name: Install web dependencies
         if: matrix.platform == 'web'
         working-directory: fixture/apps/apps
@@ -70,6 +97,10 @@ jobs:
         run: |
           bun exact.mjs web-build --out dist
           test -s dist/index.html
+      - name: Run feature smoke test
+        if: matrix.platform == 'web'
+        working-directory: fixture/apps/apps
+        run: bun exact.mjs test web
       - name: Prepare APK signing
         if: matrix.platform == 'android'
         run: |
