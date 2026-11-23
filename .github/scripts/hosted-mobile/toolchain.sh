@@ -12,8 +12,15 @@ fi
 
 system=()
 if [[ "$(id -u)" != 0 ]]; then system=(sudo); fi
-"${system[@]}" apt-get update -qq
-"${system[@]}" apt-get install -y -qq --no-install-recommends   ca-certificates curl git jq python3 unzip zip zstd openssl gnupg build-essential pkg-config libssl-dev
+bootstrap=false
+for tool in curl git jq python3 unzip zip zstd openssl gpg gcc make pkg-config; do
+  command -v "$tool" >/dev/null || bootstrap=true
+done
+if [[ "$bootstrap" == true ]] || ! pkg-config --exists openssl; then
+  "${system[@]}" apt-get update -qq
+  "${system[@]}" apt-get install -y -qq --no-install-recommends \
+    ca-certificates curl git jq python3 unzip zip zstd openssl gnupg build-essential pkg-config libssl-dev
+fi
 if ! command -v rustup >/dev/null; then
   "${system[@]}" apt-get install -y -qq --no-install-recommends rustup
   mkdir -p "$HOME/.cargo/bin"

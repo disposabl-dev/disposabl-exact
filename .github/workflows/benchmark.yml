@@ -27,8 +27,8 @@ jobs:
       BENCHMARK_TARGET: ${{ matrix.target }}
       EXACT_TOOLS_ORIGIN: none
       EXACT_IOS_CACHE_PROBE: ${{ contains(github.ref_name, '-ios-cache') }}
-      EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') || endsWith(github.ref_name, '-ios-cache-publish') || endsWith(github.ref_name, '-ios-cache-suite') }}
-      EXACT_IOS_CACHE_MODE: ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' || endsWith(github.ref_name, '-ios-cache-suite') && 'restore' || '' }}
+      EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') || endsWith(github.ref_name, '-ios-cache-publish') || endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite') }}
+      EXACT_IOS_CACHE_MODE: ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' || (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite')) && 'restore' || '' }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
