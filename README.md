@@ -52,6 +52,18 @@ Android and iOS use the system browser for Google. The Convex callback returns t
 
 Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend` against an isolated local deployment. Set `EXPECT_GOOGLE=0` or `EXPECT_GOOGLE=1` to assert the expected Google configuration.
 
+### Translations
+
+Exact follows the browser or device language at launch and falls back to English. The language picker can override it locally and can return to the device language. Arabic inherits Exact's right-to-left layout.
+
+Put app-authored copy in `apps/apps/strings/{en,ar,hi}.json` and render it with `t("key")`. Pass structured status or error codes from the data module and choose the localized message in Contract. The Exact compiler validates keys and placeholders. The PR localization check uses Exact's parser to flag raw UI text, including accessibility labels and placeholders, and rejects missing, blank, or extra catalog entries.
+
+Run the check locally from the repository root with the Rust toolchain in the Exact checkout's `rust-toolchain.toml`.
+
+```sh
+cargo +1.99.1 run --locked --manifest-path apps/apps/tools/localization/Cargo.toml
+```
+
 ## Monorepo layout
 
 - `apps/apps` for the Exact app
