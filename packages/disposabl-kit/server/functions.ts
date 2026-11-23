@@ -13,12 +13,9 @@ import {
 } from "convex/server";
 import type {
   GenericValidator,
-  JSONValue,
   PropertyValidators,
   Value,
 } from "convex/values";
-import { convexToJson } from "convex/values";
-import * as z from "zod/v4";
 
 export interface ServerTypes {}
 
@@ -41,6 +38,7 @@ function withPlatforms<Definition, Registered extends object>(
     Object.assign(builder(definition), {
       platforms: definition.platforms,
       platformArgs: definition.args,
+      platformReturns: definition.returns,
     });
 }
 
@@ -53,20 +51,66 @@ export const internalQuery = withPlatforms(query);
 export const internalMutation = withPlatforms(mutation);
 export const internalAction = withPlatforms(action);
 
-export type PlatformDefinition = {
-  [Kind in FunctionType]: {
-    kind: Kind;
-    reference: FunctionReference<Kind, "internal">;
-    inputSchema: z.core.JSONSchema.ObjectSchema;
+type PlatformValidators = {
+  args: PropertyValidators;
+  returns: GenericValidator;
+};
+
+export function getPlatformValidators(
+  fn: unknown,
+  id: string,
+): PlatformValidators {
+  const definition = fn as {
+    platforms?: true;
+    platformArgs?: PropertyValidators;
+    platformReturns?: GenericValidator;
   };
-}[FunctionType];
+  if (
+    definition.platforms !== true ||
+    !definition.platformArgs ||
+    !definition.platformReturns
+  )
+    throw new Error(
+      `${id}: use an internal builder from @disposabl-kit/server with platforms: true`,
+    );
+  const { userId, ...args } = definition.platformArgs;
+  if (
+    userId?.kind !== "id" ||
+    userId.tableName !== "users" ||
+    userId.isOptional !== "required"
+  )
+    throw new Error(`${id}: platform functions require userId: v.id("users")`);
+  return { args, returns: definition.platformReturns };
+}
+
+export type PlatformDefinition = PlatformValidators &
+  {
+    [Kind in FunctionType]: {
+      kind: Kind;
+      reference: FunctionReference<Kind, "internal">;
+    };
+  }[FunctionType];
 
 export type PlatformOperation = PlatformDefinition & {
   name: string;
   description: string;
   path: `/api/${string}`;
-  input: z.ZodType<Record<string, unknown>>;
 };
+
+type PlatformCaller = {
+  userId: string;
+  scopes: readonly string[];
+  clientId?: string;
+};
+
+export type AuthenticatePlatform = (
+  ctx: GenericActionCtx<GenericDataModel>,
+  request: Request,
+) => Promise<PlatformCaller | null>;
+
+export function platformScope(operation: PlatformOperation) {
+  return operation.kind === "query" ? "read" : "write";
+}
 
 export function createPlatformOperations(
   definitions: readonly PlatformDefinition[],
@@ -78,9 +122,6 @@ export function createPlatformOperations(
       name: id.replace(/[^A-Za-z0-9_.-]/g, "_"),
       description: `Call ${id}.`,
       path: `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}`,
-      input: z.fromJSONSchema(
-        definition.inputSchema,
-      ) as PlatformOperation["input"],
     };
   });
 }
@@ -89,18 +130,15 @@ export async function runPlatformOperation(
   ctx: GenericActionCtx<GenericDataModel>,
   operation: PlatformOperation,
   args: Record<string, unknown>,
-): Promise<JSONValue> {
-  let result: Value;
+  userId: string,
+): Promise<Value> {
+  const input = { ...args, userId };
   switch (operation.kind) {
     case "query":
-      result = await ctx.runQuery(operation.reference, args);
-      break;
+      return ctx.runQuery(operation.reference, input);
     case "mutation":
-      result = await ctx.runMutation(operation.reference, args);
-      break;
+      return ctx.runMutation(operation.reference, input);
     case "action":
-      result = await ctx.runAction(operation.reference, args);
-      break;
+      return ctx.runAction(operation.reference, input);
   }
-  return convexToJson(result);
 }

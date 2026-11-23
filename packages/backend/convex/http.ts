@@ -1,14 +1,13 @@
 import { httpCookies, isTokenExpiring, type HttpCookies, type TokenBundle } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { registerApi } from "@disposabl-kit/server/api";
-import { createPlatformOperations } from "@disposabl-kit/server";
-import { registerMcp } from "@disposabl-kit/server/mcp";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
 import config from "../../../disposabl.json";
-import platformDefinitions from "../generated/platforms";
 import { api, components, internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
+import { mcp, platformOperations } from "./mcp";
+import { registerConsentPage, registerCredentialsPage } from "./platformPages";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, siteOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
@@ -64,9 +63,19 @@ async function readBody(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-async function viewer(accessToken: string) {
-  const client = new ConvexHttpClient(env.CONVEX_CLOUD_URL, { auth: accessToken, logger: false });
-  return client.query(api.auth.viewer, {});
+const authClient = (accessToken: string) =>
+  new ConvexHttpClient(env.CONVEX_CLOUD_URL, { auth: accessToken, logger: false });
+
+function viewer(accessToken: string) {
+  return authClient(accessToken).query(api.auth.viewer, {});
+}
+
+async function platformSession(request: Request) {
+  const active = readSession(await httpCookies(request).get(cookieName));
+  if (!active) return null;
+  const client = authClient(active.accessToken);
+  const account = await client.query(api.auth.viewer, {}).catch(() => null);
+  return account ? { client, name: account.name } : null;
 }
 
 const session = httpAction(async (ctx, request) => {
@@ -187,13 +196,18 @@ const webReturn = httpAction(async (ctx) => {
 
 const http = httpRouter();
 const platforms: readonly string[] = config.platforms;
-const platformOperations = createPlatformOperations(Object.values(platformDefinitions));
 
 http.route({ path: "/api/auth/web", method: "POST", handler: session });
 http.route({ path: "/api/auth/native", method: "POST", handler: session });
 http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
 http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
-if (platforms.includes("api")) registerApi(http, platformOperations);
-if (platforms.includes("mcp")) registerMcp(http, platformOperations);
+const authenticate = mcp.authenticate.bind(mcp);
+if (platforms.includes("api")) registerApi(http, platformOperations, authenticate);
+if (platforms.includes("mcp")) {
+  mcp.registerRoutes(http);
+  registerConsentPage(http, platformSession);
+}
+if (platforms.includes("api") || platforms.includes("mcp"))
+  registerCredentialsPage(http, platformSession);
 registerStaticRoutes(http, components.staticHosting);
 export default http;

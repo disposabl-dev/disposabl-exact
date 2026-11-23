@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@convex-dev/auth": "2.1.0",
+    "@convex-dev/mcp": "0.1.0-alpha.7",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
     "@disposabl-kit/server": "file:../disposabl-kit",
@@ -25,10 +26,8 @@
     "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/parser": "^8.66.0",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "convex-helpers": "^0.1.136",
     "eslint": "^10.8.0",
     "globals": "^17.9.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "zod": "^4.2.0"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }

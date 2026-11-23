@@ -22,7 +22,7 @@ export const get = query({
 
 export const current = internalQuery({
   platforms: true,
-  args: {},
+  args: { userId: v.id("users") },
   returns: counterResult,
   handler: readCounter,
 });

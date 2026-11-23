@@ -54,7 +54,9 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 ### API and MCP
 
-Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose that function through the selected transports after redeploying Convex. These endpoints are public. Only opt in operations intended for public access.
+Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
+
+Sign in to Exact and visit `/api-keys` to create or revoke a key. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 
 - Queries use GET. Pass named arguments as query parameters, using plain text for string fields and JSON for other values.
 - Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.

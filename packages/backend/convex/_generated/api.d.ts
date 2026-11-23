@@ -12,7 +12,9 @@ import type * as auth from "../auth.js";
 import type * as authSettings from "../authSettings.js";
 import type * as counter from "../counter.js";
 import type * as http from "../http.js";
+import type * as mcp from "../mcp.js";
 import type * as myFunctions from "../myFunctions.js";
+import type * as platformPages from "../platformPages.js";
 
 import type {
   ApiFromModules,
@@ -25,7 +27,9 @@ declare const fullApi: ApiFromModules<{
   authSettings: typeof authSettings;
   counter: typeof counter;
   http: typeof http;
+  mcp: typeof mcp;
   myFunctions: typeof myFunctions;
+  platformPages: typeof platformPages;
 }>;
 
 /**
@@ -60,4 +64,5 @@ export declare const components: {
   authPassword: import("@convex-dev/auth/components/password/_generated/component.js").ComponentApi<"authPassword">;
   authUsername: import("@convex-dev/auth/components/username/_generated/component.js").ComponentApi<"authUsername">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  mcp: import("@convex-dev/mcp/_generated/component.js").ComponentApi<"mcp">;
 };
