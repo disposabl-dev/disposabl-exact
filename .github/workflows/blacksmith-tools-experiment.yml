@@ -29,7 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           start=$SECONDS
-          docker build -f .github/scripts/hosted-mobile/Dockerfile.ios-tools \
+          docker build --secret id=builder_tls,src=/etc/ssl/certs/ca-certificates.crt \
+            -f .github/scripts/hosted-mobile/Dockerfile.ios-tools \
             -t exact-ios-tools:experiment .github/scripts/hosted-mobile
           echo "Image build: $((SECONDS-start))s"
           start=$SECONDS
