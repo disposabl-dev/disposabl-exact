@@ -1,0 +1,18 @@
+name: Blacksmith runner identity
+on:
+  push:
+    branches: [ci/blacksmith-identity]
+permissions: {}
+jobs:
+  identity:
+    runs-on: blacksmith-8vcpu-ubuntu-2604
+    steps:
+      - name: Inspect build toolchain
+        run: |
+          java -version
+          java -XshowSettings:properties -version 2>&1 | grep -E 'java.vendor =|java.version =|java.home ='
+          command -v java
+          readlink -f "$(command -v java)"
+          printf 'JAVA_HOME=%s\nANDROID_HOME=%s\nANDROID_SDK_ROOT=%s\n' "${JAVA_HOME:-unset}" "${ANDROID_HOME:-unset}" "${ANDROID_SDK_ROOT:-unset}"
+          if [[ -n ${ANDROID_HOME:-} ]]; then ls -ld "$ANDROID_HOME" "$ANDROID_HOME"/platforms/android-37.2 "$ANDROID_HOME"/build-tools/37.0.0 "$ANDROID_HOME"/ndk/27.3.13750724 2>&1 || true; fi
+          if command -v gradle >/dev/null; then gradle --version; else echo 'No global Gradle'; fi
