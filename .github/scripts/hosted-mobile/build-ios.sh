@@ -6,18 +6,7 @@ export EXACT_UPDATE_GENESIS=1 EXACT_UPDATE_TRUST=production
 export EXACT_BAKE_OUTPUT="$RUNNER_TEMP/ios-bake"
 export CARGO_TARGET_DIR="$RUNNER_TEMP/ios-target"
 unset CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS CARGO_PROFILE_BALANCED_LTO CARGO_PROFILE_SIZE_LTO
-bun -e '
-  import { generateKeyPairSync } from "node:crypto";
-  const { publicKey } = generateKeyPairSync("ed25519");
-  const key = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64");
-  const app = await Bun.file("app.json").json();
-  app.deploy ??= {};
-  app.deploy.store = { ...app.deploy.store, android: "A", ios: "A", macos: "A" };
-  app.deploy.signing = { key: "benchmark", keys: { benchmark: key } };
-  app.deploy.channel = "benchmark";
-  app.deploy.channels = { benchmark: "appdrop" };
-  await Bun.write("app.json", JSON.stringify(app, null, 2) + "\n");
-'
+bun "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/configure-app.mjs"
 ipa="$RUNNER_TEMP/verified-ios/apps.ipa"
 mkdir -p "$(dirname "$ipa")"
 bun exact.mjs ios --device --release --unsigned --no-install --archive "$ipa"

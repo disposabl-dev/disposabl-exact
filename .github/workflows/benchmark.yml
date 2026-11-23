@@ -1,17 +1,17 @@
-name: Benchmark hosted Ubuntu iOS
+name: Benchmark hosted Ubuntu native builds
 
 on:
   push:
-    branches: [ci/hosted-ubuntu-mobile, ci/hosted-ubuntu-mobile-github, ci/hosted-ubuntu-mobile-boat]
+    branches: ['ci/hosted-ubuntu-mobile-compare*']
 
 permissions:
   contents: read
 
 jobs:
-  ios:
-    name: ${{ matrix.app.name }} / Ubuntu iOS
-    runs-on: ${{ github.ref_name == 'ci/hosted-ubuntu-mobile-boat' && 'boat-large' || github.ref_name == 'ci/hosted-ubuntu-mobile-github' && 'ubuntu-26.04' || 'blacksmith-8vcpu-ubuntu-2604' }}
-    container: ${{ github.ref_name == 'ci/hosted-ubuntu-mobile-boat' && 'ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6' || '' }}
+  native:
+    name: ${{ matrix.app }} / ${{ matrix.target }}
+    runs-on: ${{ contains(github.ref_name, '-boat') && 'boat-large' || contains(github.ref_name, '-github') && 'ubuntu-26.04' || 'blacksmith-8vcpu-ubuntu-2604' }}
+    container: ${{ contains(github.ref_name, '-boat') && 'ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6' || '' }}
     timeout-minutes: 35
     defaults:
       run:
@@ -19,42 +19,64 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app:
-          - {name: Paperstack, slug: paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
+        app: ${{ fromJSON((contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
+        target: ${{ fromJSON(contains(github.ref_name, '-together') && '["both"]' || contains(github.ref_name, '-split') && '["android","ios"]' || contains(github.ref_name, '-macos') && '["macos"]' || '["ios"]') }}
     env:
       SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
-      BENCHMARK_APP: ${{ matrix.app.slug }}
+      BENCHMARK_APP: ${{ matrix.app }}
+      BENCHMARK_TARGET: ${{ matrix.target }}
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
+      - name: Prepare checkout and job timer
+        run: |
+          if ! command -v git >/dev/null || ! command -v openssl >/dev/null || ! command -v python3 >/dev/null; then
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends ca-certificates git openssl python3
+          fi
+          if [[ "${{ contains(github.ref_name, '-boat') }}" == true ]]; then
+            mkdir -p /home/runner
+            echo 'HOME=/home/runner' >> "$GITHUB_ENV"
+          fi
+          echo "TIMING_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Request SDK for this job
+        if: matrix.target != 'android'
         run: |
           umask 077
-          if ! command -v openssl >/dev/null; then
-            apt-get update -qq
-            apt-get install -y -qq --no-install-recommends openssl ca-certificates
-          fi
           openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/sdk-recipient.key"
           openssl pkey -in "$RUNNER_TEMP/sdk-recipient.key" -pubout -out "$RUNNER_TEMP/sdk-recipient.pem"
       - uses: actions/upload-artifact@v7.0.2
+        if: matrix.target != 'android'
         with:
-          name: sdk-recipient-${{ github.run_attempt }}-${{ matrix.app.slug }}
+          name: sdk-recipient-${{ github.run_attempt }}-${{ matrix.app }}
           path: ${{ runner.temp }}/sdk-recipient.pem
           if-no-files-found: error
           retention-days: 1
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      - id: fixture
+        name: Identify the pinned fixture
+        run: |
+          python3 - <<'FIXTURE'
+          import json, os
+          with open(".github/scripts/hosted-mobile/fixtures.json") as file:
+              fixture = json.load(file)[os.environ["BENCHMARK_APP"]]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"repo={fixture['repo']}", file=output)
+              print(f"ref={fixture['ref']}", file=output)
+          FIXTURE
       - uses: actions/checkout@v7.0.1
         with:
-          repository: disposabl-dev/${{ matrix.app.repo }}
-          ref: ${{ matrix.app.ref }}
+          repository: disposabl-dev/${{ steps.fixture.outputs.repo }}
+          ref: ${{ steps.fixture.outputs.ref }}
           path: fixture
           persist-credentials: false
       - name: Install Linux compiler tools
         run: bash .github/scripts/hosted-mobile/toolchain.sh
       - name: Install xTool SDK
+        if: matrix.target != 'android'
         run: bash .github/scripts/hosted-mobile/install-sdk.sh
       - id: pin
         run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
@@ -63,17 +85,51 @@ jobs:
         env:
           EXACT_APP_CHECKOUT: ${{ github.workspace }}/fixture
         with:
-          platform: ios-linux
+          platform: ${{ matrix.target == 'ios' && 'ios-linux' || matrix.target == 'macos' && 'web' || 'android' }}
           exact-ref: ${{ steps.pin.outputs.exact-ref }}
           bun-version: ${{ steps.pin.outputs.bun-version }}
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
       - name: Build and verify device IPA
+        if: matrix.target == 'ios'
         working-directory: ${{ env.NATIVE_APP_DIR }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/build-ios.sh"
+      - name: Build and verify Android APK
+        if: matrix.target == 'android'
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/build-android.sh"
+      - name: Build both apps in parallel on this runner
+        if: matrix.target == 'both'
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/build-together.sh"
+      - name: Build and verify macOS ZIP
+        if: matrix.target == 'macos'
+        working-directory: fixture/apps/apps
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/build-macos.sh"
+      - name: Record wall time
+        run: printf 'Verified native artifacts at %ss from preparation start\n' "$(( $(date +%s) - TIMING_START ))"
       - uses: actions/upload-artifact@v7.0.2
+        if: matrix.target == 'ios' || matrix.target == 'both'
         with:
-          name: ${{ matrix.app.slug }}-unsigned-iphone
+          name: ${{ matrix.app }}-unsigned-iphone
           path: ${{ runner.temp }}/verified-ios/apps.ipa
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - uses: actions/upload-artifact@v7.0.2
+        if: matrix.target == 'android' || matrix.target == 'both'
+        with:
+          name: ${{ matrix.app }}-signed-android
+          path: ${{ runner.temp }}/verified-android/app.apk
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v7.0.2
+        if: matrix.target == 'macos'
+        with:
+          name: ${{ matrix.app }}-macos
+          path: ${{ runner.temp }}/verified-macos/app.zip
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Share the macOS ZIP through AppDrop
+        if: matrix.target == 'macos' && endsWith(github.ref_name, '-appdrop')
+        run: bash .github/scripts/hosted-mobile/share-macos.sh

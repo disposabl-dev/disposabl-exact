@@ -12,6 +12,19 @@ if ! command -v rustup >/dev/null; then
   printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 fi
 
+if [[ "$BENCHMARK_TARGET" != ios && "$BENCHMARK_TARGET" != macos ]]; then
+  if ! command -v keytool >/dev/null; then
+    "${system[@]}" apt-get install -y -qq --no-install-recommends openjdk-25-jdk-headless
+    printf 'JAVA_HOME=%s\n' "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" >> "$GITHUB_ENV"
+  fi
+  if [[ -z "${ANDROID_HOME:-}" ]]; then
+    "${system[@]}" mkdir -p /usr/local/lib/android/sdk
+    "${system[@]}" chown "$(id -u):$(id -g)" /usr/local/lib/android/sdk
+    printf '%s\n' 'ANDROID_HOME=/usr/local/lib/android/sdk' 'ANDROID_SDK_ROOT=/usr/local/lib/android/sdk' >> "$GITHUB_ENV"
+  fi
+fi
+if [[ "$BENCHMARK_TARGET" == android ]]; then exit 0; fi
+
 work="$RUNNER_TEMP/hosted-mobile-tools"
 mkdir -p "$work"
 if [[ ! -x /usr/lib/llvm-23/bin/llvm-lipo ]]; then

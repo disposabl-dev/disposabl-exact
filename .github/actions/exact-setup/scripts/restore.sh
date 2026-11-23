@@ -29,7 +29,7 @@ extract() {
   shift 3
   asset "$name" "$file" || return 1
   mkdir -p "$directory" || return 1
-  zstd -dc "$file" | tar -xf - -C "$directory" "$@"
+  zstd -dc "$file" | tar --no-same-owner -xf - -C "$directory" "$@"
 }
 has_asset() {
   python3 -c 'import json,sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1])))' "$manifest" "$1"
@@ -112,12 +112,7 @@ if [[ $platform == ios ]]; then
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
 elif [[ $platform == ios-linux ]]; then
-  (
-    cd "$EXACT"
-    rustup target add aarch64-apple-ios
-    cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target aarch64-apple-ios
-    bun scripts/exact.mjs setup --check --platform ios --device
-  )
+  bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/prepare-apple-exact.sh"
 elif [[ $platform == android ]]; then
   # Resolve the pinned host plugins while Exact bakes and compiles Rust. Keep
   # Gradle's project state separate from the real app and its dependency locks.
@@ -133,6 +128,7 @@ elif [[ $platform == android ]]; then
   echo 'org.gradle.caching=true' >> "$HOME/.gradle/gradle.properties"
   if [[ ! -f "$ANDROID_HOME/ndk/27.3.13750724/source.properties" || ! -f "$ANDROID_HOME/platforms/android-37.2/source.properties" || ! -f "$ANDROID_HOME/build-tools/37.0.0/source.properties" ]]; then
     sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+    if [[ ! -x "$sdkmanager" ]]; then sdkmanager=$(command -v sdkmanager); fi
     (set +o pipefail; yes | "$sdkmanager" --licenses >/dev/null)
     "$sdkmanager" --install 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.3.13750724'
   fi

@@ -1,0 +1,7 @@
+{
+  "paperstack": { "name": "Paperstack", "repo": "exact-first-paperstack-hosts", "ref": "76ad1acc932a31d7bc731b35dde47ab75e778ad8" },
+  "trail": { "name": "Trail Coach", "repo": "exact-first-trail-hosts", "ref": "0dac6f24ed3486b83bfaae3576b1c246e1ae1f10" },
+  "field": { "name": "Field Journal", "repo": "exact-first-field-hosts", "ref": "2a56824c219177e00732d58b2d59154f46165792" },
+  "aperture": { "name": "Aperture Log", "repo": "exact-first-aperture-hosts", "ref": "d742d4f40a281ec7a4443a78d0df48e77215de70" },
+  "voice": { "name": "Voice Notes", "repo": "exact-first-voice-hosts-clean", "ref": "629db1d7046f8f2c52d87477229ab6cb36637447" }
+}
