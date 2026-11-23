@@ -66,14 +66,16 @@ case "$platform" in
       asset "$file" "$ios_tools/$file" & pids+=($!)
     done
     ;;
-  web) ;;
+  web|macos) ;;
   *) exit 2 ;;
 esac
 status=0
 for pid in "${pids[@]}"; do wait "$pid" || status=1; done
 [[ $status == 0 ]] || exit 1
-[[ -x "$HOME/$publisher/exact-bake" && -x "$HOME/$publisher/exact-js-bake" ]]
-echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+if [[ $platform != macos ]]; then
+  [[ -x "$HOME/$publisher/exact-bake" && -x "$HOME/$publisher/exact-js-bake" ]]
+  echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+fi
 echo "source=$source_kind" >> "$GITHUB_OUTPUT"
 if [[ $platform == ios ]]; then
   if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
