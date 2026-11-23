@@ -41,11 +41,13 @@ source_tree() {
 }
 source_tree &
 pids=($!)
-bundle="exact-$ref-$platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
 source_kind=release
-if [[ -f "$cache/$bundle" ]]; then source_kind=cache; fi
-extract "$bundle" "$HOME" "$cache/$bundle" &
-pids+=($!)
+if [[ $platform != macos ]]; then
+  bundle="exact-$ref-$platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
+  if [[ -f "$cache/$bundle" ]]; then source_kind=cache; fi
+  extract "$bundle" "$HOME" "$cache/$bundle" &
+  pids+=($!)
+fi
 case "$platform" in
   android)
     extract cargo-android.zst "$cargo_target" "$staging/cargo.zst" & pids+=($!)
