@@ -21,6 +21,10 @@ if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
   export IOS_EVIDENCE_PUBLIC_SEED=1 IOS_EVIDENCE_DIR="$dir/cargo-evidence"
   mkdir -p "$dir/capture-bin"
   ln -s "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/ios-cargo-capture.sh" "$dir/capture-bin/cargo"
+  if [[ "${EXACT_IOS_SWIFT_CACHE:-}" == true ]]; then
+    export IOS_REAL_SWIFT=$(command -v swift)
+    ln -s "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/swift-compile-cache.sh" "$dir/capture-bin/swift"
+  fi
   export PATH="$dir/capture-bin:$PATH"
 fi
 bun exact.mjs ios --device --release --unsigned --no-install --archive "$ipa"

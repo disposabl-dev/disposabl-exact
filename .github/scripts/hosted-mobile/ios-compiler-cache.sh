@@ -9,6 +9,7 @@ key() {
     git -C "$EXACT" rev-parse HEAD
     printf '%s\n' "$EXACT" "$target" "$EXACT_APPLE_SDK" "${CARGO_HOME:-$HOME/.cargo}" \
       "${EXACT_IOS_FAST_PREVIEW:-false}" "$(command -v swiftc)" "$(command -v clang)"
+    if [[ "${EXACT_IOS_SWIFT_CACHE:-}" == true ]]; then echo swift-local-cas-v1; fi
     rustc +1.99.1 -vV
     swiftc --version
     clang --version
@@ -22,7 +23,7 @@ case "$mode" in
     mkdir -p "$bundle"
     key > "$bundle/compiler-key"
     paths=()
-    for path in balanced x86_64-unknown-linux-gnu aarch64-apple-ios apple-swift apple-modules; do
+    for path in balanced x86_64-unknown-linux-gnu aarch64-apple-ios apple-swift apple-modules swift-cas; do
       [[ ! -d "$target/$path" ]] || paths+=("$path")
     done
     # The seed has already removed its app crate, executables and receipts.

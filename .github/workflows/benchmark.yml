@@ -28,6 +28,7 @@ jobs:
       EXACT_TOOLS_ORIGIN: none
       EXACT_FAST_UBUNTU_MIRROR: ${{ !contains(github.ref_name, '-boat') && !contains(github.ref_name, '-github') && '1' || '' }}
       EXACT_IOS_CACHE_PROBE: ${{ contains(github.ref_name, '-ios-cache') }}
+      EXACT_IOS_SWIFT_CACHE: ${{ contains(github.ref_name, '-swift-cas-') }}
       EXACT_IOS_FAST_PREVIEW: ${{ contains(github.ref_name, '-ios-cache-') }}
       EXACT_IOS_CACHE_MODE: >-
         ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' ||
