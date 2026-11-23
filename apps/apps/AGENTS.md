@@ -34,4 +34,4 @@ whether notes are sent and whether to keep a diary; under `never`, skip all of t
 
 - Use `t("key")` for app-authored UI copy in Contract, including headings, buttons, errors, placeholders, and accessibility labels. Add or update the key in every catalog under `strings/`.
 - Use `{name}` for placeholders in catalog messages and pass the value as `t("key", name=value)`. Keep the same placeholder names in every language.
-- Render user content as data. Map application error codes to literal `t()` keys in Contract. Write picker language names in each language itself in the `LanguageChoice` list.
+- Render user content as data. Map application error codes to literal `t()` keys in Contract. The locale picker is generated from catalog filenames; do not maintain a separate language list.

@@ -10,6 +10,9 @@ shape LanguageChoice
   tag: string
   label: string
 
+shape Languages
+  choices: LanguageChoice[]
+
 shape Counter
   count: number
 
@@ -55,17 +58,12 @@ fn authErrorText(code: string): string = (
 
 component Apps
   resource language = exactTime() as shape Language
-  derive defaultLanguage = LanguageChoice(tag="en", label="English")
-  derive languages = [
-    defaultLanguage,
-    LanguageChoice(tag="ar", label="العربية"),
-    LanguageChoice(tag="hi", label="हिन्दी"),
-  ]
+  resource localeList = locales() as shape Languages
+  derive languages = localeList.choices
   derive languageName = match first(languages.filter(choice => choice.tag == language.resolvedLocale)) {
     case some(choice) => choice.label,
-    case none => defaultLanguage.label
+    case none => language.resolvedLocale
   }
-  state languageOpen = false
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
   mutation incremented as shape IncrementReply
@@ -94,11 +92,8 @@ component Apps
     every(1000, retry)
   task recovered when live.status == "ready" and wait > 1
     after(1000, resetWait)
-  action toggleLanguage
-    languageOpen = not languageOpen
   action chooseLanguage(locale: string)
     setLocale(locale)
-    languageOpen = false
   action checkSession
     if not authBusy
       authAttempted = true
@@ -192,14 +187,11 @@ component Apps
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
               text t("app.greeting", name=t("app.name")) testId="greeting"
-              column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
-                button press=toggleLanguage aria-label=t("language.picker", name=languageName) aria-expanded=languageOpen testId="language-picker"
-                  image "symbol:translate"
-                  text languageName testId="language-name"
-                if languageOpen
-                  for choice in languages key=choice.tag
-                    button press=chooseLanguage(choice.tag) aria-pressed=(language.resolvedLocale == choice.tag) testId=`language-${choice.tag}`
-                      text choice.label
+              if languages.length > 1
+                column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
+                  select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
+                    for choice in languages key=choice.tag
+                      option choice.label value=choice.tag
                   button press=chooseLanguage("") testId="language-system"
                     text t("language.system")
               column gap=10 width="100%" max-width="26.25rem"

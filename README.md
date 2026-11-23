@@ -58,7 +58,7 @@ Exact follows the browser or device language at launch and falls back to English
 
 Put app-authored copy in `apps/apps/strings/<locale>.json` and render it with `t("key")`. Write placeholders as `{name}` in the catalog and supply them with `t("key", name=value)`. Exact also accepts the MessageFormat 2 spelling `{$name}`. Pass error codes from the data module and map them to literal translation keys in `authErrorText` in Contract. Add a mapping there when an auth code needs its own message.
 
-To add a language, add its catalog and a `LanguageChoice` in `app.contract`. Write the picker label in the language itself so people can find it from any locale. The installed app name comes from `app.json` and uses the same name across locales at this Exact version.
+To add a language, add `strings/<locale>.json` with the same keys and placeholders as the base catalog. Exact defaults to English. The build checks coverage and populates the dropdown from the catalog filenames. Single-language apps hide the dropdown. Switching works offline. The installed app name comes from `app.json` and uses the same name across locales at this Exact version.
 
 Exact validates translation calls and catalog syntax when it compiles the app. From `apps/apps`, run the Contract tests to check language switching, persistence, and fallback.
 
