@@ -26,27 +26,38 @@ if [[ "$phase" != install ]]; then
   if [[ -n "${EXACT_IOS_CACHE_MODE:-}" ]]; then
     install -m 600 "$private/passphrase" "$RUNNER_TEMP/ios-cache-passphrase"
   fi
-  mirror=
-  if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
-    mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
+  archive="$private/sdk.enc"
+  disk=/tmp/exact-ios-compiler-disk
+  disk_mode=${EXACT_IOS_COMPILER_DISK_MODE:-}
+  if [[ "$disk_mode" == read ]]; then
+    archive="$disk/sdk.enc"
+  else
+    mirror=
+    if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
+      mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
+    fi
+    case "$mirror" in
+      https://release-assets.githubusercontent.com/*|https://objects.githubusercontent.com/*)
+        curl -fsS --retry 4 --retry-all-errors --max-time 240 "$mirror" -o "$archive" || rm -f "$archive"
+        ;;
+    esac
+    if [[ ! -s "$archive" ]]; then
+      curl -fsS --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
+      test -s "$private/pieces"
+      if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
+      export sdk_pieces="$private"
+      xargs -P 3 -n 1 bash -euc '
+        curl -fsS --retry 4 --retry-all-errors --max-time 60 "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
+      ' bash < "$private/pieces"
+      while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$archive"
+    fi
   fi
-  case "$mirror" in
-    https://release-assets.githubusercontent.com/*|https://objects.githubusercontent.com/*)
-      curl -fsS --retry 4 --retry-all-errors --max-time 240 "$mirror" -o "$private/sdk.enc" || rm -f "$private/sdk.enc"
-      ;;
-  esac
-  if [[ ! -s "$private/sdk.enc" ]]; then
-    curl -fsS --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
-    test -s "$private/pieces"
-    if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
-    export sdk_pieces="$private"
-    xargs -P 3 -n 1 bash -euc '
-      curl -fsS --retry 4 --retry-all-errors --max-time 60 "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
-    ' bash < "$private/pieces"
-    while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$private/sdk.enc"
+  printf '%s  %s\n' "${material[1]}" "$archive" | sha256sum -c -
+  if [[ "$disk_mode" == seed ]]; then
+    install -m 600 "$archive" "$disk/sdk.enc.next"
+    mv "$disk/sdk.enc.next" "$disk/sdk.enc"
   fi
-  printf '%s  %s\n' "${material[1]}" "$private/sdk.enc" | sha256sum -c -
-  openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/sdk.enc" \
+  openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$archive" \
     | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
   rm -f "$private/sdk.enc" "$private/material" "$private/passphrase" "$RUNNER_TEMP/sdk-recipient.key"
 fi

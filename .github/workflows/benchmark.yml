@@ -85,6 +85,14 @@ jobs:
           ref: ${{ steps.fixture.outputs.ref }}
           path: fixture
           persist-credentials: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - name: Mount Blacksmith iOS dependency cache
+        if: env.EXACT_IOS_COMPILER_DISK_MODE != ''
+        uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
+        with:
+          key: exact-ios-compiler-${{ steps.pin.outputs.ios-cache-digest }}
+          path: /tmp/exact-ios-compiler-disk
       - name: Install Linux compiler tools
         run: |
           scripts=.github/scripts/hosted-mobile
@@ -102,8 +110,6 @@ jobs:
           phase=all
           if [[ -d "$RUNNER_TEMP/sdk-private/darwin.xtoolsdk" ]]; then phase=install; fi
           bash .github/scripts/hosted-mobile/install-sdk.sh "$phase"
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
       - name: Restore Exact v11 inputs
         uses: ./.github/actions/exact-setup
         env:
@@ -130,12 +136,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
-      - name: Mount Blacksmith iOS dependency cache
-        if: env.EXACT_IOS_COMPILER_DISK_MODE != ''
-        uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
-        with:
-          key: exact-ios-compiler-${{ steps.pin.outputs.ios-cache-digest }}
-          path: /tmp/exact-ios-compiler-disk
       - name: Restore iOS compiler dependencies
         if: env.EXACT_IOS_CACHE_MODE == 'restore'
         env:
