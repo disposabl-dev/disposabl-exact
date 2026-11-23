@@ -21,4 +21,11 @@ RUN --mount=type=secret,id=builder_tls,mode=0444 \
 
 ENV PATH=/opt/exact/hosted-mobile-tools/swift/usr/bin:/usr/lib/llvm-23/bin:/opt/exact/hosted-mobile-tools:$PATH \
     APPIMAGE_EXTRACT_AND_RUN=1 EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin EXACT_PREINSTALLED_IOS_TOOLS=1
-RUN BENCHMARK_TARGET=ios bash /opt/exact/setup/toolchain.sh
+RUN --mount=type=secret,id=builder_tls,mode=0444 \
+    if [ -r /run/secrets/builder_tls ]; then \
+        printf 'Acquire::https::CaInfo "/run/secrets/builder_tls";\n' > /etc/apt/apt.conf.d/90-exact-builder-ca; \
+    fi \
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends libncurses6 \
+    && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/90-exact-builder-ca \
+    && BENCHMARK_TARGET=ios bash /opt/exact/setup/toolchain.sh

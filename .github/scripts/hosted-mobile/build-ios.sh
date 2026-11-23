@@ -22,7 +22,8 @@ if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
 fi
 bun exact.mjs ios --device --release --unsigned --no-install --archive "$ipa"
 if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
-  jq -rs 'map(select(.reason == "compiler-artifact")) | "Cargo units reused: \(map(select(.fresh == true)) | length)/\(length)"' "$IOS_EVIDENCE_DIR"/cargo-ios.*
+  first_capture=$(ls -1tr "$IOS_EVIDENCE_DIR"/cargo-ios.* | sed -n '1p')
+  jq -rs 'map(select(.reason == "compiler-artifact")) | "First Cargo archive units reused: \(map(select(.fresh == true)) | length)/\(length)"' "$first_capture"
 fi
 unzip -tq "$ipa"
 unpacked=$(mktemp -d "$RUNNER_TEMP/ipa.XXXXXX")

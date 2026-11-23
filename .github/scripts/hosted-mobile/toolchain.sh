@@ -12,17 +12,33 @@ fi
 
 system=()
 if [[ "$(id -u)" != 0 ]]; then system=(sudo); fi
+
+work="$RUNNER_TEMP/hosted-mobile-tools"
+mkdir -p "$work"
+apt_options=(-o Acquire::Retries=2 -o Acquire::https::Timeout=25 -o Acquire::http::Timeout=25)
+sources=/etc/apt/sources.list.d
+if [[ "${EXACT_FAST_UBUNTU_MIRROR:-}" == 1 && -r "$sources/ubuntu.sources" ]]; then
+  sources="$work/apt"
+  mkdir -p "$sources"
+  sed 's@^URIs: .*@URIs: https://mirrors.edge.kernel.org/ubuntu@' \
+    /etc/apt/sources.list.d/ubuntu.sources > "$sources/ubuntu.sources"
+  apt_options+=(-o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$sources")
+fi
+apt() {
+  "${system[@]}" env NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" "$@"
+}
 bootstrap=false
 for tool in curl git jq python3 unzip zip zstd openssl gpg gcc make pkg-config; do
   command -v "$tool" >/dev/null || bootstrap=true
 done
 if [[ "$bootstrap" == true ]] || ! pkg-config --exists openssl; then
-  "${system[@]}" apt-get update -qq
-  "${system[@]}" apt-get install -y -qq --no-install-recommends \
+  echo "Refreshing package indexes"
+  apt update -q
+  apt install -y -qq --no-install-recommends \
     ca-certificates curl git jq python3 unzip zip zstd openssl gnupg build-essential pkg-config libssl-dev
 fi
 if ! command -v rustup >/dev/null; then
-  "${system[@]}" apt-get install -y -qq --no-install-recommends rustup
+  apt install -y -qq --no-install-recommends rustup
   mkdir -p "$HOME/.cargo/bin"
   for tool in cargo rustc rustup; do ln -sf /usr/bin/rustup "$HOME/.cargo/bin/$tool"; done
   printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -30,7 +46,7 @@ fi
 
 if [[ "$BENCHMARK_TARGET" != ios && "$BENCHMARK_TARGET" != macos ]]; then
   if ! command -v keytool >/dev/null; then
-    "${system[@]}" apt-get install -y -qq --no-install-recommends openjdk-25-jdk-headless
+    apt install -y -qq --no-install-recommends openjdk-25-jdk-headless
     printf 'JAVA_HOME=%s\n' "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" >> "$GITHUB_ENV"
   fi
   if [[ -z "${ANDROID_HOME:-}" ]]; then
@@ -41,20 +57,20 @@ if [[ "$BENCHMARK_TARGET" != ios && "$BENCHMARK_TARGET" != macos ]]; then
 fi
 if [[ "$BENCHMARK_TARGET" == android ]]; then exit 0; fi
 
-work="$RUNNER_TEMP/hosted-mobile-tools"
-mkdir -p "$work"
 if [[ ! -x /usr/lib/llvm-23/bin/llvm-lipo ]]; then
   curl -fsSL --retry 3 https://apt.llvm.org/llvm-snapshot.gpg.key -o "$work/llvm.asc"
   echo "8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d  $work/llvm.asc" | sha256sum -c -
   gpg --batch --dearmor -o "$work/llvm.gpg" "$work/llvm.asc"
   "${system[@]}" install -m 644 "$work/llvm.gpg" /usr/share/keyrings/exact-llvm.gpg
   echo 'deb [signed-by=/usr/share/keyrings/exact-llvm.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main' \
-    | "${system[@]}" tee /etc/apt/sources.list.d/exact-llvm.list >/dev/null
-  "${system[@]}" apt-get update -qq
-  "${system[@]}" apt-get install -y -qq --no-install-recommends clang-23 lld-23 llvm-23
+    | "${system[@]}" tee "$sources/exact-llvm.list" >/dev/null
+  echo "Refreshing package indexes"
+  apt update -q
+  apt install -y -qq --no-install-recommends clang-23 lld-23 llvm-23
 fi
 printf '%s\n' /usr/lib/llvm-23/bin "$work" >> "$GITHUB_PATH"
 if ! swiftc --version 2>/dev/null | grep -q '^Swift version 6\.4\.2 '; then
+  echo "Installing Swift 6.4.2"
   url=https://download.swift.org/swift-6.4.2-release/ubuntu2604/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu26.04.tar.gz
   curl -fsSL --retry 3 "$url" -o "$work/swift.tar.gz"
   curl -fsSL --retry 3 "$url.sig" -o "$work/swift.tar.gz.sig"

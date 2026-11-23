@@ -26,6 +26,7 @@ jobs:
       BENCHMARK_APP: ${{ matrix.app }}
       BENCHMARK_TARGET: ${{ matrix.target }}
       EXACT_TOOLS_ORIGIN: none
+      EXACT_FAST_UBUNTU_MIRROR: ${{ !contains(github.ref_name, '-boat') && !contains(github.ref_name, '-github') && '1' || '' }}
       EXACT_IOS_CACHE_PROBE: ${{ contains(github.ref_name, '-ios-cache') }}
       EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') || endsWith(github.ref_name, '-ios-cache-publish') || endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite') }}
       EXACT_IOS_CACHE_MODE: ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' || (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite')) && 'restore' || '' }}
