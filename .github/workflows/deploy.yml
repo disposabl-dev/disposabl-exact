@@ -135,6 +135,14 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
         run: &deploy-web bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+      - name: Sync the opted-in Autumn catalog
+        if: steps.first.outputs.first != 'true' && vars.BILLING_SYNC_CATALOG == 'true'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: &billing-sync |
+          set -o pipefail
+          bun run convex run --prod billing:syncCatalog '{"apply":true}' | jq -e '.drift | length == 0'
       - name: Publish compatible mobile updates
         id: updates
         if: steps.first.outputs.first != 'true'
@@ -211,6 +219,12 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
         run: *deploy-web
+      - name: Sync the opted-in Autumn catalog
+        if: matrix.platform == 'web' && vars.BILLING_SYNC_CATALOG == 'true'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: *billing-sync
       - name: Configure updates
         if: matrix.platform != 'web'
         working-directory: ${{ env.NATIVE_APP_DIR }}

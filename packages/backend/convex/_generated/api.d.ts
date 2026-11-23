@@ -10,6 +10,13 @@
 
 import type * as auth from "../auth.js";
 import type * as authSettings from "../authSettings.js";
+import type * as billing from "../billing.js";
+import type * as billingApple from "../billingApple.js";
+import type * as billingCatalog from "../billingCatalog.js";
+import type * as billingData from "../billingData.js";
+import type * as billingGoogle from "../billingGoogle.js";
+import type * as billingSync from "../billingSync.js";
+import type * as billingTypes from "../billingTypes.js";
 import type * as counter from "../counter.js";
 import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
@@ -23,6 +30,13 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authSettings: typeof authSettings;
+  billing: typeof billing;
+  billingApple: typeof billingApple;
+  billingCatalog: typeof billingCatalog;
+  billingData: typeof billingData;
+  billingGoogle: typeof billingGoogle;
+  billingSync: typeof billingSync;
+  billingTypes: typeof billingTypes;
   counter: typeof counter;
   http: typeof http;
   myFunctions: typeof myFunctions;

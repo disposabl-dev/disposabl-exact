@@ -2,6 +2,7 @@
 // sizes and the safe area are left unsaid, so each platform supplies its own:
 // the header is the navigation bar, its heading the title, its button a bar item.
 use ConvexLive from "@exact/convex"
+use purchasesStatus, getDetails, purchase, listPurchases, unfinishedPurchases, restorePurchases, acknowledge, consume, PurchasesStatus, ItemDetails, PurchaseDetails from "@exact/purchases"
 
 shape Language
   resolvedLocale: string
@@ -28,8 +29,29 @@ shape AuthReply
 shape GoogleReply
   error: string
 
+shape Billing
+  mode: string
+  authenticated: bool
+  webEnabled: bool
+  monthlyActive: bool
+  credits: option<number>
+  currency: string
+  monthlyAmount: number
+  monthlyCredits: number
+  topupAmount: number
+  topupCredits: number
+  storeEnabled: bool
+  accountToken: string
+  monthlyProduct: string
+  topupProduct: string
+
+shape BillingReply
+  url: string
+  ok: bool
+
 routes nav
   home "/"
+    pricing "/pricing"
 
 style LanguagePanel
   padding=12 gap=4 border-radius=14
@@ -81,9 +103,30 @@ component Apps
   state creating = false
   derive authChanging = pending(changedSession) or pending(googleBrowser)
   derive authBusy = authChanging or pending(checkedSession)
+  resource store = purchasesStatus() as shape PurchasesStatus else empty()
+  resource billing = loadBilling(signedIn, store.store) when authReady as shape Billing else empty()
+  resource products = getDetails(itemIds=[billing.monthlyProduct, billing.topupProduct]) when billing.storeEnabled as shape ItemDetails[] else empty()
+  resource purchaseQueue = unfinishedPurchases() when billing.storeEnabled and signedIn as shape PurchaseDetails[] else empty()
+  resource ownedPurchases = listPurchases() when billing.storeEnabled and signedIn as shape PurchaseDetails[] else empty()
+  mutation billingReply as shape BillingReply then billingFinished
+  mutation storePurchase as shape PurchaseDetails
+  mutation restored as shape PurchaseDetails[] then refreshBilling
+  mutation delivered as shape BillingReply then refreshBilling
+  state checkoutUrl = ""
+  state billingError = false
   state liked = false
   state waited = 0
   state wait = 1
+  derive pricingVisible = top(nav).name == "pricing"
+  derive billingBusy = pending(billingReply) or pending(storePurchase) or pending(restored)
+  derive deliverable = purchaseQueue.filter(p => p.purchaseState == "purchased" and (p.itemId == billing.monthlyProduct or p.itemId == billing.topupProduct))
+  derive renewals = ownedPurchases.filter(p => p.acknowledged and p.purchaseState == "purchased" and p.itemId == billing.monthlyProduct)
+  task refreshPricing when pricingVisible and signedIn
+    every(15000, refreshBilling)
+  task settlePurchases when signedIn and billing.authenticated and billing.storeEnabled and deliverable.length > 0
+    every(4000, deliverBilling)
+  task syncRenewals when pricingVisible and signedIn and billing.authenticated and billing.storeEnabled and renewals.length > 0
+    every(60000, deliverRenewals)
   task restore when not authAttempted
     after(1, checkSession)
   task renew when authReady and not authChanging
@@ -103,6 +146,9 @@ component Apps
       case some(result)
         if result.error == ""
           authReady = true
+          if signedIn != result.signedIn or account != result.name
+            checkoutUrl = ""
+            billingError = false
           signedIn = result.signedIn
           account = result.name
           googleAvailable = result.google
@@ -116,6 +162,9 @@ component Apps
       case some(result)
         authError = result.error
         if result.error == ""
+          if signedIn != result.signedIn or account != result.name
+            checkoutUrl = ""
+            billingError = false
           signedIn = result.signedIn
           account = result.name
           googleAvailable = result.google
@@ -157,6 +206,49 @@ component Apps
     if not authBusy
       authError = ""
       send changedSession = signOut()
+  action refreshBilling
+    refresh billing
+    if billing.storeEnabled
+      refresh products
+      refresh ownedPurchases
+      refresh purchaseQueue
+  action deliverBilling
+    if not pending(delivered) and not authChanging
+      send delivered = deliverPurchases(store.store, billing.accountToken, billing.monthlyProduct, billing.topupProduct, deliverable)
+  action deliverRenewals
+    if not pending(delivered) and not authChanging
+      send delivered = deliverPurchases(store.store, billing.accountToken, billing.monthlyProduct, billing.topupProduct, renewals)
+  action selectOffer(offer: string)
+    if signedIn and billing.authenticated and not authChanging and not billingBusy
+      checkoutUrl = ""
+      billingError = false
+      if store.store == "none"
+        send billingReply = startBilling("checkout", offer, store.store)
+      else if billing.mode == "preview"
+        send billingReply = startBilling("previewPurchase", offer, store.store)
+      else if billing.storeEnabled and store.canMakePayments
+        send storePurchase = purchase(itemId=(offer == "monthly" ? billing.monthlyProduct : billing.topupProduct), accountToken=billing.accountToken)
+  action showBillingPortal
+    if signedIn and not authChanging and not billingBusy
+      checkoutUrl = ""
+      billingError = false
+      send billingReply = startBilling("portal", "", store.store)
+  action billingFinished
+    match billingReply
+      case some(result)
+        if result.url != ""
+          checkoutUrl = result.url
+        billingError = not result.ok
+      case none
+        billingError = false
+    refresh billing
+  action restoreBilling
+    if billing.storeEnabled and not authChanging and not billingBusy
+      if store.store == "app-store"
+        send restored = restorePurchases()
+      else
+        refresh ownedPurchases
+        refresh purchaseQueue
   action like
     liked = not liked
   action increment
@@ -178,59 +270,133 @@ component Apps
   view
     main testId="root" navigationKey=`${top(nav).id}` width="100%" height="100%"
       for e in stack(nav) key=e.id
-        // Keep the cover display's physical side controls clear in either direction.
-        column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column" padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
-          header display="flex" align-items="center"
-            text t("app.title") role="heading" aria-level=1 flex=1
-            button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
-              image (liked ? "symbol:heart-fill" : "symbol:heart")
-          scroll id="content" flex=1 min-height=0 padding=16
-            column gap=12 align-items="flex-start"
-              text t("app.greeting", name=t("app.name")) testId="greeting"
-              if languages.length > 1
-                column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
-                  select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
-                    for choice in languages key=choice.tag
-                      option choice.label value=choice.tag
-                  button press=chooseLanguage("") testId="language-system"
-                    text t("language.system")
-              column gap=10 width="100%" max-width="26.25rem"
-                text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
-                if authReady and signedIn
-                  text account testId="account-name"
-                  button press=logout disabled=authBusy testId="logout"
-                    text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
-                else if authReady
-                  input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
-                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
-                  if creating
-                    text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
-                  button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
-                    text (creating ? t("auth.create") : t("auth.signIn"))
-                  button press=toggleCreate disabled=authChanging testId="toggle-create"
-                    text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
-                  if googleAvailable
-                    if pending(googleBrowser)
-                      button press=cancelGoogle testId="cancel-google"
-                        text t("auth.cancelGoogle")
-                    else
-                      button press=submitGoogle disabled=authBusy testId="google-sign-in"
-                        text t("auth.google")
-                else if authError == ""
-                  text t("auth.checking") color="-exact-secondary-label"
+        if e.name == "home"
+          // Keep the cover display's physical side controls clear in either direction.
+          column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column" padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
+            header display="flex" align-items="center"
+              text t("app.title") role="heading" aria-level=1 flex=1
+              button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
+                image (liked ? "symbol:heart-fill" : "symbol:heart")
+            scroll id="content" flex=1 min-height=0 padding=16
+              column gap=12 align-items="flex-start"
+                text t("app.greeting", name=t("app.name")) testId="greeting"
+                if languages.length > 1
+                  column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
+                    select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
+                      for choice in languages key=choice.tag
+                        option choice.label value=choice.tag
+                    button press=chooseLanguage("") testId="language-system"
+                      text t("language.system")
+                column gap=10 width="100%" max-width="26.25rem"
+                  text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
+                  if authReady and signedIn
+                    text account testId="account-name"
+                    button press=logout disabled=authBusy testId="logout"
+                      text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
+                  else if authReady
+                    input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
+                    input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
+                    if creating
+                      text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
+                    button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
+                      text (creating ? t("auth.create") : t("auth.signIn"))
+                    button press=toggleCreate disabled=authChanging testId="toggle-create"
+                      text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
+                    if googleAvailable
+                      if pending(googleBrowser)
+                        button press=cancelGoogle testId="cancel-google"
+                          text t("auth.cancelGoogle")
+                      else
+                        button press=submitGoogle disabled=authBusy testId="google-sign-in"
+                          text t("auth.google")
+                  else if authError == ""
+                    text t("auth.checking") color="-exact-secondary-label"
+                  else
+                    button press=checkSession disabled=authBusy testId="retry-auth"
+                      text t("app.tryAgain")
+                  if authError != ""
+                    text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
+                if billing.mode != "" and billing.mode != "off" and (store.store != "none" or billing.webEnabled)
+                  link href=path("pricing") testId="pricing-link"
+                    text t("billing.title")
+                text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
+                text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
+                if counter.count >= 0
+                  text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
+                button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
+                  text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
+                if failed(incremented)
+                  text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
+                if live.status == "failed" or failed(counter)
+                  button press=reconnectNow
+                    text t("counter.retry")
+        if e.name == "pricing"
+          column navigationKey=`${e.id}` navigationScroll="pricing-content" position="absolute" inset=0 padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
+            header display="flex" align-items="center"
+              text t("billing.title") role="heading" aria-level=1
+            scroll id="pricing-content" flex=1 min-height=0 padding=16
+              column gap=16 width="100%" max-width="36rem" margin-left="auto" margin-right="auto"
+                if billing.mode == "off" or (store.store == "none" and billing.mode != "" and not billing.webEnabled)
+                  text t("billing.disabled") testId="billing-disabled"
+                else if billing.mode == ""
+                  if failed(billing)
+                    text t("billing.error") role="alert" testId="billing-loading"
+                    button press=refreshBilling
+                      text t("app.tryAgain")
+                  else
+                    text t("billing.loading") testId="billing-loading"
                 else
-                  button press=checkSession disabled=authBusy testId="retry-auth"
-                    text t("app.tryAgain")
-                if authError != ""
-                  text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
-              text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
-              text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
-              if counter.count >= 0
-                text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
-              button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
-                text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
-              if failed(incremented)
-                text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
-              if live.status == "failed" or failed(counter)
-                button press=reconnectNow
-                  text t("counter.retry")
+                  if billing.mode == "preview"
+                    text t("billing.preview") color="-exact-secondary-label" testId="billing-preview"
+                  if not signedIn
+                    link href=path("home") testId="billing-sign-in"
+                      text t("billing.signIn")
+                  if signedIn and billing.authenticated
+                    match billing.credits
+                      case some(balance)
+                        text t("billing.balance", count=formatNumber(balance, "decimal")) testId="credit-balance"
+                      case none
+                        text t("billing.loading")
+                    if billing.monthlyActive
+                      text t("billing.active") testId="monthly-active"
+                  PlanCard(title=t("billing.monthly"), credits=t("billing.monthlyCredits", count=formatNumber(billing.monthlyCredits, "decimal")), amount=billing.monthlyAmount, currency=billing.currency, product=billing.monthlyProduct, products=products, enabled=(signedIn and billing.authenticated and not billing.monthlyActive and not billingBusy and not authChanging and (store.store != "none" or billing.webEnabled)), preview=(billing.mode == "preview"), web=(store.store == "none"), canPay=(billing.storeEnabled and store.canMakePayments), select=selectOffer("monthly"), id="monthly")
+                  PlanCard(title=t("billing.topup"), credits=t("billing.topupCredits", count=formatNumber(billing.topupCredits, "decimal")), amount=billing.topupAmount, currency=billing.currency, product=billing.topupProduct, products=products, enabled=(signedIn and billing.authenticated and not billingBusy and not authChanging and (store.store != "none" or billing.webEnabled)), preview=(billing.mode == "preview"), web=(store.store == "none"), canPay=(billing.storeEnabled and store.canMakePayments), select=selectOffer("topup"), id="topup")
+                  if checkoutUrl != "" and signedIn and billing.authenticated
+                    link href=checkoutUrl testId="continue-checkout"
+                      text t("billing.continue")
+                  if billingError or failed(restored) or (failed(storePurchase) and match failure(storePurchase) { case some(f) => f.code != "AbortError", case none => false })
+                    text t("billing.error") role="alert" testId="billing-error"
+                  if match storePurchase { case some(p) => p.purchaseState == "pending", case none => false }
+                    text t("billing.pending") role="status" testId="billing-pending"
+                  if store.store != "none" and billing.storeEnabled and signedIn
+                    button press=restoreBilling disabled=billingBusy testId="restore-purchases"
+                      text t("billing.restore")
+                  if store.store == "none" and signedIn and billing.authenticated
+                    button press=showBillingPortal disabled=billingBusy testId="manage-billing"
+                      text t("billing.manage")
+
+component PlanCard
+  props
+    title: string
+    credits: string
+    amount: number
+    currency: string
+    product: string
+    products: ItemDetails[]
+    enabled: bool
+    preview: bool
+    web: bool
+    canPay: bool
+    select: action
+    id: string
+  derive localized = match first(products.filter(item => item.itemId == product and item.type == (id == "monthly" ? "subscription" : "product"))) { case some(item) => item.displayPrice, case none => "" }
+  derive price = web or preview ? formatNumber(amount, "decimal") + " " + currency : localized
+  view
+    column class=LanguagePanel align-items="stretch"
+      text title role="heading" aria-level=2 font="-exact-title2"
+      text credits
+      if price != ""
+        button press=select disabled=(not enabled or not (web or preview or canPay)) buttonStyle="filled" testId=id
+          text t("billing.buyAt", price=price)
+      else
+        text t("billing.storeUnavailable") color="-exact-secondary-label"

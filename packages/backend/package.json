@@ -10,10 +10,13 @@
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "3.1.0",
     "@convex-dev/auth": "2.1.0",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
-    "convex": "^1.51.0"
+    "autumn-js": "1.6.37",
+    "convex": "^1.51.0",
+    "google-auth-library": "10.7.0"
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^5.0.0",

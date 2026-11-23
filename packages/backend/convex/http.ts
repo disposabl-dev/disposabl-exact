@@ -34,7 +34,7 @@ function authError(error: string) {
   return reply({ error }, status);
 }
 
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
+async function readBody(request: Request, limit = 4096): Promise<Record<string, unknown> | null> {
   const reader = request.body?.getReader();
   if (!reader) return null;
   try {
@@ -45,7 +45,7 @@ async function readBody(request: Request): Promise<Record<string, unknown> | nul
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 4096) {
+      if (size > limit) {
         await reader.cancel();
         return null;
       }
@@ -64,12 +64,16 @@ async function viewer(accessToken: string) {
   return client.query(api.auth.viewer, {});
 }
 
+function isAppRequest(request: Request, web: boolean) {
+  const origin = request.headers.get("Origin");
+  return request.headers.get("X-Exact-Auth") === "1" && (web ? origin === siteOrigin() : origin === null);
+}
+
 const session = httpAction(async (ctx, request) => {
   const web = new URL(request.url).pathname.endsWith("/web");
-  const origin = request.headers.get("Origin");
   // Web mutations require the exact, configured origin and a preflight-only
   // header. No cross-origin or browser-to-native requests are accepted.
-  if (request.headers.get("X-Exact-Auth") !== "1" || (web ? origin !== siteOrigin() : origin !== null)) {
+  if (!isAppRequest(request, web)) {
     return reply({ error: "FORBIDDEN" }, 403);
   }
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
@@ -139,6 +143,81 @@ const session = httpAction(async (ctx, request) => {
   }
 });
 
+const billing = httpAction(async (ctx, request) => {
+  const web = new URL(request.url).pathname.endsWith("/web");
+  if (!isAppRequest(request, web)) return reply({ error: "FORBIDDEN" }, 403);
+  if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
+    return reply({ error: "INVALID_REQUEST" }, 415);
+  }
+  const body = await readBody(request, 32_768);
+  if (body === null) return authError("INVALID_REQUEST");
+
+  const session = readSession(web ? await httpCookies(request).get(cookieName) : request.headers.get(sessionHeader));
+  const userId = session && !isTokenExpiring(session.accessToken)
+    ? await new ConvexHttpClient(env.CONVEX_CLOUD_URL, { auth: session.accessToken, logger: false })
+      .query(api.billingData.viewerId, {})
+    : null;
+  const platform = !web && (body.platform === "app-store" || body.platform === "google-play") ? body.platform : null;
+  if (body.operation === "status") {
+    try {
+      return reply(await ctx.runAction(internal.billing.status, { userId, platform }));
+    } catch {
+      return reply({ error: "BILLING_UNAVAILABLE" }, 503);
+    }
+  }
+  if (!userId) return reply({ error: "SIGN_IN_REQUIRED" }, 401);
+  const offer = body.offer === "monthly" || body.offer === "topup" ? body.offer : null;
+  const requestId = typeof body.requestId === "string" && statePattern.test(body.requestId) ? body.requestId : null;
+  try {
+    if (web && body.operation === "checkout" && offer && requestId) {
+      return reply({ url: await ctx.runAction(internal.billing.checkout, { userId, offer, requestId }) });
+    }
+    if (web && body.operation === "portal") {
+      return reply({ url: await ctx.runAction(internal.billing.portal, { userId }) });
+    }
+    if (platform && body.operation === "previewPurchase" && offer && requestId) {
+      await ctx.runAction(internal.billing.previewPurchase, { userId, offer, requestId });
+      return reply({ ok: true });
+    }
+    if (platform && body.operation === "storePurchase" && offer && typeof body.proof === "string" && body.proof.length > 0) {
+      await ctx.runAction(internal.billing.storePurchase, { userId, platform, offer, proof: body.proof });
+      return reply({ ok: true });
+    }
+  } catch {
+    return reply({ error: "BILLING_UNAVAILABLE" }, 503);
+  }
+  return authError("INVALID_REQUEST");
+});
+
+const appleBillingNotification = httpAction(async (ctx, request) => {
+  const body = await readBody(request, 65_536);
+  if (typeof body?.signedPayload !== "string") return reply({ error: "INVALID_REQUEST" }, 400);
+  try {
+    await ctx.runAction(internal.billing.appleNotification, { signedPayload: body.signedPayload });
+    return new Response(null, { status: 204 });
+  } catch {
+    return reply({ error: "NOT_VERIFIED" }, 503);
+  }
+});
+
+const googleBillingNotification = httpAction(async (ctx, request) => {
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ") || authorization.length > 8192) return reply({ error: "FORBIDDEN" }, 403);
+  const body = await readBody(request, 32_768);
+  const message = body?.message;
+  if (!message || typeof message !== "object" || !("data" in message) || typeof message.data !== "string") {
+    return reply({ error: "INVALID_REQUEST" }, 400);
+  }
+  try {
+    const valid = await ctx.runAction(internal.billing.googleNotification, {
+      idToken: authorization.slice(7), data: message.data,
+    });
+    return valid ? new Response(null, { status: 204 }) : reply({ error: "FORBIDDEN" }, 403);
+  } catch {
+    return reply({ error: "NOT_VERIFIED" }, 503);
+  }
+});
+
 const nativeReturn = httpAction(async (_ctx, request) => {
   if (!googleEnabled()) return authError("GOOGLE_DISABLED");
   const params = new URL(request.url).searchParams;
@@ -183,6 +262,10 @@ const webReturn = httpAction(async (ctx) => {
 const http = httpRouter();
 http.route({ path: "/api/auth/web", method: "POST", handler: session });
 http.route({ path: "/api/auth/native", method: "POST", handler: session });
+http.route({ path: "/api/billing/web", method: "POST", handler: billing });
+http.route({ path: "/api/billing/native", method: "POST", handler: billing });
+http.route({ path: "/api/billing/apple-notifications", method: "POST", handler: appleBillingNotification });
+http.route({ path: "/api/billing/google-notifications", method: "POST", handler: googleBillingNotification });
 http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
 http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
 registerStaticRoutes(http, components.staticHosting);

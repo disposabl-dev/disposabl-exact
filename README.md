@@ -71,6 +71,26 @@ bun exact.mjs test web
 - `apps/apps` for the Exact app
 - `packages/backend` for the Convex backend
 
-## Planned features
+## Optional billing
 
-- Payments with Autumn.js on the web and in-app purchases on Android, macOS, and iOS
+Billing starts disabled. Set `BILLING_MODE=preview` on a separate Convex deployment to let signed-in Android and iOS testers buy simulated products. A simulated purchase is labeled in the app, goes through Convex, and updates a preview-only credit balance. Apple and Google accounts are unnecessary for this test.
+
+Set `AUTUMN_SECRET_KEY` on the preview deployment to an Autumn **test-mode** key to enable web checkout at `/pricing`. Exact pricing reads the [code catalog](packages/backend/convex/billingCatalog.ts), Convex calls Autumn, and the browser opens Stripe Checkout. The app refreshes the balance from Autumn after payment. Keep the key in Convex.
+
+From `packages/backend`, inspect the selected deployment's catalog before turning on checkout.
+
+```sh
+bun run convex run billing:syncCatalog '{"apply":false}'
+bun run convex run billing:syncCatalog '{"apply":true}'
+```
+
+The second command creates missing catalog entries and publishes a new plan version when the configured price or credits change. Existing subscribers stay on their version. Only apply it on an Autumn environment where this repository owns the configured plan IDs. Set the production GitHub Actions variable `BILLING_SYNC_CATALOG=true` to sync automatically after deploying the production backend. The catalog's default amounts are USD, so use a matching Autumn catalog currency.
+
+### Live store purchases
+
+Set `BILLING_MODE=production` and a live `AUTUMN_SECRET_KEY` on the production Convex deployment. This enables web checkout. Native offers appear for a connected platform once the app can read the corresponding products from the store. Set up the store product IDs from the code catalog, with one monthly Play base plan and one consumable credit pack on each platform. The store supplies the displayed native price.
+
+- **Apple.** Configure the matching bundle ID, products, agreements, distribution signing and App Store Server Notifications V2 at `/api/billing/apple-notifications`. Set `BILLING_APPLE_BUNDLE_ID`, `BILLING_APPLE_APP_ID` and `BILLING_APPLE_ROOTS` in Convex. Roots are comma-separated base64 DER certificates from Apple PKI. Set `BILLING_APPLE_CONNECTED=true` after connecting the store and notification endpoint.
+- **Google.** Configure the Play package, its products, a service account with Android Publisher access, and an authenticated Pub/Sub push subscription for Play billing notifications to `/api/billing/google-notifications`. Set `BILLING_GOOGLE_PACKAGE`, `BILLING_GOOGLE_SERVICE_ACCOUNT` (service account JSON), `BILLING_GOOGLE_PUSH_AUDIENCE` and `BILLING_GOOGLE_PUSH_EMAIL` in Convex. Build the Play AAB through the existing `ANDROID_PLAY_CONNECTED` production setting.
+
+The app verifies and records the purchase in Convex before finishing it in StoreKit or Play. The pricing screen combines Autumn web credits with credits granted by the native stores. The iOS AppDrop build is for sideloading. The App Store route still needs a distribution-signed build. Verify native sandbox purchases, restore, renewals, and refunds with store-configured builds before enabling a live rollout.

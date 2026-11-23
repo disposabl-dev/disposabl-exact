@@ -32,6 +32,16 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly AUTH_GOOGLE_CLIENT_ID: string | undefined;
   readonly AUTH_GOOGLE_CLIENT_SECRET: string | undefined;
+  readonly AUTUMN_SECRET_KEY: string | undefined;
+  readonly BILLING_APPLE_APP_ID: string | undefined;
+  readonly BILLING_APPLE_BUNDLE_ID: string | undefined;
+  readonly BILLING_APPLE_CONNECTED: string | undefined;
+  readonly BILLING_APPLE_ROOTS: string | undefined;
+  readonly BILLING_GOOGLE_PACKAGE: string | undefined;
+  readonly BILLING_GOOGLE_PUSH_AUDIENCE: string | undefined;
+  readonly BILLING_GOOGLE_PUSH_EMAIL: string | undefined;
+  readonly BILLING_GOOGLE_SERVICE_ACCOUNT: string | undefined;
+  readonly BILLING_MODE: string | undefined;
 };
 
 /**

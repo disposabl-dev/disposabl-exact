@@ -4,6 +4,7 @@
 
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { billingOffer, billingTransaction } from "./billingTypes";
 
 export default defineSchema(
   {
@@ -14,6 +15,28 @@ export default defineSchema(
       }),
     }),
     users: defineTable({ name: v.optional(v.string()) }),
+    billingAccounts: defineTable({
+      userId: v.id("users"),
+      token: v.string(),
+      topupCredits: v.number(),
+      previewTopupCredits: v.number(),
+    }).index("by_userId", ["userId"]).index("by_token", ["token"]),
+    billingTransactions: defineTable(billingTransaction.extend({
+      userId: v.id("users"),
+      preview: v.boolean(),
+      credited: v.number(),
+    }))
+      .index("by_platform_and_transactionId", ["platform", "transactionId"])
+      .index("by_userId_and_preview_and_offer_and_revoked_and_expiresAt", ["userId", "preview", "offer", "revoked", "expiresAt"])
+      .index("by_platform_and_reference", ["platform", "reference"]),
+    billingCheckouts: defineTable({
+      userId: v.id("users"),
+      offer: billingOffer,
+      requestId: v.string(),
+      url: v.optional(v.string()),
+      expiresAt: v.number(),
+    }).index("by_userId_and_offer_and_requestId", ["userId", "offer", "requestId"])
+      .index("by_userId_and_offer_and_expiresAt", ["userId", "offer", "expiresAt"]),
     counters: defineTable({
       name: v.literal("shared"),
       count: v.number(),
