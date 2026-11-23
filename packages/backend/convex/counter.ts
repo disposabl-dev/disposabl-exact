@@ -1,14 +1,37 @@
+import { withPlatforms } from "@disposabl-kit/server/functions";
 import { v } from "convex/values";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import {
+  internalQuery as convexInternalQuery,
+  mutation,
+  query,
+  type QueryCtx,
+} from "./_generated/server";
+
+const internalQuery = withPlatforms(convexInternalQuery);
 
 const counter = (db: QueryCtx["db"]) =>
-  db.query("counters").withIndex("by_name", (q) => q.eq("name", "shared")).unique();
+  db
+    .query("counters")
+    .withIndex("by_name", (q) => q.eq("name", "shared"))
+    .unique();
+
+const counterResult = v.object({ count: v.number() });
+const readCounter = async ({ db }: QueryCtx) => ({
+  count: (await counter(db))?.count ?? 0,
+});
 
 // The starter's public demo shares one counter with every installation.
 export const get = query({
   args: {},
-  returns: v.object({ count: v.number() }),
-  handler: async ({ db }) => ({ count: (await counter(db))?.count ?? 0 }),
+  returns: counterResult,
+  handler: readCounter,
+});
+
+export const current = internalQuery({
+  platforms: true,
+  args: {},
+  returns: counterResult,
+  handler: readCounter,
 });
 
 export const increment = mutation({

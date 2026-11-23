@@ -5,9 +5,12 @@ import {
 } from "@modelcontextprotocol/server";
 import { httpActionGeneric, type HttpRouter } from "convex/server";
 import * as z from "zod/v4";
-import type { PublicRead } from "./functions";
+import type { PlatformRead } from "./functions";
 
-export function registerMcp(router: HttpRouter, reads: readonly PublicRead[]) {
+export function registerMcp(
+  router: HttpRouter,
+  reads: readonly PlatformRead[],
+) {
   const handler = httpActionGeneric(async (ctx, request) => {
     // Remote MCP clients can connect without granting any browser origin access.
     const rejected = originValidationResponse(request, []);

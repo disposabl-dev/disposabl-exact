@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ConvexHttpClient } from "convex/browser";
+import { makeFunctionReference } from "convex/server";
 import { api } from "../convex/_generated/api";
 
 const site = process.env.CONVEX_SITE_URL;
@@ -37,19 +38,23 @@ async function mcpResult(response: Response) {
 }
 
 test("REST and the read-only MCP tool expose the existing public counter", async () => {
-  const expected = await new ConvexHttpClient(cloud).query(api.counter.get, {});
-  const response = await fetch(`${site}/api/counter`);
+  const client = new ConvexHttpClient(cloud);
+  const expected = await client.query(api.counter.get, {});
+  await expect(
+    client.query(makeFunctionReference<"query">("counter:current"), {}),
+  ).rejects.toThrow("Could not find public function");
+  const response = await fetch(`${site}/api/counter/current`);
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual(expected);
 
   const { tools } = await mcpResult(await mcp("tools/list"));
   expect(tools).toHaveLength(1);
   expect(tools[0]).toMatchObject({
-    name: "get_counter",
+    name: "counter_current",
     annotations: { readOnlyHint: true },
   });
   const result = await mcpResult(
-    await mcp("tools/call", { name: "get_counter" }),
+    await mcp("tools/call", { name: "counter_current" }),
   );
   expect(result.structuredContent).toEqual(expected);
   expect(
