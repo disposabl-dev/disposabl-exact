@@ -10,6 +10,8 @@
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@convex-dev/auth": "2.1.0",
+    "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
     "convex": "^1.51.0"
   },

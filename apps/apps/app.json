@@ -6,7 +6,8 @@
   "start_url": "/",
   "display": "standalone",
   "env": [
-    "CONVEX_ORIGIN"
+    "CONVEX_ORIGIN",
+    "CONVEX_SITE_ORIGIN"
   ],
   "app": {
     "id": "com.example.apps-8d662a",

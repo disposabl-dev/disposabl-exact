@@ -12,6 +12,15 @@ shape Counter
 shape IncrementReply
   ok: bool
 
+shape AuthReply
+  signedIn: bool
+  name: string
+  google: bool
+  error: string
+
+shape GoogleReply
+  error: string
+
 routes nav
   home "/"
 
@@ -20,13 +29,94 @@ component Apps
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
   mutation incremented as shape IncrementReply
+  mutation checkedSession as shape AuthReply then sessionChecked
+  mutation changedSession as shape AuthReply then sessionChanged
+  mutation googleBrowser as shape GoogleReply then googleBrowserFinished
+  state authReady = false
+  state authAttempted = false
+  state signedIn = false
+  state account = ""
+  state googleAvailable = false
+  state authError = ""
+  state username = ""
+  state password = ""
+  state creating = false
+  derive authChanging = pending(changedSession) or pending(googleBrowser)
+  derive authBusy = authChanging or pending(checkedSession)
   state liked = false
   state waited = 0
   state wait = 1
+  task restore when not authAttempted
+    after(1, checkSession)
+  task renew when authReady and not authChanging
+    every(30000, checkSession)
   task reconnect when live.status == "closed"
     every(1000, retry)
   task recovered when live.status == "ready" and wait > 1
     after(1000, resetWait)
+  action checkSession
+    if not authBusy
+      authAttempted = true
+      send checkedSession = restoreSession()
+  action sessionChecked
+    match checkedSession
+      case some(result)
+        if result.error == ""
+          authReady = true
+          signedIn = result.signedIn
+          account = result.name
+          googleAvailable = result.google
+          authError = ""
+        else if not authReady
+          authError = result.error
+      case none
+        authError = "Could not check your session. Try again."
+  action sessionChanged
+    match changedSession
+      case some(result)
+        authError = result.error
+        if result.error == ""
+          signedIn = result.signedIn
+          account = result.name
+          googleAvailable = result.google
+          username = ""
+          creating = false
+      case none
+        authError = "Could not update your session. Try again."
+  action editUsername(value: string)
+    username = value
+  action editPassword(value: string)
+    password = value
+  action toggleCreate
+    creating = not creating
+    authError = ""
+    password = ""
+  action submitPassword
+    if not authBusy and username.trim() != "" and password != ""
+      authError = ""
+      send changedSession = passwordSession(username, password, creating)
+      password = ""
+  action submitGoogle
+    if googleAvailable and not authBusy
+      authError = ""
+      password = ""
+      send googleBrowser = openGoogleSession()
+  action cancelGoogle
+    if pending(googleBrowser)
+      send googleBrowser = cancelGoogleSession()
+  action googleBrowserFinished
+    match googleBrowser
+      case some(result)
+        if result.error == ""
+          send changedSession = finishGoogleSession()
+        else
+          authError = result.error
+      case none
+        authError = "Could not sign in with Google. Try again."
+  action logout
+    if not authBusy
+      authError = ""
+      send changedSession = signOut()
   action like
     liked = not liked
   action increment
@@ -56,6 +146,35 @@ component Apps
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
               text greeting.text testId="greeting"
+              column gap=10 width="100%" max-width="26.25rem"
+                text (signedIn ? "Account" : creating ? "Create an account" : "Sign in") role="heading" aria-level=2 font="-exact-title2"
+                if authReady and signedIn
+                  text account testId="account-name"
+                  button press=logout disabled=authBusy testId="logout"
+                    text (pending(changedSession) ? "Signing out…" : "Sign out")
+                else if authReady
+                  input id="username" value=username input=editUsername autocomplete="username" placeholder="Username" aria-label="Username" testId="username" disabled=authChanging
+                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder="Password" aria-label="Password" testId="password" disabled=authChanging
+                  if creating
+                    text "Use at least 15 characters for your password." font="-exact-footnote" color="-exact-secondary-label"
+                  button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
+                    text (creating ? "Create account" : "Sign in")
+                  button press=toggleCreate disabled=authChanging testId="toggle-create"
+                    text (creating ? "Back to sign in" : "Create an account")
+                  if googleAvailable
+                    if pending(googleBrowser)
+                      button press=cancelGoogle testId="cancel-google"
+                        text "Cancel Google sign-in"
+                    else
+                      button press=submitGoogle disabled=authBusy testId="google-sign-in"
+                        text "Sign in with Google"
+                else if authError == ""
+                  text "Checking your session…" color="-exact-secondary-label"
+                else
+                  button press=checkSession disabled=authBusy testId="retry-auth"
+                    text "Try again"
+                if authError != ""
+                  text authError color="-exact-system-red" role="alert" testId="auth-error"
               text "Live counter" role="heading" aria-level=2 font="-exact-title2"
               text (live.status == "closed" ? "Disconnected. Reconnecting…" : live.status == "failed" or failed(counter) ? "Could not load the counter" : live.status == "ready" and counter.count >= 0 ? "Connected to Convex" : "Connecting to Convex…") testId="convex-status"
               if counter.count >= 0
