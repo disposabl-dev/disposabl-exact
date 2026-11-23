@@ -1,14 +1,22 @@
+FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f AS trust
 FROM ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
 
 ENV RUSTUP_HOME=/opt/exact/rustup
+COPY --from=trust /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN sed -i 's@http://archive.ubuntu.com/ubuntu@https://mirrors.edge.kernel.org/ubuntu@g; s@http://security.ubuntu.com/ubuntu@https://mirrors.edge.kernel.org/ubuntu@g' /etc/apt/sources.list.d/ubuntu.sources
 COPY toolchain.sh swift-6-release.asc /opt/exact/setup/
-RUN RUNNER_TEMP=/opt/exact GITHUB_PATH=/tmp/exact-path GITHUB_ENV=/tmp/exact-env \
+RUN --mount=type=secret,id=builder_tls,mode=0444 \
+    if [ -r /run/secrets/builder_tls ]; then \
+        export CURL_CA_BUNDLE=/run/secrets/builder_tls SSL_CERT_FILE=/run/secrets/builder_tls; \
+        printf 'Acquire::https::CaInfo "/run/secrets/builder_tls";\n' > /etc/apt/apt.conf.d/90-exact-builder-ca; \
+    fi \
+    && RUNNER_TEMP=/opt/exact GITHUB_PATH=/tmp/exact-path GITHUB_ENV=/tmp/exact-env \
     BENCHMARK_TARGET=ios DEBIAN_FRONTEND=noninteractive bash /opt/exact/setup/toolchain.sh \
     && /usr/bin/rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy \
         --target aarch64-apple-ios,wasm32-unknown-unknown \
     && ln -sf /usr/bin/rustup /usr/local/bin/cargo \
     && ln -sf /usr/bin/rustup /usr/local/bin/rustc \
-    && rm -rf /var/lib/apt/lists/* /tmp/exact-path /tmp/exact-env /opt/exact/hosted-mobile-tools/swift-gpg \
+    && rm -rf /var/lib/apt/lists/* /tmp/exact-path /tmp/exact-env /etc/apt/apt.conf.d/90-exact-builder-ca /opt/exact/hosted-mobile-tools/swift-gpg \
         /opt/exact/hosted-mobile-tools/apple-codesign /opt/exact/hosted-mobile-tools/rcodesign.tgz
 
 ENV PATH=/opt/exact/hosted-mobile-tools/swift/usr/bin:/usr/lib/llvm-23/bin:/opt/exact/hosted-mobile-tools:$PATH \
