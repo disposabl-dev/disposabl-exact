@@ -30,7 +30,9 @@ bundle="$HOME/.cache/exact/publisher/$EXACT_REF"
 bun "$scripts/ios-baker.mjs" record "$bundle/exact-js-bake" "$RUNNER_TEMP/kit-out/ios-baker.json"
 bun "$scripts/ios-baker.mjs" enable "$RUNNER_TEMP/kit-out/ios-baker.json"
 export EXACT_IOS_BAKER_PATH="$bundle/exact-js-bake" EXACT_IOS_BAKER_SHA256="$(shasum -a 256 "$bundle/exact-js-bake" | cut -d ' ' -f1)"
-bash "$scripts/ios-link-kit-enable.sh"
+if jq -e --arg ref "$EXACT_REF" 'has($ref)' "$scripts/../ios-link-hooks.json" >/dev/null; then
+  bash "$scripts/ios-link-kit-enable.sh"
+fi
 (cd "$EXACT" && git ls-files -z | xargs -0 touch -t 202001010000)
 find "$EXACT" -type d -not -path '*/.git*' -exec touch -t 202001010000 {} +
 export IOS_REAL_CARGO=$(command -v cargo)
@@ -42,6 +44,10 @@ captures=("$RUNNER_TEMP"/evidence/cargo-ios.*)
 [[ ${#captures[@]} == 1 ]]
 bun "$scripts/ios-source-times.mjs" record "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json" "$app" "$RUNNER_TEMP/kit-out/ios-source-times.json"
 bash "$scripts/ios-cache-archive.sh" "$CARGO_TARGET_DIR" "$RUNNER_TEMP/kit-out/cargo-ios.zst" "${captures[0]}"
+if ! jq -e --arg ref "$EXACT_REF" 'has($ref)' "$scripts/../ios-link-hooks.json" >/dev/null; then
+  echo 'Published iOS Cargo cache. This Exact revision uses the stock Swift linker.'
+  exit
+fi
 bash "$scripts/ios-link-kit-publish.sh"
 # Keep public package outputs separate from app-specific linking and signing.
 bun "$scripts/ios-package-cache.mjs"

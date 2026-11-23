@@ -11,11 +11,8 @@ COMPILED = ('module.rs', 'logic.rs', 'linked.rs', 'host.rs')
 PAYLOAD = ('app.plan', 'compat.json', 'app.hbc')
 
 # Reviewed revisions of the optional SDK link hook. Each falls back to SwiftPM.
-REVIEWED_HOOKS = {
-    'ca35ee6a7658062b3b77ee71590095d0384e8df1a913b15de1bbf99b27a8e9e4',
-    'd140dc0ab3866a6572ec52c696c7724430e0ad207b1a38df225404638127c99e',
-    'e79fa8d9b9f228f0b36130909643b436d27abd6c1882ae3f34189b6144ed8336',
-}
+HOOKS = json.loads((Path(__file__).resolve().parent.parent / 'ios-link-hooks.json').read_text())
+REVIEWED_HOOKS = {digest for hook in HOOKS.values() for digest in [hook['patched'], *hook['previous']]}
 
 def digest(path):
     h = hashlib.sha256()

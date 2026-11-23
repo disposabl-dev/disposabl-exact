@@ -14,9 +14,9 @@ permissions:
   contents: read
 
 env:
-  EXACT_REF: a55c5581c7e1a62cdee1f09367ea2909c74c7292
+  EXACT_REF: b2faef1f203915b864aed27e201d32c6fe66d6e4
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '10'
+  BUNDLE_VERSION: '11'
   BASE_TOOLS_VERSION: '5'
 
 jobs:

@@ -2,7 +2,7 @@
 # Build SDK-owned Swift targets only, for the pinned public 17.0 iOS toolchain.
 set -euo pipefail
 : "${EXACT:?}" "${EXACT_REF:?}" "${CARGO_TARGET_DIR:?}" "${RUNNER_TEMP:?}"
-[[ "$EXACT_REF" == a55c5581c7e1a62cdee1f09367ea2909c74c7292 && $(git -C "$EXACT" rev-parse HEAD) == "$EXACT_REF" ]]
+[[ $(git -C "$EXACT" rev-parse HEAD) == "$EXACT_REF" ]]
 scripts=$(cd "$(dirname "$0")" && pwd)
 kit="$HOME/.cache/exact/ios-link-kit/$EXACT_REF"
 scratch="$CARGO_TARGET_DIR/apple-swift/ios-17.0-balanced"

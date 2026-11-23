@@ -20,7 +20,7 @@ concurrency:
 env:
   EXACT_REF: b2faef1f203915b864aed27e201d32c6fe66d6e4
   BUN_VERSION: 1.4.5
-  BUNDLE_VERSION: '5'
+  BUNDLE_VERSION: '11'
   EXACT_TOOLS_ORIGIN: none
 
   BUILD_WEB: >-

@@ -25,6 +25,9 @@ extract() {
   mkdir -p "$directory" || return 1
   zstd -dc "$file" | tar -xf - -C "$directory" "$@"
 }
+has_asset() {
+  python3 -c 'import json,sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1])))' "$manifest" "$1"
+}
 source_tree() {
   extract sdk.tar.zst "$EXACT" "$staging/sdk.tar.zst"
   [[ $(git -C "$EXACT" rev-parse HEAD) == "$ref" ]]
@@ -48,12 +51,10 @@ case "$platform" in
   ios)
     mkdir -p "$ios_tools"
     extract cargo-ios.zst "$cargo_target" "$staging/cargo.zst" & pids+=($!)
-    extract ios-link-kit.zst "$ios_tools/link" "$staging/link.zst" & pids+=($!)
-    if python3 - "$manifest" <<'PY_HOST'
-import json,sys
-raise SystemExit(0 if 'ios-host-catalog.zst' in json.load(open(sys.argv[1])) else 1)
-PY_HOST
-    then
+    if has_asset ios-link-kit.zst; then
+      extract ios-link-kit.zst "$ios_tools/link" "$staging/link.zst" & pids+=($!)
+    fi
+    if has_asset ios-host-catalog.zst; then
       (extract ios-host-catalog.zst "$ios_tools/host-catalog" "$staging/host-catalog.zst" || { rm -rf "$ios_tools/host-catalog"; echo 'Host catalog unavailable; using stock or normal build.'; }) & pids+=($!)
     fi
     for file in ios-source-times.json ios-baker.json; do
@@ -75,7 +76,9 @@ if [[ $platform == ios ]]; then
     echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
   fi
   bun "$scripts/ios-baker.mjs" enable "$ios_tools/ios-baker.json"
-  bash "$scripts/ios-link-kit-enable.sh"
+  if [[ -d "$ios_tools/link" ]]; then
+    bash "$scripts/ios-link-kit-enable.sh"
+  fi
   if [[ -f "$ios_tools/link/arms/manifest.json" ]] && ! python3 "$scripts/ios-link-arms.py" restore --kit "$ios_tools/link" --target "$cargo_target"; then
     echo 'Using the standard Apple framework build for this runner.'
   fi
@@ -89,13 +92,15 @@ if [[ $platform == ios ]]; then
   (cd "$EXACT" && git ls-files -z | xargs -0 touch -t 202001010000)
   find "$EXACT" -type d -not -path '*/.git*' -exec touch -t 202001010000 {} +
   {
-    if [[ -f "$ios_tools/host-catalog/manifest.json" ]]; then
-      echo "EXACT_HOST_CATALOG=$ios_tools/host-catalog"
-      echo "EXACT_LINK_KIT_PROOF=$scripts/ios-host-select.py"
-    else
-      echo "EXACT_LINK_KIT_PROOF=$scripts/ios-link-kit.py"
+    if [[ -d "$ios_tools/link" ]]; then
+      if [[ -f "$ios_tools/host-catalog/manifest.json" ]]; then
+        echo "EXACT_HOST_CATALOG=$ios_tools/host-catalog"
+        echo "EXACT_LINK_KIT_PROOF=$scripts/ios-host-select.py"
+      else
+        echo "EXACT_LINK_KIT_PROOF=$scripts/ios-link-kit.py"
+      fi
+      echo "EXACT_LINK_KIT=$ios_tools/link"
     fi
-    echo "EXACT_LINK_KIT=$ios_tools/link"
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
 elif [[ $platform == android ]]; then
