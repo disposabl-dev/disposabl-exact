@@ -16,16 +16,25 @@ openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/sdk-recipient.key" -in "$private/w
 mapfile -t material < "$private/material"
 [[ ${material[0]} =~ ^[0-9a-f]{64}$ && ${material[1]} =~ ^[0-9a-f]{64}$ ]]
 printf '%s\n' "${material[0]}" > "$private/passphrase"
-curl -fSs --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
-test -s "$private/pieces"
-if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
-# The relay can interrupt long transfers. Fetch small, independently retried parts.
-export sdk_pieces="$private"
-xargs -P 6 -n 1 bash -euc '
-  curl --http1.1 -fSs --retry 4 --retry-all-errors --max-time 30 \
-    "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
-' bash < "$private/pieces"
-while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$private/sdk.enc"
+mirror=
+if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
+  mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
+fi
+case "$mirror" in
+  https://release-assets.githubusercontent.com/*|https://objects.githubusercontent.com/*)
+    curl -fsS --retry 4 --retry-all-errors --max-time 240 "$mirror" -o "$private/sdk.enc" || rm -f "$private/sdk.enc"
+    ;;
+esac
+if [[ ! -s "$private/sdk.enc" ]]; then
+  curl -fsS --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
+  test -s "$private/pieces"
+  if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
+  export sdk_pieces="$private"
+  xargs -P 3 -n 1 bash -euc '
+    curl -fsS --retry 4 --retry-all-errors --max-time 60 "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
+  ' bash < "$private/pieces"
+  while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$private/sdk.enc"
+fi
 printf '%s  %s\n' "${material[1]}" "$private/sdk.enc" | sha256sum -c -
 openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/sdk.enc" \
   | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
