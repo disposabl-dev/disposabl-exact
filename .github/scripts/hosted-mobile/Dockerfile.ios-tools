@@ -1,0 +1,16 @@
+FROM ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
+
+ENV RUSTUP_HOME=/opt/exact/rustup
+COPY toolchain.sh swift-6-release.asc /opt/exact/setup/
+RUN RUNNER_TEMP=/opt/exact GITHUB_PATH=/tmp/exact-path GITHUB_ENV=/tmp/exact-env \
+    BENCHMARK_TARGET=ios DEBIAN_FRONTEND=noninteractive bash /opt/exact/setup/toolchain.sh \
+    && /usr/bin/rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy \
+        --target aarch64-apple-ios,wasm32-unknown-unknown \
+    && ln -sf /usr/bin/rustup /usr/local/bin/cargo \
+    && ln -sf /usr/bin/rustup /usr/local/bin/rustc \
+    && rm -rf /var/lib/apt/lists/* /tmp/exact-path /tmp/exact-env /opt/exact/hosted-mobile-tools/swift-gpg \
+        /opt/exact/hosted-mobile-tools/apple-codesign /opt/exact/hosted-mobile-tools/rcodesign.tgz
+
+ENV PATH=/opt/exact/hosted-mobile-tools/swift/usr/bin:/usr/lib/llvm-23/bin:/opt/exact/hosted-mobile-tools:$PATH \
+    APPIMAGE_EXTRACT_AND_RUN=1 EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin EXACT_PREINSTALLED_IOS_TOOLS=1
+RUN BENCHMARK_TARGET=ios bash /opt/exact/setup/toolchain.sh

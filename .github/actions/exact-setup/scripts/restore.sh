@@ -112,6 +112,11 @@ if [[ $platform == ios ]]; then
     echo "EXACT_IOS_SOURCE_TIMES=$ios_tools/ios-source-times.json"
   } >> "$GITHUB_ENV"
 elif [[ $platform == ios-linux ]]; then
+  # The verified Linux web bundle already ships the same Exact host baker.
+  bun "$scripts/ios-baker.mjs" patch
+  baker="$HOME/$publisher/exact-js-bake"
+  printf 'EXACT_IOS_BAKER_PATH=%s\nEXACT_IOS_BAKER_SHA256=%s\n' \
+    "$baker" "$(sha256sum "$baker" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
   bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/prepare-apple-exact.sh"
 elif [[ $platform == android ]]; then
   # Resolve the pinned host plugins while Exact bakes and compiles Rust. Keep

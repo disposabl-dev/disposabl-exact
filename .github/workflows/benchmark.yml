@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON((contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
+        app: ${{ fromJSON(endsWith(github.ref_name, '-ios-cache-suite') && '["paperstack","trail","field","aperture","voice","template"]' || (contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
         target: ${{ fromJSON(contains(github.ref_name, '-together') && '["both"]' || contains(github.ref_name, '-split') && '["android","ios"]' || contains(github.ref_name, '-macos') && '["macos"]' || '["ios"]') }}
     env:
       SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
@@ -27,7 +27,8 @@ jobs:
       BENCHMARK_TARGET: ${{ matrix.target }}
       EXACT_TOOLS_ORIGIN: none
       EXACT_IOS_CACHE_PROBE: ${{ contains(github.ref_name, '-ios-cache') }}
-      EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') }}
+      EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') || endsWith(github.ref_name, '-ios-cache-publish') || endsWith(github.ref_name, '-ios-cache-suite') }}
+      EXACT_IOS_CACHE_MODE: ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' || endsWith(github.ref_name, '-ios-cache-suite') && 'restore' || '' }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
@@ -40,8 +41,12 @@ jobs:
           if [[ "${{ contains(github.ref_name, '-boat') }}" == true ]]; then
             mkdir -p /home/runner
             echo 'HOME=/home/runner' >> "$GITHUB_ENV"
+            export HOME=/home/runner
           fi
           echo "TIMING_START=$(date +%s)" >> "$GITHUB_ENV"
+          if [[ -n "${EXACT_IOS_CACHE_MODE:-}" ]]; then
+            echo "EXACT_IOS_COMPILER_DIR=$HOME/.cache/exact-native/ios-linux" >> "$GITHUB_ENV"
+          fi
       - name: Request SDK for this job
         if: matrix.target != 'android'
         run: |
@@ -91,9 +96,28 @@ jobs:
           exact-ref: ${{ steps.pin.outputs.exact-ref }}
           bun-version: ${{ steps.pin.outputs.bun-version }}
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Stabilize timestamps of the pinned Exact sources
+        if: env.EXACT_IOS_CACHE_MODE != ''
+        run: git -C "$EXACT" ls-files -z | (cd "$EXACT" && xargs -0 touch -t 202001010000)
       - name: Compile shared iOS dependencies with the public seed app
-        if: env.EXACT_IOS_CACHE_PROBE == 'true'
+        if: env.EXACT_IOS_CACHE_PROBE == 'true' && env.EXACT_IOS_CACHE_MODE != 'restore'
         run: bash .github/scripts/hosted-mobile/seed-ios-cache.sh
+      - name: Pack the encrypted iOS compiler cache
+        if: env.EXACT_IOS_CACHE_MODE == 'pack'
+        run: bash .github/scripts/hosted-mobile/ios-compiler-cache.sh pack "$RUNNER_TEMP/portable-ios-cache"
+      - uses: actions/upload-artifact@v7.0.2
+        if: env.EXACT_IOS_CACHE_MODE == 'pack'
+        with:
+          name: portable-ios-compiler-cache
+          path: ${{ runner.temp }}/portable-ios-cache
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Restore iOS compiler dependencies
+        if: env.EXACT_IOS_CACHE_MODE == 'restore'
+        env:
+          EXACT_IOS_CACHE_DIGEST: ${{ steps.pin.outputs.ios-cache-digest }}
+        run: bash .github/scripts/hosted-mobile/ios-compiler-cache.sh restore "$RUNNER_TEMP/portable-ios-cache"
       - name: Build and verify device IPA
         if: matrix.target == 'ios'
         working-directory: ${{ env.NATIVE_APP_DIR }}
@@ -138,3 +162,6 @@ jobs:
       - name: Share the macOS ZIP through AppDrop
         if: matrix.target == 'macos' && endsWith(github.ref_name, '-appdrop')
         run: bash .github/scripts/hosted-mobile/share-macos.sh
+      - name: Remove compiler cache passphrase
+        if: always() && env.EXACT_IOS_CACHE_MODE != ''
+        run: rm -f "$RUNNER_TEMP/ios-cache-passphrase"

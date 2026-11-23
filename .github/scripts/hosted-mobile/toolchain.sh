@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${EXACT_PREINSTALLED_IOS_TOOLS:-}" == 1 && "$BENCHMARK_TARGET" == ios ]]; then
+  swiftc --version
+  llvm-lipo --version
+  xtool --version
+  rcodesign --version
+  rustup target list --toolchain 1.99.1 --installed | grep -Fx aarch64-apple-ios
+  exit
+fi
+
 system=()
 if [[ "$(id -u)" != 0 ]]; then system=(sudo); fi
 "${system[@]}" apt-get update -qq
@@ -43,8 +52,8 @@ if ! swiftc --version 2>/dev/null | grep -q '^Swift version 6\.4\.2 '; then
   curl -fsSL --retry 3 "$url" -o "$work/swift.tar.gz"
   curl -fsSL --retry 3 "$url.sig" -o "$work/swift.tar.gz.sig"
   mkdir -m 700 "$work/swift-gpg"
-  curl -fsSL --retry 3 https://www.swift.org/keys/all-keys.asc -o "$work/swift-keys.asc"
-  gpg --batch --homedir "$work/swift-gpg" --import "$work/swift-keys.asc"
+  gpg --batch --homedir "$work/swift-gpg" --import "$(dirname "$0")/swift-6-release.asc"
+  gpg --batch --homedir "$work/swift-gpg" --list-keys 52BB7E3DE28A71BE22EC05FFEF80A866B47A981F >/dev/null
   gpg --batch --homedir "$work/swift-gpg" --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
   mkdir "$work/swift"
   tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"

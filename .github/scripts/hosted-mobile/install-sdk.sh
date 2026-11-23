@@ -16,6 +16,9 @@ openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/sdk-recipient.key" -in "$private/w
 mapfile -t material < "$private/material"
 [[ ${material[0]} =~ ^[0-9a-f]{64}$ && ${material[1]} =~ ^[0-9a-f]{64}$ ]]
 printf '%s\n' "${material[0]}" > "$private/passphrase"
+if [[ -n "${EXACT_IOS_CACHE_MODE:-}" ]]; then
+  install -m 600 "$private/passphrase" "$RUNNER_TEMP/ios-cache-passphrase"
+fi
 mirror=
 if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
   mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
@@ -40,8 +43,10 @@ openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase
   | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
 xtool --version
 xtool sdk install "$private/darwin.xtoolsdk"
-xtool sdk status
-sdk="${XDG_CONFIG_HOME:-$HOME/.config}/xtool/darwin.xtoolsdk"
+sdk_status=$(xtool sdk status)
+printf '%s\n' "$sdk_status"
+sdk=$(sed -n 's/^  Path: //p' <<< "$sdk_status")
+[[ -d "$sdk" ]]
 # Pinned Exact expects the Swift SDK JSON that xTool 1 wrote. Point it at the
 # corresponding files installed by xTool 2 without altering the compiler.
 python3 - "$sdk" <<'PYTHON'
