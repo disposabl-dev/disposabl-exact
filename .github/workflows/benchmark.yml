@@ -146,7 +146,7 @@ jobs:
       - name: Restore iOS compiler dependencies
         if: env.EXACT_IOS_CACHE_MODE == 'restore'
         env:
-          EXACT_IOS_CACHE_DIGEST: ${{ steps.pin.outputs.ios-cache-digest }}
+          EXACT_IOS_CACHE_DIGEST: ${{ env.EXACT_IOS_SWIFT_CACHE == 'true' && steps.pin.outputs.ios-cas-cache-digest || steps.pin.outputs.ios-cache-digest }}
         run: bash .github/scripts/hosted-mobile/ios-compiler-cache.sh restore "$RUNNER_TEMP/portable-ios-cache"
       - name: Build and verify device IPA
         if: matrix.target == 'ios'
