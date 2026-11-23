@@ -31,7 +31,7 @@ test("billing authorizes web checkout and exposes read-only status to native app
 
   const response = await post(native, status);
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ credits: null, monthlyActive: false, topupCredits: 500 });
+  expect(await response.json()).toMatchObject({ credits: null, planId: null, managedOnWeb: false, monthlyActive: false, topupCredits: 500 });
 });
 
 test("billing stops exposing customer balances after sign out", async () => {
@@ -45,5 +45,5 @@ test("billing stops exposing customer balances after sign out", async () => {
   const before = await (await post(native, status, undefined, session)).json();
   expect(before.credits).toBe(before.mode === "off" ? null : 0);
   expect((await post("/api/auth/native", { operation: "signOut" }, undefined, session)).ok).toBe(true);
-  expect(await (await post(native, status, undefined, session)).json()).toMatchObject({ credits: null });
+  expect(await (await post(native, status, undefined, session)).json()).toMatchObject({ credits: null, planId: null, managedOnWeb: false });
 });

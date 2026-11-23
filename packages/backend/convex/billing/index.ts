@@ -55,6 +55,8 @@ const result = v.union(
     mode: v.union(v.literal("off"), v.literal("test"), v.literal("live")),
     credits: v.union(v.number(), v.null()),
     monthlyActive: v.boolean(),
+    planId: v.union(v.string(), v.null()),
+    managedOnWeb: v.boolean(),
     currency: v.string(),
     monthlyAmount: v.number(),
     monthlyCredits: v.number(),
@@ -72,11 +74,24 @@ export const request = internalAction({
     const mode = secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
     const client = mode === "off" ? null : new Autumn({ secretKey });
     const customerId = userId ? `exact-${userId}` : null;
-    const customer = client && customerId ? await client.customers.getOrCreate({ customerId }) : null;
-    const monthlyActive = customer?.subscriptions.some(plan => plan.planId === monthly.planId) ?? false;
+    const customer = client && customerId ? await client.customers.getOrCreate({
+      customerId,
+      ...(operation === "status" ? { expand: ["invoices"] } : {}),
+    }) : null;
+    const subscriptions = customer?.subscriptions.filter(plan => plan.planId === monthly.planId) ?? [];
+    const active = subscriptions.find(plan => plan.status === "active");
+    const monthlyActive = subscriptions.length > 0;
 
     if (operation === "status") {
-      return { ...offers, mode, monthlyActive, credits: customer ? customer.balances[feature.featureId]?.remaining ?? 0 : null };
+      const latestInvoice = active && customer?.invoices
+        ?.filter(invoice => invoice.planIds.includes(active.planId) && invoice.createdAt >= active.startedAt)
+        .sort((left, right) => right.createdAt - left.createdAt)[0];
+      return {
+        ...offers, mode, monthlyActive,
+        planId: active?.planId ?? null,
+        managedOnWeb: latestInvoice?.processorType === "stripe",
+        credits: customer ? customer.balances[feature.featureId]?.remaining ?? 0 : null,
+      };
     }
     if (!client || !customerId) throw new Error("Billing unavailable");
     const returnUrl = new URL("/pricing", env.CONVEX_SITE_URL).href;

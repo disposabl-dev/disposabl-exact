@@ -73,7 +73,7 @@ bun exact.mjs test web
 
 ## Optional billing
 
-Set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. Native store purchases require a managed store integration.
+Set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. The mobile app displays the Autumn plan and balance and tells web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
 
 [The catalog and Convex billing functions](packages/backend/convex/billing/index.ts) live in one file. Autumn stores customer balances and Stripe checkout state. Convex verifies the Exact session before calling Autumn.
 

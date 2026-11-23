@@ -58,6 +58,7 @@
   "billing.topupCredits": "{count} وحدة رصيد لمرة واحدة",
   "billing.continue": "المتابعة للدفع",
   "billing.manage": "إدارة الفوترة عبر الويب",
+  "billing.managedOnWeb": "تُدار الفوترة على الموقع الإلكتروني.",
   "billing.storeUnavailable": "غير متاح في هذا المتجر.",
   "billing.buyAt": "شراء مقابل {price}"
 }

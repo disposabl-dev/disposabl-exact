@@ -32,6 +32,8 @@ shape Billing
   mode: string
   web: bool
   monthlyActive: bool
+  planId: option<string>
+  managedOnWeb: bool
   credits: option<number>
   currency: string
   monthlyAmount: number
@@ -105,10 +107,11 @@ component Apps
   state wait = 1
   derive pricingVisible = top(nav).name == "pricing"
   derive checkoutUrl = match billingReply { case some(result) => result.url, case none => "" }
-  derive nativePreview = not billing.web and billing.mode == "test"
-  derive monthlyActive = nativePreview ? previewMonthly : billing.monthlyActive
+  derive nativePreview = not billing.web and billing.mode == "test" and not billing.managedOnWeb
+  derive monthlyActive = billing.monthlyActive or (nativePreview and previewMonthly)
+  derive credits = match billing.credits { case some(balance) => balance, case none => 0 }
   derive canBuy = signedIn and not authBusy and not pending(billingReply) and (billing.web or nativePreview)
-  task refreshPricing when pricingVisible and signedIn and billing.web
+  task refreshPricing when pricingVisible and signedIn
     every(15000, refreshBilling)
   task restore when not authAttempted
     after(1, checkSession)
@@ -311,19 +314,21 @@ component Apps
                       text t("billing.signIn")
                   else
                     if nativePreview
-                      text t("billing.balance", count=formatNumber(previewCredits, "decimal")) testId="credit-balance"
+                      text t("billing.balance", count=formatNumber(credits + previewCredits, "decimal")) testId="credit-balance"
                     else
                       match billing.credits
                         case some(balance)
                           text t("billing.balance", count=formatNumber(balance, "decimal")) testId="credit-balance"
                         case none
                           text t("billing.loading")
-                    if monthlyActive
+                    if previewMonthly or match billing.planId { case some(plan) => plan != "", case none => false }
                       text t("billing.active") testId="monthly-active"
+                    if not billing.web and billing.managedOnWeb
+                      text t("billing.managedOnWeb") color="-exact-secondary-label" testId="billing-managed-on-web"
                   if billing.web or nativePreview
                     PlanCard(title=t("billing.monthly"), credits=t("billing.monthlyCredits", count=formatNumber(billing.monthlyCredits, "decimal")), price=formatNumber(billing.monthlyAmount, "decimal") + " " + billing.currency, enabled=(canBuy and not monthlyActive), select=selectOffer("monthly"), id="monthly")
                     PlanCard(title=t("billing.topup"), credits=t("billing.topupCredits", count=formatNumber(billing.topupCredits, "decimal")), price=formatNumber(billing.topupAmount, "decimal") + " " + billing.currency, enabled=canBuy, select=selectOffer("topup"), id="topup")
-                  else
+                  else if not billing.managedOnWeb
                     text t("billing.storeUnavailable") color="-exact-secondary-label"
                   if signedIn
                     if failed(billingReply)

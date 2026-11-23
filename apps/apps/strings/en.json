@@ -58,6 +58,7 @@
   "billing.topupCredits": "{count} one-time credits",
   "billing.continue": "Continue to checkout",
   "billing.manage": "Manage web billing",
+  "billing.managedOnWeb": "Billing is managed on the website.",
   "billing.storeUnavailable": "Unavailable in this store.",
   "billing.buyAt": "Buy for {price}"
 }
