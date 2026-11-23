@@ -61,3 +61,11 @@ if [[ "$SETUP_PLATFORM" == android ]]; then
   echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
   echo "ANDROID_BUILD_TOOLS_VERSION=37.0.0" >> "$GITHUB_ENV"
 fi
+
+if [[ "$SETUP_PLATFORM" != web ]]; then
+  app="$GITHUB_WORKSPACE/apps/apps"
+  mkdir -p "$app/.exact"
+  ln -s "$EXACT" "$app/.exact/checkout"
+  (cd "$app" && bun install --frozen-lockfile)
+  echo "NATIVE_APP_DIR=$app" >> "$GITHUB_ENV"
+fi
