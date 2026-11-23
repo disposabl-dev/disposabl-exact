@@ -1,0 +1,71 @@
+name: Blacksmith open tools experiment
+
+on:
+  push:
+    branches: [ci/exact-ios-blacksmith-tools]
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: blacksmith-8vcpu-ubuntu-2604
+    timeout-minutes: 30
+    outputs:
+      archive-sha256: ${{ steps.seed.outputs.archive-sha256 }}
+      image-id: ${{ steps.seed.outputs.image-id }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Mount shared tools disk
+        uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
+        with:
+          key: exact-ios-open-tools-experiment-81de387-v1
+          path: /tmp/exact-ios-open-tools
+      - id: seed
+        name: Build and seed open tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          docker build -f .github/scripts/hosted-mobile/Dockerfile.ios-tools \
+            -t exact-ios-tools:experiment .github/scripts/hosted-mobile
+          echo "Image build: $((SECONDS-start))s"
+          start=$SECONDS
+          docker save exact-ios-tools:experiment -o /tmp/exact-ios-open-tools/image.tmp.tar
+          mv /tmp/exact-ios-open-tools/image.tmp.tar /tmp/exact-ios-open-tools/image.tar
+          sha=$(sha256sum /tmp/exact-ios-open-tools/image.tar | cut -d' ' -f1)
+          id=$(docker image inspect --format '{{.Id}}' exact-ios-tools:experiment)
+          printf 'archive-sha256=%s\nimage-id=%s\n' "$sha" "$id" >> "$GITHUB_OUTPUT"
+          echo "Image save and hash: $((SECONDS-start))s"
+
+  restore:
+    needs: seed
+    runs-on: blacksmith-8vcpu-ubuntu-2604
+    timeout-minutes: 15
+    steps:
+      - name: Mount seeded tools disk
+        uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
+        with:
+          key: exact-ios-open-tools-experiment-81de387-v1
+          path: /tmp/exact-ios-open-tools
+      - name: Verify, load and smoke test
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.seed.outputs.archive-sha256 }}
+          EXPECTED_IMAGE: ${{ needs.seed.outputs.image-id }}
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{64}$ && "$EXPECTED_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "$EXPECTED_SHA  /tmp/exact-ios-open-tools/image.tar" | sha256sum -c -
+          echo "Archive verification: $((SECONDS-start))s"
+          start=$SECONDS
+          docker load -i /tmp/exact-ios-open-tools/image.tar
+          [[ "$(docker image inspect --format '{{.Id}}' exact-ios-tools:experiment)" == "$EXPECTED_IMAGE" ]]
+          echo "Image load: $((SECONDS-start))s"
+          start=$SECONDS
+          docker run --rm --pull=never -e BENCHMARK_TARGET=ios exact-ios-tools:experiment \
+            bash /opt/exact/setup/toolchain.sh
+          echo "Tool smoke: $((SECONDS-start))s"
