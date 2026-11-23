@@ -55,9 +55,9 @@ jobs:
         app:
           - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
           - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 0dac6f24ed3486b83bfaae3576b1c246e1ae1f10}
-          - {name: Field Journal, repo: exact-first-field-hosts, ref: 0eb00f3f554757e5a7c6f0e7753e5237114ec98b}
-          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: a6e7ee874daa0f964cbe8782322a9c01c0604efb}
-          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 4a96dea6ff83a4c1fef5ba5287b6d27fff881fb3}
+          - {name: Field Journal, repo: exact-first-field-hosts, ref: 444f6e1e3821cebf5cf12279af96382cb44e72ba}
+          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: 4ec86e25c73486668a931119e3db2650bcf568e2}
+          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 96fa3ae437b03a77d3cf3e94a9fe4f6966f1095c}
     env:
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
