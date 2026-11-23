@@ -3,7 +3,6 @@ import type { HttpRouter } from "convex/server";
 import { api, components } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { siteOrigin } from "./authSettings";
-import { scopes } from "./mcp";
 
 type WebSession = (
   request: Request,
@@ -17,10 +16,7 @@ function escapeHtml(value: string) {
   );
 }
 
-function page(title: string, body: string, status = 200, callback?: URL) {
-  const destinations = callback
-    ? `'self' ${callback.origin === "null" ? callback.protocol : callback.origin}`
-    : "'self'";
+function page(title: string, body: string, status = 200) {
   return new Response(
     `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><main><h1>${title}</h1>${body}</main></html>`,
     {
@@ -28,7 +24,7 @@ function page(title: string, body: string, status = 200, callback?: URL) {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
-        "Content-Security-Policy": `default-src 'none'; form-action ${destinations}; frame-ancestors 'none'; base-uri 'none'`,
+        "Content-Security-Policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
         "Referrer-Policy": "same-origin",
         "X-Content-Type-Options": "nosniff",
       },
@@ -55,22 +51,22 @@ async function readForm(request: Request) {
   return text.length <= 4096 ? new URLSearchParams(text) : null;
 }
 
-export function registerConsentPage(http: HttpRouter, session: WebSession) {
-  const title = "Connect to Disposabl Exact";
+export function registerConsent(http: HttpRouter, session: WebSession) {
+  const endpoint = "/api/mcp/consent";
+  const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
+  const validId = (id: string | null): id is string =>
+    id !== null && /^[a-zA-Z0-9_-]{1,128}$/.test(id);
+
   http.route({
-    path: "/consent",
+    path: endpoint,
     method: "GET",
     handler: httpAction(async (ctx, request) => {
+      if (request.headers.get("X-Exact-Auth") !== "1")
+        return new Response(null, { status: 403, headers });
       const id = new URL(request.url).searchParams.get("request");
-      if (!id || !/^[a-zA-Z0-9_-]{1,128}$/.test(id))
-        return page(
-          title,
-          "<p>Start a new connection from your MCP client.</p>",
-          400,
-        );
+      if (!validId(id)) return new Response(null, { status: 400, headers });
       const account = await session(request);
-      if (!account)
-        return signIn(title, `/consent?request=${encodeURIComponent(id)}`);
+      if (!account) return new Response(null, { status: 401, headers });
       const pending = await ctx.runQuery(components.mcp.oauth.getAuthRequest, {
         requestId: id,
       });
@@ -78,75 +74,43 @@ export function registerConsentPage(http: HttpRouter, session: WebSession) {
         pending?.kind !== "redirect" ||
         !pending.redirectUri ||
         pending.status !== "pending"
-      )
-        return page(
-          title,
-          "<p>This request is no longer available. Start a new connection from your MCP client.</p>",
-          404,
-        );
-      const permissions = pending.scopes
-        .map(
-          (scope) =>
-            `<li>${escapeHtml(scopes[scope as keyof typeof scopes] ?? scope)}</li>`,
-        )
-        .join("");
-      return page(
-        title,
-        `<p>Signed in as <strong>${escapeHtml(account.name)}</strong>.</p>
-        <p><strong>${escapeHtml(pending.clientName || pending.clientId)}</strong> requests access. The client provides this name.</p>
-        <ul>${permissions}</ul><p>Return to <code>${escapeHtml(pending.redirectUri)}</code></p>
-        <form method="post" action="/consent"><input type="hidden" name="request" value="${escapeHtml(id)}">
-        <button name="decision" value="deny">Deny</button>
-        <button name="decision" value="approve">Allow access</button></form>`,
-        200,
-        new URL(pending.redirectUri),
-      );
+      ) return new Response(null, { status: 404, headers });
+      return Response.json({
+        client: pending.clientName || pending.clientId,
+        destination: pending.redirectUri,
+        scopes: pending.scopes,
+      }, { headers });
     }),
   });
+
   http.route({
-    path: "/consent",
+    path: endpoint,
     method: "POST",
     handler: httpAction(async (_ctx, request) => {
       const form = await readForm(request);
-      if (!form)
-        return page(title, "<p>Open the consent page and try again.</p>", 403);
-      const account = await session(request);
+      if (!form) return new Response(null, { status: 403, headers });
       const id = form.get("request");
       const decision = form.get("decision");
-      if (
-        !id ||
-        !/^[a-zA-Z0-9_-]{1,128}$/.test(id) ||
-        (decision !== "approve" && decision !== "deny")
-      )
-        return page(
-          title,
-          "<p>Start a new connection from your MCP client.</p>",
-          400,
-        );
-      if (!account)
-        return signIn(title, `/consent?request=${encodeURIComponent(id)}`, 401);
+      if (!validId(id) || (decision !== "approve" && decision !== "deny"))
+        return new Response(null, { status: 400, headers });
+      const account = await session(request);
+      if (!account) return new Response(null, { status: 401, headers });
+      let redirectUrl: string | null | undefined;
       try {
-        const { redirectUrl } = await account.client.action(api.mcp.authorize, {
+        ({ redirectUrl } = await account.client.action(api.mcp.authorize, {
           requestId: id,
           approve: decision === "approve",
-        });
-        if (redirectUrl)
-          return new Response(null, {
-            status: 303,
-            headers: {
-              Location: redirectUrl,
-              "Cache-Control": "no-store",
-              "Referrer-Policy": "no-referrer",
-            },
-          });
+        }));
       } catch {
-        return page(
-          title,
-          "<p>This request could not be completed. Start a new connection.</p>",
-          400,
-        );
+        // The request can expire or be answered in another tab after review.
       }
-      return page(title, "<p>Return to your MCP client.</p>");
+      return new Response(null, {
+        status: 303,
+        headers: {
+          ...headers,
+          Location: redirectUrl || `/consent?request=${encodeURIComponent(id)}&error=1`,
+        },
+      });
     }),
   });
 }

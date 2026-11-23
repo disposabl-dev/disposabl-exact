@@ -25,11 +25,21 @@ shape AuthReply
   google: bool
   error: string
 
-shape GoogleReply
+shape ActionReply
+  error: string
+
+shape WebHost
+  enabled: bool
+
+shape Consent
+  client: string
+  destination: string
+  scopes: string[]
   error: string
 
 routes nav
   home "/"
+  consent "/consent"
 
 style LanguagePanel
   padding=12 gap=4 border-radius=14
@@ -69,7 +79,7 @@ component Apps
   mutation incremented as shape IncrementReply
   mutation checkedSession as shape AuthReply then sessionChecked
   mutation changedSession as shape AuthReply then sessionChanged
-  mutation googleBrowser as shape GoogleReply then googleBrowserFinished
+  mutation googleBrowser as shape ActionReply then googleBrowserFinished
   state authReady = false
   state authAttempted = false
   state signedIn = false
@@ -81,6 +91,12 @@ component Apps
   state creating = false
   derive authChanging = pending(changedSession) or pending(googleBrowser)
   derive authBusy = authChanging or pending(checkedSession)
+  resource host = webHost() as shape WebHost else empty(enabled=false)
+  derive onConsent = host.enabled and top(nav).name == "consent"
+  derive consentId = searchParam(top(nav), "request")
+  derive consentFailed = searchParam(top(nav), "error") == "1"
+  resource mcpConsent = loadMcpConsent(consentId) when onConsent and signedIn and consentId != "" and not consentFailed as shape Consent
+  mutation consentDecision as shape ActionReply
   state liked = false
   state waited = 0
   state wait = 1
@@ -157,6 +173,9 @@ component Apps
     if not authBusy
       authError = ""
       send changedSession = signOut()
+  action decideConsent(decision: string)
+    if onConsent and signedIn and not authBusy and not pending(consentDecision) and not pending(mcpConsent) and mcpConsent.client != ""
+      send consentDecision = decideMcpConsent(consentId, decision)
   action like
     liked = not liked
   action increment
@@ -181,12 +200,14 @@ component Apps
         // Keep the cover display's physical side controls clear in either direction.
         column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column" padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
           header display="flex" align-items="center"
-            text t("app.title") role="heading" aria-level=1 flex=1
-            button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
-              image (liked ? "symbol:heart-fill" : "symbol:heart")
+            text (host.enabled and e.name == "consent" ? t("mcp.title") : t("app.title")) role="heading" aria-level=1 flex=1
+            if not onConsent
+              button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
+                image (liked ? "symbol:heart-fill" : "symbol:heart")
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
-              text t("app.greeting", name=t("app.name")) testId="greeting"
+              if not onConsent
+                text t("app.greeting", name=t("app.name")) testId="greeting"
               if languages.length > 1
                 column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
                   select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
@@ -223,14 +244,44 @@ component Apps
                     text t("app.tryAgain")
                 if authError != ""
                   text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
-              text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
-              text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
-              if counter.count >= 0
-                text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
-              button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
-                text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
-              if failed(incremented)
-                text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
-              if live.status == "failed" or failed(counter)
-                button press=reconnectNow
-                  text t("counter.retry")
+              if onConsent
+                if consentId == "" or consentFailed
+                  text t("mcp.expired") role="alert"
+                else if signedIn
+                  if pending(mcpConsent)
+                    text t("mcp.loading")
+                  else if failed(mcpConsent)
+                    text t("mcp.failed") role="alert"
+                  else if mcpConsent.error != ""
+                    text t("mcp.expired") role="alert"
+                  else if mcpConsent.client != ""
+                    column gap=10 width="100%" max-width="26.25rem"
+                      text t("mcp.client", client=mcpConsent.client) testId="mcp-client"
+                      list
+                        for scope in mcpConsent.scopes key=scope
+                          text (scope == "read" ? t("mcp.read") : scope == "write" ? t("mcp.write") : scope)
+                      text t("mcp.destination", url=mcpConsent.destination)
+                      row gap=8
+                        button press=decideConsent("deny") disabled=(authBusy or pending(consentDecision)) testId="mcp-deny"
+                          text t("mcp.deny")
+                        button press=decideConsent("approve") disabled=(authBusy or pending(consentDecision)) buttonStyle="filled" testId="mcp-approve"
+                          text t("mcp.allow")
+                      match consentDecision
+                        case some(result)
+                          if result.error != ""
+                            text t("mcp.failed") role="alert"
+                        case none
+                          if failed(consentDecision)
+                            text t("mcp.failed") role="alert"
+              else
+                text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
+                text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
+                if counter.count >= 0
+                  text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
+                button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
+                  text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
+                if failed(incremented)
+                  text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
+                if live.status == "failed" or failed(counter)
+                  button press=reconnectNow
+                    text t("counter.retry")

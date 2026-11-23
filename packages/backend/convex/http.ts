@@ -7,7 +7,7 @@ import config from "../../../disposabl.json";
 import { api, components, internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
 import { mcp, platformOperations } from "./mcp";
-import { registerConsentPage, registerCredentialsPage } from "./platformPages";
+import { registerConsent, registerCredentialsPage } from "./platformPages";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, siteOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
@@ -194,6 +194,26 @@ const webReturn = httpAction(async (ctx) => {
   });
 });
 
+const consentDocument = httpAction(async (ctx) => {
+  const asset = await ctx.runQuery(components.staticHosting.lib.resolveAssetForHttp, {
+    path: "/index.html",
+    spaFallback: false,
+  });
+  if (!asset?.storageUrl) return reply({ error: "UNAVAILABLE" }, 503);
+  const file = await fetch(asset.storageUrl);
+  if (!file.ok || !file.body) return reply({ error: "UNAVAILABLE" }, 503);
+  return new Response(file.body, {
+    headers: {
+      ...privateHeaders,
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      // Keep the Origin header on the same-origin consent form submission.
+      "Referrer-Policy": "same-origin",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});
+
 const http = httpRouter();
 const platforms: readonly string[] = config.platforms;
 
@@ -205,7 +225,8 @@ const authenticate = mcp.authenticate.bind(mcp);
 if (platforms.includes("api")) registerApi(http, platformOperations, authenticate);
 if (platforms.includes("mcp")) {
   mcp.registerRoutes(http);
-  registerConsentPage(http, platformSession);
+  http.route({ path: "/consent", method: "GET", handler: consentDocument });
+  registerConsent(http, platformSession);
 }
 if (platforms.includes("api") || platforms.includes("mcp"))
   registerCredentialsPage(http, platformSession);

@@ -43,5 +43,15 @@
   "counter.saving": "جارٍ الحفظ…",
   "counter.title": "العدّاد المباشر",
   "language.picker": "اللغة، {name}",
-  "language.system": "استخدام لغة الجهاز"
+  "language.system": "استخدام لغة الجهاز",
+  "mcp.allow": "السماح بالوصول",
+  "mcp.client": "يطلب {client} الوصول. هذا الاسم مقدّم من العميل.",
+  "mcp.deny": "رفض",
+  "mcp.destination": "العودة إلى {url}",
+  "mcp.expired": "هذا الطلب لم يعد متاحًا. ابدأ اتصالًا جديدًا من عميل MCP.",
+  "mcp.failed": "تعذّر إكمال طلب الاتصال. أعد تحميل الصفحة وحاول مرة أخرى.",
+  "mcp.loading": "جارٍ التحقق من طلب الاتصال…",
+  "mcp.read": "قراءة بيانات التطبيق",
+  "mcp.title": "الاتصال بـ Disposabl Exact",
+  "mcp.write": "تغيير بيانات التطبيق وتشغيل الإجراءات"
 }

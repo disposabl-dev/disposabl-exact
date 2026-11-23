@@ -43,5 +43,15 @@
   "counter.saving": "Saving…",
   "counter.title": "Live counter",
   "language.picker": "Language, {name}",
-  "language.system": "Use device language"
+  "language.system": "Use device language",
+  "mcp.allow": "Allow access",
+  "mcp.client": "{client} requests access. The client provides this name.",
+  "mcp.deny": "Deny",
+  "mcp.destination": "Return to {url}",
+  "mcp.expired": "This request is no longer available. Start a new connection from your MCP client.",
+  "mcp.failed": "Could not complete the connection request. Reload the page and try again.",
+  "mcp.loading": "Checking the connection request…",
+  "mcp.read": "Read app data",
+  "mcp.title": "Connect to Disposabl Exact",
+  "mcp.write": "Change app data and run actions"
 }

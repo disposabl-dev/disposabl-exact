@@ -189,19 +189,27 @@ test.skipIf(!platforms.includes("mcp"))(
     const consent = new URL(start.headers.get("Location")!);
     expect(consent.pathname).toBe("/consent");
     const request = consent.searchParams.get("request")!;
-    expect(await (await fetch(consent)).text()).toContain("Sign in to Exact");
+    const details = `${site}/api/mcp/consent?request=${encodeURIComponent(request)}`;
+    expect((await fetch(details)).status).toBe(403);
+    expect((await fetch(details, { headers: { "X-Exact-Auth": "1" } })).status).toBe(401);
     expect(
-      (await form("/consent", { request, decision: "approve" })).status,
+      (await form("/api/mcp/consent", { request, decision: "approve" })).status,
     ).toBe(401);
 
     const cookie = await signIn();
-    const approvalPage = await fetch(consent, { headers: { Cookie: cookie } });
-    expect(approvalPage.headers.get("Referrer-Policy")).toBe("same-origin");
-    expect(await approvalPage.text()).toContain("Read app data");
+    expect((await fetch(details, { headers: { Cookie: cookie } })).status).toBe(403);
+    const pending = await fetch(details, { headers: { Cookie: cookie, "X-Exact-Auth": "1" } });
+    expect(pending.status).toBe(200);
+    expect(pending.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(await pending.json()).toMatchObject({
+      client: "Exact integration client",
+      destination: redirectUri,
+      scopes: ["read"],
+    });
     expect(
       (
         await form(
-          "/consent",
+          "/api/mcp/consent",
           { request, decision: "approve" },
           cookie,
           "https://example.com",
@@ -209,7 +217,7 @@ test.skipIf(!platforms.includes("mcp"))(
       ).status,
     ).toBe(403);
     const approval = await form(
-      "/consent",
+      "/api/mcp/consent",
       { request, decision: "approve" },
       cookie,
     );
