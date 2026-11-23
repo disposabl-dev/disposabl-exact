@@ -49,6 +49,14 @@ test("only the selected transports expose the internal counter query", async () 
   if (platforms.includes("api")) {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expected);
+    const wrongMethod = await fetch(`${site}/api/counter/current`, {
+      method: "POST",
+    });
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get("Allow")).toBe("GET");
+    expect((await fetch(`${site}/api/counter/current?extra=true`)).status).toBe(
+      400,
+    );
   } else {
     expect(response.status).toBe(404);
   }

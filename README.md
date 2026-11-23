@@ -54,11 +54,13 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 ### API and MCP
 
-Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery` from `@disposabl-kit/server` and set `platforms: true` to expose the query through each selected transport after redeploying Convex. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
+Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose that function through the selected transports after redeploying Convex. These endpoints are public. Only opt in operations intended for public access.
 
-The same package exports `internalMutation` and `internalAction` for internal Convex calls. The REST and MCP registry supports read-only queries.
+- Queries use GET. Pass named arguments as query parameters, using plain text for string fields and JSON for other values.
+- Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.
+- MCP marks queries read-only and publishes the argument schema for each tool. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
 
-The backend discovers marked internal queries and writes a registry using Convex's generated function types. Local startup and CI generate it. After editing platform markers with the dev server running, run `bun run generate:platforms` from `packages/backend`.
+The backend discovers marked internal functions and writes a registry using Convex's generated references and argument validators. Local startup and CI generate it. After editing platform functions with the dev server running, run `bun run generate:platforms` from `packages/backend`.
 
 ### Translations
 

@@ -5,6 +5,8 @@ import {
   internalQueryGeneric,
   type ActionBuilder,
   type FunctionReference,
+  type FunctionType,
+  type GenericActionCtx,
   type GenericDataModel,
   type MutationBuilder,
   type QueryBuilder,
@@ -13,7 +15,10 @@ import type {
   GenericValidator,
   JSONValue,
   PropertyValidators,
+  Value,
 } from "convex/values";
+import { convexToJson } from "convex/values";
+import * as z from "zod/v4";
 
 export interface ServerTypes {}
 
@@ -22,9 +27,6 @@ type DataModel = ServerTypes extends {
 }
   ? Model
   : GenericDataModel;
-type ReadResult = Record<string, JSONValue>;
-type NoArgs = Record<string, never>;
-type InternalRead = FunctionReference<"query", "internal", NoArgs, ReadResult>;
 
 function withPlatforms<Definition, Registered extends object>(
   builder: (definition: Definition) => Registered,
@@ -36,7 +38,10 @@ function withPlatforms<Definition, Registered extends object>(
       platforms?: true;
     },
   ): Registered =>
-    Object.assign(builder(definition), { platforms: definition.platforms });
+    Object.assign(builder(definition), {
+      platforms: definition.platforms,
+      platformArgs: definition.args,
+    });
 }
 
 const query: QueryBuilder<DataModel, "internal"> = internalQueryGeneric;
@@ -48,23 +53,54 @@ export const internalQuery = withPlatforms(query);
 export const internalMutation = withPlatforms(mutation);
 export const internalAction = withPlatforms(action);
 
-export type PlatformRead = {
+export type PlatformDefinition = {
+  [Kind in FunctionType]: {
+    kind: Kind;
+    reference: FunctionReference<Kind, "internal">;
+    inputSchema: z.core.JSONSchema.ObjectSchema;
+  };
+}[FunctionType];
+
+export type PlatformOperation = PlatformDefinition & {
   name: string;
   description: string;
   path: `/api/${string}`;
-  query: InternalRead;
+  input: z.ZodType<Record<string, unknown>>;
 };
 
-export function createPlatformReads(
-  queries: readonly InternalRead[],
-): PlatformRead[] {
-  return queries.map((query) => {
-    const id = getFunctionName(query);
+export function createPlatformOperations(
+  definitions: readonly PlatformDefinition[],
+): PlatformOperation[] {
+  return definitions.map((definition) => {
+    const id = getFunctionName(definition.reference);
     return {
+      ...definition,
       name: id.replace(/[^A-Za-z0-9_.-]/g, "_"),
-      description: `Read ${id}.`,
+      description: `Call ${id}.`,
       path: `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}`,
-      query,
+      input: z.fromJSONSchema(
+        definition.inputSchema,
+      ) as PlatformOperation["input"],
     };
   });
+}
+
+export async function runPlatformOperation(
+  ctx: GenericActionCtx<GenericDataModel>,
+  operation: PlatformOperation,
+  args: Record<string, unknown>,
+): Promise<JSONValue> {
+  let result: Value;
+  switch (operation.kind) {
+    case "query":
+      result = await ctx.runQuery(operation.reference, args);
+      break;
+    case "mutation":
+      result = await ctx.runMutation(operation.reference, args);
+      break;
+    case "action":
+      result = await ctx.runAction(operation.reference, args);
+      break;
+  }
+  return convexToJson(result);
 }

@@ -4,12 +4,11 @@ import {
   originValidationResponse,
 } from "@modelcontextprotocol/server";
 import { httpActionGeneric, type HttpRouter } from "convex/server";
-import * as z from "zod/v4";
-import type { PlatformRead } from "./functions";
+import { runPlatformOperation, type PlatformOperation } from "./functions";
 
 export function registerMcp(
   router: HttpRouter,
-  reads: readonly PlatformRead[],
+  operations: readonly PlatformOperation[],
 ) {
   const handler = httpActionGeneric(async (ctx, request) => {
     // Remote MCP clients can connect without granting any browser origin access.
@@ -21,19 +20,22 @@ export function registerMcp(
         name: "disposabl-exact",
         version: "0.1.0",
       });
-      for (const read of reads) {
+      for (const operation of operations) {
         server.registerTool(
-          read.name,
+          operation.name,
           {
-            description: read.description,
-            inputSchema: z.strictObject({}),
-            annotations: { readOnlyHint: true, openWorldHint: false },
+            description: operation.description,
+            inputSchema: operation.input,
+            annotations: { readOnlyHint: operation.kind === "query" },
           },
-          async () => {
-            const result = await ctx.runQuery(read.query, {});
+          async (args) => {
+            const result = await runPlatformOperation(ctx, operation, args);
             return {
               content: [{ type: "text", text: JSON.stringify(result) }],
-              structuredContent: result,
+              structuredContent:
+                result && typeof result === "object" && !Array.isArray(result)
+                  ? result
+                  : { result },
             };
           },
         );
