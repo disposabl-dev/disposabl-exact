@@ -1,63 +1,55 @@
-import { makeFunctionReference, type FunctionReference } from "convex/server";
-import type { JSONValue, Validator } from "convex/values";
+import {
+  getFunctionName,
+  type FunctionReference,
+  type GenericDataModel,
+  type GenericQueryCtx,
+  type QueryBuilder,
+  type RegisteredQuery,
+} from "convex/server";
+import type { GenericValidator, JSONValue, Validator } from "convex/values";
 
 type ReadResult = Record<string, JSONValue>;
+type NoArgs = Record<string, never>;
+type InternalRead = FunctionReference<"query", "internal", NoArgs, ReadResult>;
 
-export function withPlatforms<
-  TDefinition,
-  TResult extends { isInternal: true; isQuery: true },
->(internalQuery: (definition: TDefinition) => TResult) {
-  return (
-    definition: TDefinition & {
-      args: Record<string, never>;
-      returns: Validator<ReadResult, "required", string>;
-      platforms?: true;
-    },
-  ) =>
-    Object.assign(internalQuery(definition), {
-      platforms: definition.platforms,
-    });
+export function withPlatforms<DataModel extends GenericDataModel>(
+  internalQuery: QueryBuilder<DataModel, "internal">,
+) {
+  return <Result extends ReadResult>({
+    platforms,
+    ...definition
+  }: {
+    platforms?: true;
+    args: NoArgs;
+    returns: Validator<Result, "required", string>;
+    handler: (ctx: GenericQueryCtx<DataModel>) => Result | Promise<Result>;
+  }): RegisteredQuery<"internal", NoArgs, Result | Promise<Result>> => {
+    const query = internalQuery<
+      NoArgs,
+      GenericValidator,
+      Result | Promise<Result>
+    >(definition);
+    return Object.assign(query, { platforms });
+  };
 }
 
 export type PlatformRead = {
   name: string;
   description: string;
   path: `/api/${string}`;
-  query: FunctionReference<
-    "query",
-    "public",
-    Record<string, never>,
-    ReadResult
-  >;
+  query: InternalRead;
 };
 
 export function createPlatformReads(
-  modules: Record<string, Record<string, unknown>>,
-) {
-  const reads: PlatformRead[] = [];
-  for (const [path, exports] of Object.entries(modules)) {
-    for (const [name, value] of Object.entries(exports)) {
-      if (
-        typeof value !== "function" ||
-        !("platforms" in value) ||
-        value.platforms !== true
-      )
-        continue;
-      const id = `${path}:${name}`;
-      if (!(
-        "isInternal" in value &&
-        value.isInternal === true &&
-        "isQuery" in value &&
-        value.isQuery === true
-      ))
-        throw new Error(`${id}: only internal queries can opt into platforms`);
-      reads.push({
-        name: id.replace(/[^A-Za-z0-9_.-]/g, "_"),
-        description: `Read ${id}.`,
-        path: `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}`,
-        query: makeFunctionReference(id),
-      });
-    }
-  }
-  return reads;
+  queries: readonly InternalRead[],
+): PlatformRead[] {
+  return queries.map((query) => {
+    const id = getFunctionName(query);
+    return {
+      name: id.replace(/[^A-Za-z0-9_.-]/g, "_"),
+      description: `Read ${id}.`,
+      path: `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}`,
+      query,
+    };
+  });
 }

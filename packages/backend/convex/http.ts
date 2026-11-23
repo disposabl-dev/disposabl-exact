@@ -5,9 +5,10 @@ import { createPlatformReads } from "@disposabl-kit/server/functions";
 import { registerMcp } from "@disposabl-kit/server/mcp";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
+import config from "../../../disposabl.json";
+import platformQueries from "../generated/platforms";
 import { api, components, internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
-import * as counter from "./counter";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, siteOrigin } from "./authSettings";
 
 const cookieName = "__Host-exact-session";
@@ -185,13 +186,14 @@ const webReturn = httpAction(async (ctx) => {
 });
 
 const http = httpRouter();
-const platformReads = createPlatformReads({ counter });
+const platforms: readonly string[] = config.platforms;
+const platformReads = createPlatformReads(Object.values(platformQueries));
 
 http.route({ path: "/api/auth/web", method: "POST", handler: session });
 http.route({ path: "/api/auth/native", method: "POST", handler: session });
 http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
 http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
-registerApi(http, platformReads);
-registerMcp(http, platformReads);
+if (platforms.includes("api")) registerApi(http, platformReads);
+if (platforms.includes("mcp")) registerMcp(http, platformReads);
 registerStaticRoutes(http, components.staticHosting);
 export default http;

@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "convex dev",
-    "predev": "convex dev --until-success && convex dashboard",
+    "predev": "bun run generate:platforms && convex dev --until-success && convex dashboard",
+    "generate:platforms": "bun generate-platforms.ts",
     "logs": "convex logs",
     "typecheck": "tsc -p convex",
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"

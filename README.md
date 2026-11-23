@@ -40,7 +40,7 @@ Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UP
 
 ### Run the app locally
 
-Install dependencies in `packages/backend`, then run `bun run convex dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
+Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
 
@@ -51,6 +51,12 @@ Exact uses Convex Auth `2.1.0` on web, Android, and iOS. Username and password w
 Android and iOS use the system browser for Google. The Convex callback returns through a fixed app URL scheme, and the app must hold the separate Convex state to redeem the one-time ticket. The web session lives in a Secure, HttpOnly cookie. Native sessions live in the Keychain or Android Keystore-backed storage. Sign-out revokes the backing Convex session before the app clears its session. Queries for account data verify the session server-side.
 
 Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend` against an isolated local deployment. Set `EXPECT_GOOGLE=0` or `EXPECT_GOOGLE=1` to assert the expected Google configuration.
+
+### API and MCP
+
+Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Use the kit's `withPlatforms` wrapper and set `platforms: true` on an internal query to expose it through each selected transport after redeploying Convex. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
+
+The backend discovers marked internal queries and writes a registry using Convex's generated function types. Local startup and CI generate it. After editing platform markers with the dev server running, run `bun run generate:platforms` from `packages/backend`.
 
 ### Translations
 

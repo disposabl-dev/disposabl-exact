@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import config from "../../../disposabl.json";
 import { api } from "../convex/_generated/api";
 
+const platforms: readonly string[] = config.platforms;
 const site = process.env.CONVEX_SITE_URL;
 const cloud = process.env.CONVEX_URL;
 if (
@@ -37,17 +39,26 @@ async function mcpResult(response: Response) {
   return JSON.parse(data.slice("data: ".length)).result;
 }
 
-test("REST and the read-only MCP tool expose the existing public counter", async () => {
+test("only the selected transports expose the internal counter query", async () => {
   const client = new ConvexHttpClient(cloud);
   const expected = await client.query(api.counter.get, {});
   await expect(
     client.query(makeFunctionReference<"query">("counter:current"), {}),
   ).rejects.toThrow("Could not find public function");
   const response = await fetch(`${site}/api/counter/current`);
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual(expected);
+  if (platforms.includes("api")) {
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(expected);
+  } else {
+    expect(response.status).toBe(404);
+  }
 
-  const { tools } = await mcpResult(await mcp("tools/list"));
+  const list = await mcp("tools/list");
+  if (!platforms.includes("mcp")) {
+    expect(list.status).toBe(404);
+    return;
+  }
+  const { tools } = await mcpResult(list);
   expect(tools).toHaveLength(1);
   expect(tools[0]).toMatchObject({
     name: "counter_current",
