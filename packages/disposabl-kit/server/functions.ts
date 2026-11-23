@@ -1,37 +1,52 @@
 import {
   getFunctionName,
+  internalActionGeneric,
+  internalMutationGeneric,
+  internalQueryGeneric,
+  type ActionBuilder,
   type FunctionReference,
   type GenericDataModel,
-  type GenericQueryCtx,
+  type MutationBuilder,
   type QueryBuilder,
-  type RegisteredQuery,
 } from "convex/server";
-import type { GenericValidator, JSONValue, Validator } from "convex/values";
+import type {
+  GenericValidator,
+  JSONValue,
+  PropertyValidators,
+} from "convex/values";
 
+export interface ServerTypes {}
+
+type DataModel = ServerTypes extends {
+  dataModel: infer Model extends GenericDataModel;
+}
+  ? Model
+  : GenericDataModel;
 type ReadResult = Record<string, JSONValue>;
 type NoArgs = Record<string, never>;
 type InternalRead = FunctionReference<"query", "internal", NoArgs, ReadResult>;
 
-export function withPlatforms<DataModel extends GenericDataModel>(
-  internalQuery: QueryBuilder<DataModel, "internal">,
+function withPlatforms<Definition, Registered extends object>(
+  builder: (definition: Definition) => Registered,
 ) {
-  return <Result extends ReadResult>({
-    platforms,
-    ...definition
-  }: {
-    platforms?: true;
-    args: NoArgs;
-    returns: Validator<Result, "required", string>;
-    handler: (ctx: GenericQueryCtx<DataModel>) => Result | Promise<Result>;
-  }): RegisteredQuery<"internal", NoArgs, Result | Promise<Result>> => {
-    const query = internalQuery<
-      NoArgs,
-      GenericValidator,
-      Result | Promise<Result>
-    >(definition);
-    return Object.assign(query, { platforms });
-  };
+  return (
+    definition: Definition & {
+      args: PropertyValidators;
+      returns: GenericValidator;
+      platforms?: true;
+    },
+  ): Registered =>
+    Object.assign(builder(definition), { platforms: definition.platforms });
 }
+
+const query: QueryBuilder<DataModel, "internal"> = internalQueryGeneric;
+const mutation: MutationBuilder<DataModel, "internal"> =
+  internalMutationGeneric;
+const action: ActionBuilder<DataModel, "internal"> = internalActionGeneric;
+
+export const internalQuery = withPlatforms(query);
+export const internalMutation = withPlatforms(mutation);
+export const internalAction = withPlatforms(action);
 
 export type PlatformRead = {
   name: string;

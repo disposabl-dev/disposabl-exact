@@ -1,13 +1,6 @@
-import { withPlatforms } from "@disposabl-kit/server/functions";
+import { internalQuery } from "@disposabl-kit/server";
 import { v } from "convex/values";
-import {
-  internalQuery as convexInternalQuery,
-  mutation,
-  query,
-  type QueryCtx,
-} from "./_generated/server";
-
-const internalQuery = withPlatforms(convexInternalQuery);
+import { mutation, query, type QueryCtx } from "./_generated/server";
 
 const counter = (db: QueryCtx["db"]) =>
   db

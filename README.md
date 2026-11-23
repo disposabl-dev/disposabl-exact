@@ -54,7 +54,9 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 ### API and MCP
 
-Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Use the kit's `withPlatforms` wrapper and set `platforms: true` on an internal query to expose it through each selected transport after redeploying Convex. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
+Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery` from `@disposabl-kit/server` and set `platforms: true` to expose the query through each selected transport after redeploying Convex. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
+
+The same package exports `internalMutation` and `internalAction` for internal Convex calls. The REST and MCP registry supports read-only queries.
 
 The backend discovers marked internal queries and writes a registry using Convex's generated function types. Local startup and CI generate it. After editing platform markers with the dev server running, run `bun run generate:platforms` from `packages/backend`.
 

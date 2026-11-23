@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./server/functions.ts",
     "./api": "./server/api.ts",
-    "./functions": "./server/functions.ts",
     "./mcp": "./server/mcp.ts"
   },
   "dependencies": {
