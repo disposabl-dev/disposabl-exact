@@ -2,9 +2,11 @@
 set -euo pipefail
 mode=$1
 bundle=$2
-: "${EXACT:?}" "${EXACT_APPLE_SDK:?}" "${EXACT_IOS_COMPILER_DIR:?}"
+: "${EXACT:?}" "${EXACT_IOS_COMPILER_DIR:?}"
 target="$EXACT_IOS_COMPILER_DIR"
+staged="$target.pending"
 key() {
+  : "${EXACT_APPLE_SDK:?}"
   {
     git -C "$EXACT" rev-parse HEAD
     printf '%s\n' "$EXACT" "$target" "$EXACT_APPLE_SDK" "${CARGO_HOME:-$HOME/.cargo}" \
@@ -16,6 +18,10 @@ key() {
     xtool --version
     sha256sum "$EXACT_APPLE_SDK/swift-sdk.json" "$EXACT_APPLE_SDK/toolset.json"
   } | sha256sum | cut -d ' ' -f 1
+}
+activate() {
+  [[ ! -e "$target" && -d "$staged" && "$(cat "$bundle/compiler-key")" == "$(key)" ]]
+  mv "$staged" "$target"
 }
 case "$mode" in
   pack)
@@ -35,14 +41,17 @@ case "$mode" in
     (cd "$bundle" && sha256sum compiler.tar.zst.enc compiler-key > SHA256SUMS)
     du -sh "$bundle"
     ;;
-  restore)
+  activate)
+    activate
+    ;;
+  stage|restore)
     : "${EXACT_IOS_CACHE_DIGEST:?Use a pinned compiler cache archive digest}"
     private=$(mktemp -d "$RUNNER_TEMP/compiler-transfer.XXXXXX")
     trap 'rm -rf "$private"' EXIT
     archive="$private/compiler.zip"
     disk=/tmp/exact-ios-compiler-disk
-    mode=${EXACT_IOS_COMPILER_DISK_MODE:-}
-    if [[ "$mode" == read ]]; then
+    disk_mode=${EXACT_IOS_COMPILER_DISK_MODE:-}
+    if [[ "$disk_mode" == read ]]; then
       archive="$disk/compiler.zip"
     else
       for attempt in {1..30}; do
@@ -61,20 +70,22 @@ case "$mode" in
     fi
     [[ -s "$archive" ]]
     printf '%s  %s\n' "$EXACT_IOS_CACHE_DIGEST" "$archive" | sha256sum -c -
-    mkdir -p "$bundle"
-    for file in compiler-key SHA256SUMS compiler.tar.zst.enc; do
-      unzip -p "$archive" "$file" > "$bundle/$file"
-    done
-    [[ ! -e "$target" && "$(cat "$bundle/compiler-key")" == "$(key)" ]]
-    (cd "$bundle" && sha256sum -c SHA256SUMS)
-    mkdir -p "$(dirname "$target")"
-    staged=$(mktemp -d "$(dirname "$target")/compiler.XXXXXX")
-    trap 'rm -rf "$staged" "$private"' EXIT
-    openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 \
-      -pass "file:$RUNNER_TEMP/ios-cache-passphrase" -in "$bundle/compiler.tar.zst.enc" \
-      | zstd -dc | tar --no-same-owner -xf - -C "$staged"
-    mv "$staged" "$target"
-    if [[ "$mode" == seed ]]; then
+    [[ ! -e "$target" && ! -e "$staged" ]]
+    mkdir -p "$bundle" "$staged"
+    keep_staged=false
+    trap '
+      if [[ "$keep_staged" == false ]]; then rm -rf "$staged"; fi
+      rm -rf "$private"
+    ' EXIT
+    unzip -p "$archive" compiler-key > "$bundle/compiler-key"
+    # The pinned ZIP digest authenticates its header and the entire encrypted entry.
+    unzip -p "$archive" compiler.tar.zst.enc       | openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000           -pass "file:$RUNNER_TEMP/ios-cache-passphrase"       | zstd -dc | tar --no-same-owner -xf - -C "$staged"
+    if [[ "$mode" == stage ]]; then
+      keep_staged=true
+      exit
+    fi
+    activate
+    if [[ "$disk_mode" == seed ]]; then
       install -m 600 "$archive" "$disk/compiler.zip.next"
       mv "$disk/compiler.zip.next" "$disk/compiler.zip"
     fi

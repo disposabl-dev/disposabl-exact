@@ -34,8 +34,11 @@ jobs:
         ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' ||
             (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-suite') ||
             contains(github.ref_name, '-ios-cache-sticky-')) && 'restore' || '' }}
-      EXACT_IOS_COMPILER_DISK_MODE: ${{ endsWith(github.ref_name, '-ios-cache-sticky-seed') && 'seed' || (endsWith(github.ref_name, '-ios-cache-sticky-suite') || (endsWith(github.ref_name, '-ios-cache-sticky-read') || endsWith(github.ref_name, '-ios-cache-sticky-parallel'))) && 'read' || '' }}
-      EXACT_IOS_PARALLEL_SETUP: ${{ endsWith(github.ref_name, '-ios-cache-sticky-parallel') }}
+      EXACT_IOS_COMPILER_DISK_MODE: >-
+        ${{ endsWith(github.ref_name, '-ios-cache-sticky-seed') && 'seed' ||
+            contains(github.ref_name, '-ios-cache-sticky-') && 'read' || '' }}
+      EXACT_IOS_PIPELINED_CACHE: ${{ contains(github.ref_name, '-ios-cache-sticky-pipelined') }}
+      EXACT_IOS_PARALLEL_SETUP: ${{ endsWith(github.ref_name, '-ios-cache-sticky-parallel') || contains(github.ref_name, '-ios-cache-sticky-pipelined') }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
@@ -106,10 +109,17 @@ jobs:
           bun-version: ${{ steps.pin.outputs.bun-version }}
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
       - name: Install Linux compiler tools
+        env:
+          EXACT_IOS_CACHE_DIGEST: ${{ env.EXACT_IOS_SWIFT_CACHE == 'true' && steps.pin.outputs.ios-cas-cache-digest || steps.pin.outputs.ios-cache-digest }}
         run: |
           scripts=.github/scripts/hosted-mobile
           if [[ "$BENCHMARK_TARGET:$EXACT_IOS_CACHE_MODE" == ios:restore ]] && command -v zstd >/dev/null; then
-            bash "$scripts/install-sdk.sh" fetch & sdk=$!
+            (
+              bash "$scripts/install-sdk.sh" fetch
+              if [[ "$EXACT_IOS_PIPELINED_CACHE" == true ]]; then
+                bash "$scripts/ios-compiler-cache.sh" stage "$RUNNER_TEMP/portable-ios-cache"
+              fi
+            ) & sdk=$!
             bash "$scripts/toolchain.sh" & tools=$!
             pids=("$sdk" "$tools")
             if [[ "$EXACT_IOS_PARALLEL_SETUP" == true ]]; then
@@ -166,7 +176,10 @@ jobs:
         if: env.EXACT_IOS_CACHE_MODE == 'restore'
         env:
           EXACT_IOS_CACHE_DIGEST: ${{ env.EXACT_IOS_SWIFT_CACHE == 'true' && steps.pin.outputs.ios-cas-cache-digest || steps.pin.outputs.ios-cache-digest }}
-        run: bash .github/scripts/hosted-mobile/ios-compiler-cache.sh restore "$RUNNER_TEMP/portable-ios-cache"
+        run: |
+          mode=restore
+          if [[ "$EXACT_IOS_PIPELINED_CACHE" == true ]]; then mode=activate; fi
+          bash .github/scripts/hosted-mobile/ios-compiler-cache.sh "$mode" "$RUNNER_TEMP/portable-ios-cache"
       - name: Build and verify device IPA
         if: matrix.target == 'ios'
         working-directory: ${{ env.NATIVE_APP_DIR }}
