@@ -32,7 +32,8 @@ jobs:
     name: Verify the pinned Exact release
     if: github.event_name == 'push'
     runs-on: blacksmith-2vcpu-ubuntu-2604
-    timeout-minutes: 50
+    # A cache build may take the publisher's full 120-minute job budget.
+    timeout-minutes: 145
     outputs:
       exact-ref: ${{ steps.pin.outputs.exact-ref }}
       bun-version: ${{ steps.pin.outputs.bun-version }}
@@ -49,10 +50,11 @@ jobs:
           EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
           BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
           BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
-          WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 2700 || 0 }}
+          WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 8400 || 0 }}
         run: |
           python3 .github/actions/exact-setup/scripts/release-manifest.py \
-            "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" --wait "$WAIT_SECONDS"
+            "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" \
+            --wait "$WAIT_SECONDS" --producer-sha "$GITHUB_SHA"
 
   deploy:
     needs: tools

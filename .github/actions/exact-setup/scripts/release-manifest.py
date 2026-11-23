@@ -32,7 +32,9 @@ def read_manifest(tag, ref, bun):
         return None
     assets = {asset["name"]: asset for asset in release["assets"] if asset["state"] == "uploaded"}
     index = assets.get("inputs.json")
-    if not index or not 0 < index["size"] <= MAX_MANIFEST_SIZE:
+    if not index or not index.get("digest"):
+        return None
+    if not 0 < index["size"] <= MAX_MANIFEST_SIZE:
         raise ValueError("Release has no valid inputs.json asset")
     url = f"https://github.com/{REPOSITORY}/releases/download/{tag}/inputs.json"
     with urlopen(url, timeout=30) as response:
@@ -51,13 +53,26 @@ def read_manifest(tag, ref, bun):
         raise ValueError("Release manifest is missing " + ", ".join(missing))
     for name, recorded in manifest.items():
         asset = assets.get(name)
+        if not asset or not asset.get("digest"):
+            return None
         digest = recorded.get("sha256", "")
         size = recorded.get("size")
         if (not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or not re.fullmatch(r"[a-f0-9]{64}", digest)
                 or type(size) is not int or not 0 < size < 2_000_000_000
-                or not asset or size != asset["size"] or asset.get("digest") != "sha256:" + digest):
+                or size != asset["size"] or asset["digest"] != "sha256:" + digest):
             raise ValueError(f"Release asset does not match the manifest: {name}")
     return data
+
+
+def check_publisher(sha):
+    url = f"https://api.github.com/repos/{REPOSITORY}/actions/workflows/publish.yml/runs?head_sha={sha}&event=push&per_page=1"
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "disposabl-exact-setup"}), timeout=15) as response:
+            runs = json.load(response)["workflow_runs"]
+    except OSError:
+        return
+    if runs and runs[0]["conclusion"] in ("failure", "cancelled", "timed_out", "startup_failure", "action_required"):
+        raise ValueError(f"Exact cache publication failed: {runs[0]['html_url']}")
 
 
 def main():
@@ -67,16 +82,22 @@ def main():
     parser.add_argument("bun")
     parser.add_argument("output", type=Path)
     parser.add_argument("--wait", type=int, default=0)
+    parser.add_argument("--producer-sha", default="")
     args = parser.parse_args()
     if (not re.fullmatch(r"[1-9][0-9]*", args.version) or not re.fullmatch(r"[a-f0-9]{40}", args.ref)
-            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.bun) or args.wait < 0):
+            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.bun) or args.wait < 0
+            or (args.producer_sha and not re.fullmatch(r"[a-f0-9]{40}", args.producer_sha))):
         parser.error("Expected a bundle format version, full Exact SHA, and Bun version")
     tag = f"v{args.version}-exact-{args.ref}-bun-{args.bun}"
     deadline = time.monotonic() + args.wait
+    next_publisher_check = 0
     while (data := read_manifest(tag, args.ref, args.bun)) is None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ValueError(f"Exact compiler caches have not been published for {tag}")
+        if args.producer_sha and time.monotonic() >= next_publisher_check:
+            check_publisher(args.producer_sha)
+            next_publisher_check = time.monotonic() + 180
         print(f"Waiting for the Exact cache publisher to release {tag}", flush=True)
         time.sleep(min(30, remaining))
     args.output.write_bytes(data)
