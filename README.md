@@ -56,7 +56,7 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 Exact follows the browser or device language at launch and falls back to English. The language picker can override it locally and can return to the device language. Arabic inherits Exact's right-to-left layout.
 
-Put app-authored copy in `apps/apps/strings/{en,ar,hi}.json` and render it with `t("key")`. Pass structured status or error codes from the data module and choose the localized message in Contract. The Exact compiler validates keys and placeholders. The PR localization check uses Exact's parser to flag raw UI text, including accessibility labels and placeholders, and rejects missing, blank, or extra catalog entries.
+Put app-authored copy in `apps/apps/strings/{en,ar,hi}.json` and render it with `t("key")`. Pass structured status or error codes from the data module and choose the localized message in Contract. The PR localization check uses Exact's parser to flag raw copy in Contract views, including options, accessibility labels, and input placeholders. It also rejects missing, blank, or extra catalog entries and requires the same message placeholders in every translation. Keep user content and server data separate from app-authored strings.
 
 Run the check locally from the repository root with the Rust toolchain in the Exact checkout's `rust-toolchain.toml`.
 

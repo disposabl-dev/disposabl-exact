@@ -1,4 +1,7 @@
-use contract_syntax::{parse, Attr, BinOp, Component, Expr, FnDecl, Node, Span, TemplatePart};
+use contract_syntax::{
+    parse, Attr, BinOp, Component, Expr, FnDecl, Node, Span, Stmt, TemplatePart,
+};
+use exact_plan::strings::{placeholders, validate_message};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,10 +51,21 @@ fn catalog_issues<'a>(
     let missing = base.keys().filter(|key| !catalog.contains_key(*key));
     let extra = catalog.keys().filter(|key| !base.contains_key(*key));
     let empty = catalog.iter().filter(|(_, value)| value.trim().is_empty());
+    let messages = catalog.iter().filter_map(|(key, value)| {
+        if let Err(error) = validate_message(value) {
+            return Some(format!("{key}: {error}"));
+        }
+        let english = base.get(key)?;
+        let expected: BTreeSet<_> = placeholders(english).collect();
+        let actual: BTreeSet<_> = placeholders(value).collect();
+        (expected != actual)
+            .then(|| format!("{key}: expected placeholders {expected:?}, found {actual:?}"))
+    });
     missing
         .map(|key| format!("missing {key}"))
         .chain(extra.map(|key| format!("unexpected {key}")))
         .chain(empty.map(|(key, _)| format!("empty {key}")))
+        .chain(messages)
 }
 
 fn copy_issues(
@@ -59,12 +73,17 @@ fn copy_issues(
     functions: &[FnDecl],
     catalog: &Catalog,
 ) -> BTreeMap<Span, String> {
+    let mut assignments = BTreeMap::new();
+    for action in &component.actions {
+        collect_assignments(&action.body, &mut assignments);
+    }
     let mut check = CopyCheck {
         component,
         functions,
         catalog,
+        assignments,
         issues: BTreeMap::new(),
-        visited: BTreeSet::new(),
+        visiting: BTreeSet::new(),
     };
     for node in Node::walk(&component.view) {
         match node {
@@ -76,9 +95,9 @@ fn copy_issues(
             } => {
                 if matches!(
                     tag.as_str(),
-                    "text" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "label" | "title"
+                    "text" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "label" | "title" | "option"
                 ) {
-                    positional.iter().for_each(|expr| check.value(expr));
+                    positional.iter().for_each(|expr| check.value(expr, None));
                 }
                 check.attributes(attrs);
             }
@@ -87,6 +106,30 @@ fn copy_issues(
         }
     }
     check.issues
+}
+
+fn collect_assignments<'a>(
+    statements: &'a [Stmt],
+    assignments: &mut BTreeMap<&'a str, Vec<&'a Expr>>,
+) {
+    for statement in statements {
+        match statement {
+            Stmt::Assign { target, expr, .. } => {
+                assignments.entry(target).or_default().push(expr);
+            }
+            Stmt::If {
+                then, otherwise, ..
+            } => {
+                collect_assignments(then, assignments);
+                collect_assignments(otherwise, assignments);
+            }
+            Stmt::Match { some, none, .. } => {
+                collect_assignments(&some.1, assignments);
+                collect_assignments(none, assignments);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn read_catalog(path: &Path) -> Result<Catalog, Box<dyn std::error::Error>> {
@@ -120,8 +163,15 @@ struct CopyCheck<'a> {
     component: &'a Component,
     functions: &'a [FnDecl],
     catalog: &'a Catalog,
+    assignments: BTreeMap<&'a str, Vec<&'a Expr>>,
     issues: BTreeMap<Span, String>,
-    visited: BTreeSet<Span>,
+    visiting: BTreeSet<Span>,
+}
+
+struct CallFrame<'a> {
+    function: &'a FnDecl,
+    arguments: &'a [Expr],
+    caller: Option<&'a CallFrame<'a>>,
 }
 
 impl CopyCheck<'_> {
@@ -139,13 +189,13 @@ impl CopyCheck<'_> {
                     | "title"
                     | "text"
             ) {
-                self.value(&attr.value);
+                self.value(&attr.value, None);
             }
         }
     }
 
-    fn value(&mut self, expr: &Expr) {
-        if !self.visited.insert(expr.span()) {
+    fn value(&mut self, expr: &Expr, frame: Option<&CallFrame<'_>>) {
+        if !self.visiting.insert(expr.span()) {
             return;
         }
         let literal = |text: &str| !text.trim().is_empty();
@@ -155,7 +205,7 @@ impl CopyCheck<'_> {
                 for part in parts {
                     match part {
                         TemplatePart::Text(text) if literal(text) => self.raw(expr.span()),
-                        TemplatePart::Expr(expr) => self.value(expr),
+                        TemplatePart::Expr(expr) => self.value(expr, frame),
                         _ => {}
                     }
                 }
@@ -167,20 +217,10 @@ impl CopyCheck<'_> {
                 ..
             }
             | Expr::Binary(BinOp::Add, yes, no, _) => {
-                self.value(yes);
-                self.value(no);
+                self.value(yes, frame);
+                self.value(no, frame);
             }
-            Expr::Ident(name, _) => {
-                if let Some(binding) = self
-                    .component
-                    .derives
-                    .iter()
-                    .chain(&self.component.states)
-                    .find(|binding| binding.name == *name)
-                {
-                    self.value(&binding.expr);
-                }
-            }
+            Expr::Ident(name, _) => self.binding(name, frame),
             Expr::Call(name, args, span) if name == "t" => {
                 match args.first() {
                     Some(Expr::Str(key, _)) if self.catalog.contains_key(key) => {}
@@ -193,7 +233,7 @@ impl CopyCheck<'_> {
                             .insert(*span, "t() requires a literal translation key".into());
                     }
                 }
-                args.iter().skip(1).for_each(|arg| self.value(arg));
+                args.iter().skip(1).for_each(|arg| self.value(arg, frame));
             }
             Expr::Call(name, _, _)
                 if matches!(
@@ -206,12 +246,46 @@ impl CopyCheck<'_> {
                     .iter()
                     .find(|function| function.name == *name)
                 {
-                    self.value(&function.body);
+                    let call = CallFrame {
+                        function,
+                        arguments: args,
+                        caller: frame,
+                    };
+                    self.value(&function.body, Some(&call));
+                } else {
+                    args.iter().for_each(|arg| self.value(arg, frame));
                 }
-                args.iter().for_each(|arg| self.value(arg));
             }
-            Expr::NamedArg(_, value, _) | Expr::Some(value, _) => self.value(value),
+            Expr::NamedArg(_, value, _) | Expr::Some(value, _) => self.value(value, frame),
             _ => {}
+        }
+        self.visiting.remove(&expr.span());
+    }
+
+    fn binding(&mut self, name: &str, frame: Option<&CallFrame<'_>>) {
+        if let Some(frame) = frame {
+            if let Some(argument) = frame
+                .function
+                .params
+                .iter()
+                .zip(frame.arguments)
+                .find_map(|(param, arg)| (param.name == name).then_some(arg))
+            {
+                self.value(argument, frame.caller);
+            }
+            return;
+        }
+        if let Some(binding) = self
+            .component
+            .derives
+            .iter()
+            .chain(&self.component.states)
+            .find(|binding| binding.name == name)
+        {
+            self.value(&binding.expr, None);
+        }
+        for assignment in self.assignments.get(name).cloned().unwrap_or_default() {
+            self.value(assignment, None);
         }
     }
 
@@ -259,5 +333,41 @@ mod tests {
             catalog_issues(&base, &catalog).collect::<Vec<_>>(),
             ["missing second", "unexpected third", "empty first"]
         );
+    }
+
+    #[test]
+    fn finds_options_and_action_copy_but_allows_internal_selector_codes() {
+        let ast = parse(
+            r#"fn labelFor(code: string): string = code == "done" ? t("saved") : t("saved")
+component App
+  state label = ""
+  state code = ""
+  action update
+    label = "Untranslated state"
+    code = "done"
+  view
+    column
+      text label
+      text labelFor(code)
+      select
+        option "Untranslated option" value="value"
+"#,
+        )
+        .unwrap();
+        let base = Catalog::from([("saved".into(), "Saved".into())]);
+        let issues = copy_issues(&ast.components[0], &ast.fns, &base);
+        assert_eq!(
+            issues.into_keys().map(|span| span.line).collect::<Vec<_>>(),
+            [6, 13]
+        );
+    }
+
+    #[test]
+    fn checks_placeholder_parity_with_exact_escaping() {
+        let base = Catalog::from([("greeting".into(), r"Hello {name} \{example\}".into())]);
+        let arabic = Catalog::from([("greeting".into(), "مرحبًا {$name}".into())]);
+        let missing = Catalog::from([("greeting".into(), "مرحبًا".into())]);
+        assert_eq!(catalog_issues(&base, &arabic).count(), 0);
+        assert_eq!(catalog_issues(&base, &missing).count(), 1);
     }
 }
