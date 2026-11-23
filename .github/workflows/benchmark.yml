@@ -1,71 +1,48 @@
-name: Benchmark Exact builds
+name: Benchmark hosted Ubuntu iOS
 
 on:
   push:
-    branches: [ci/exact-ubuntu-benchmark, ci/exact-ubuntu-web-verify, ci/exact-ubuntu-android-verify, ci/exact-linux-ios-qualification]
-  workflow_dispatch:
-    inputs:
-      runner:
-        type: choice
-        options: [ubuntu-26.04, blacksmith-8vcpu-ubuntu-2604, boat-large]
-        default: ubuntu-26.04
-      ios:
-        description: Build iOS only, on a runner with the xTool SDK and compiler tools
-        type: boolean
-        default: false
+    branches: [ci/hosted-ubuntu-mobile, ci/hosted-ubuntu-mobile-github, ci/hosted-ubuntu-mobile-boat]
 
 permissions:
   contents: read
 
 jobs:
-  tools:
-    name: Wait for the pinned Exact caches
-    runs-on: ${{ github.ref_name == 'ci/exact-linux-ios-qualification' && 'blacksmith-8vcpu-ubuntu-2604' || 'ubuntu-26.04' }}
-    timeout-minutes: 145
-    outputs:
-      exact-ref: ${{ steps.pin.outputs.exact-ref }}
-      bun-version: ${{ steps.pin.outputs.bun-version }}
-      bundle-version: ${{ steps.pin.outputs.bundle-version }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
-      - name: Verify cache publication
-        env:
-          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
-          BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
-          BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
-        run: |
-          python3 .github/actions/exact-setup/scripts/release-manifest.py \
-            "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" \
-            --wait 8400 --producer-sha 82a8a19b779bc6f60012f3994981520707c5523f
-      - name: Verify the Blacksmith xTool environment
-        if: github.ref_name == 'ci/exact-linux-ios-qualification'
-        run: bash .github/actions/exact-setup/scripts/setup-linux-ios.sh
-
-  build:
-    name: ${{ matrix.app.name }} / ${{ matrix.platform }} / ${{ matrix.runner }}
-    runs-on: ${{ matrix.runner == 'boat-large' && (vars.EXACT_BOAT_RUNNER || 'boat-large') || matrix.runner }}
-    timeout-minutes: 30
-    needs: tools
+  ios:
+    name: ${{ matrix.app.name }} / Ubuntu iOS
+    runs-on: ${{ github.ref_name == 'ci/hosted-ubuntu-mobile-boat' && 'boat-large' || github.ref_name == 'ci/hosted-ubuntu-mobile-github' && 'ubuntu-26.04' || 'blacksmith-8vcpu-ubuntu-2604' }}
+    container: ${{ github.ref_name == 'ci/hosted-ubuntu-mobile-boat' && 'ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6' || '' }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(github.ref_name == 'ci/exact-linux-ios-qualification' && '["blacksmith-8vcpu-ubuntu-2604"]' || inputs.runner && format('["{0}"]', inputs.runner) || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
-        platform: ${{ fromJSON((inputs.ios || github.ref_name == 'ci/exact-linux-ios-qualification') && '["ios-linux"]' || github.ref_name == 'ci/exact-ubuntu-web-verify' && '["web"]' || github.ref_name == 'ci/exact-ubuntu-android-verify' && '["android"]' || '["web","android"]') }}
         app:
-          - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
-          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 0dac6f24ed3486b83bfaae3576b1c246e1ae1f10}
-          - {name: Field Journal, repo: exact-first-field-hosts, ref: 444f6e1e3821cebf5cf12279af96382cb44e72ba}
-          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: 4ec86e25c73486668a931119e3db2650bcf568e2}
-          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 96fa3ae437b03a77d3cf3e94a9fe4f6966f1095c}
+          - {name: Paperstack, slug: paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
     env:
+      SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
+      BENCHMARK_APP: ${{ matrix.app.slug }}
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
+      - name: Request SDK for this job
+        run: |
+          umask 077
+          if ! command -v openssl >/dev/null; then
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends openssl ca-certificates
+          fi
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/sdk-recipient.key"
+          openssl pkey -in "$RUNNER_TEMP/sdk-recipient.key" -pubout -out "$RUNNER_TEMP/sdk-recipient.pem"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: sdk-recipient-${{ github.run_attempt }}-${{ matrix.app.slug }}
+          path: ${{ runner.temp }}/sdk-recipient.pem
+          if-no-files-found: error
+          retention-days: 1
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -75,71 +52,28 @@ jobs:
           ref: ${{ matrix.app.ref }}
           path: fixture
           persist-credentials: false
-      - name: Set up Exact
+      - name: Install Linux compiler tools
+        run: bash .github/scripts/hosted-mobile/toolchain.sh
+      - name: Install xTool SDK
+        run: bash .github/scripts/hosted-mobile/install-sdk.sh
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - name: Restore Exact v11 inputs
         uses: ./.github/actions/exact-setup
         env:
           EXACT_APP_CHECKOUT: ${{ github.workspace }}/fixture
         with:
-          platform: ${{ matrix.platform }}
-          exact-ref: ${{ needs.tools.outputs.exact-ref }}
-          bun-version: ${{ needs.tools.outputs.bun-version }}
-          bundle-version: ${{ needs.tools.outputs.bundle-version }}
-      - name: Install web dependencies
-        if: matrix.platform == 'web'
-        working-directory: fixture/apps/apps
-        run: |
-          mkdir -p .exact
-          ln -s "$EXACT" .exact/checkout
-          bun install --frozen-lockfile
-      - name: Build web
-        if: matrix.platform == 'web'
-        working-directory: fixture/apps/apps
-        run: |
-          bun exact.mjs web-build --out dist
-          test -s dist/index.html
-      - name: Run feature smoke test
-        if: matrix.platform == 'web'
-        working-directory: fixture/apps/apps
-        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/test-web.sh"
-      - name: Prepare APK signing
-        if: matrix.platform == 'android'
-        run: |
-          keytool -genkeypair -storetype PKCS12 -keystore "$RUNNER_TEMP/benchmark.p12" \
-            -storepass benchmark -keypass benchmark -alias benchmark -keyalg RSA -keysize 2048 \
-            -validity 7 -dname 'CN=Exact benchmark'
-      - name: Build signed APK
-        if: matrix.platform == 'android'
+          platform: ios-linux
+          exact-ref: ${{ steps.pin.outputs.exact-ref }}
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+          bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Build and verify device IPA
         working-directory: ${{ env.NATIVE_APP_DIR }}
-        env:
-          EXACT_KEYSTORE: ${{ runner.temp }}/benchmark.p12
-          EXACT_KEY_ALIAS: benchmark
-          EXACT_KEYSTORE_PASSWORD: benchmark
-          EXACT_KEY_PASSWORD: benchmark
-          EXACT_ANDROID_APK_ONLY: '1'
-        run: |
-          bun exact.mjs android --release --no-install --json > "$RUNNER_TEMP/build.json"
-          apk=$(jq -er .path "$RUNNER_TEMP/build.json")
-          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify "$apk"
-      - name: Build unsigned device IPA
-        if: matrix.platform == 'ios-linux'
-        working-directory: ${{ env.NATIVE_APP_DIR }}
-        run: |
-          bun exact.mjs ios --device --release --unsigned --no-install --archive "$RUNNER_TEMP/apps.ipa"
-          unzip -tq "$RUNNER_TEMP/apps.ipa"
-          unzip -q "$RUNNER_TEMP/apps.ipa" -d "$RUNNER_TEMP/unpacked-ipa"
-          apps=("$RUNNER_TEMP/unpacked-ipa"/Payload/*.app)
-          [[ ${#apps[@]} == 1 && -f "${apps[0]}/Info.plist" && ! -e "${apps[0]}/embedded.mobileprovision" ]]
-          executable=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
-          [[ "$executable" != */* && "$executable" != . && "$executable" != .. ]]
-          "$EXACT_APPLE_LLVM_BIN/llvm-lipo" "${apps[0]}/$executable" -verify_arch arm64
-          "$EXACT_APPLE_LLVM_BIN/llvm-objdump" --macho --private-headers "${apps[0]}/$executable" > "$RUNNER_TEMP/ios-load-commands"
-          grep -Eiq '^[[:space:]]*platform[[:space:]]+(ios|2)[[:space:]]*$' "$RUNNER_TEMP/ios-load-commands"
-      - name: Upload unsigned device IPA
-        if: matrix.platform == 'ios-linux'
-        uses: actions/upload-artifact@v7.0.2
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/build-ios.sh"
+      - uses: actions/upload-artifact@v7.0.2
         with:
-          name: ${{ matrix.app.name }}-${{ matrix.runner }}-ipa
-          path: ${{ runner.temp }}/apps.ipa
+          name: ${{ matrix.app.slug }}-unsigned-iphone
+          path: ${{ runner.temp }}/verified-ios/apps.ipa
           if-no-files-found: error
           retention-days: 1
           compression-level: 0

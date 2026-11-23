@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+system=()
+if [[ "$(id -u)" != 0 ]]; then system=(sudo); fi
+"${system[@]}" apt-get update -qq
+"${system[@]}" apt-get install -y -qq --no-install-recommends   ca-certificates curl git jq python3 unzip zip zstd openssl gnupg build-essential pkg-config libssl-dev
+if ! command -v rustup >/dev/null; then
+  "${system[@]}" apt-get install -y -qq --no-install-recommends rustup
+  mkdir -p "$HOME/.cargo/bin"
+  for tool in cargo rustc rustup; do ln -sf /usr/bin/rustup "$HOME/.cargo/bin/$tool"; done
+  printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+fi
+
+work="$RUNNER_TEMP/hosted-mobile-tools"
+mkdir -p "$work"
+if [[ ! -x /usr/lib/llvm-23/bin/llvm-lipo ]]; then
+  curl -fsSL --retry 3 https://apt.llvm.org/llvm-snapshot.gpg.key -o "$work/llvm.asc"
+  echo "8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d  $work/llvm.asc" | sha256sum -c -
+  gpg --batch --dearmor -o "$work/llvm.gpg" "$work/llvm.asc"
+  "${system[@]}" install -m 644 "$work/llvm.gpg" /usr/share/keyrings/exact-llvm.gpg
+  echo 'deb [signed-by=/usr/share/keyrings/exact-llvm.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main' \
+    | "${system[@]}" tee /etc/apt/sources.list.d/exact-llvm.list >/dev/null
+  "${system[@]}" apt-get update -qq
+  "${system[@]}" apt-get install -y -qq --no-install-recommends clang-23 lld-23 llvm-23
+fi
+printf '%s\n' /usr/lib/llvm-23/bin "$work" >> "$GITHUB_PATH"
+if ! swiftc --version 2>/dev/null | grep -q '^Swift version 6\.4\.2 '; then
+  url=https://download.swift.org/swift-6.4.2-release/ubuntu2604/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu26.04.tar.gz
+  curl -fsSL --retry 3 "$url" -o "$work/swift.tar.gz"
+  curl -fsSL --retry 3 "$url.sig" -o "$work/swift.tar.gz.sig"
+  mkdir -m 700 "$work/swift-gpg"
+  curl -fsSL --retry 3 https://www.swift.org/keys/all-keys.asc -o "$work/swift-keys.asc"
+  gpg --batch --homedir "$work/swift-gpg" --import "$work/swift-keys.asc"
+  gpg --batch --homedir "$work/swift-gpg" --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
+  mkdir "$work/swift"
+  tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
+  rm "$work/swift.tar.gz"
+  printf '%s\n' "$work/swift/usr/bin" >> "$GITHUB_PATH"
+fi
+
+curl -fsSL --retry 3 https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.1/xtool-x86_64.AppImage -o "$work/xtool"
+echo "0361a2570e46a7734e8bafa71715ca8a72cf218e0e7a945eef0e4d71733b19e3  $work/xtool" | sha256sum -c -
+chmod 755 "$work/xtool"
+curl -fsSL --retry 3 https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz -o "$work/rcodesign.tgz"
+echo "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002  $work/rcodesign.tgz" | sha256sum -c -
+mkdir "$work/apple-codesign"
+tar --no-same-owner -xzf "$work/rcodesign.tgz" --strip-components=1 -C "$work/apple-codesign"
+install -m 755 "$(find "$work/apple-codesign" -name rcodesign -type f -print -quit)" "$work/rcodesign"
+ln -sf /usr/lib/llvm-23/bin/llvm-lipo "$work/lipo"
+printf '%s\n' 'APPIMAGE_EXTRACT_AND_RUN=1' 'EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin' >> "$GITHUB_ENV"
