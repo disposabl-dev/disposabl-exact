@@ -1,11 +1,11 @@
 {
-  "name": "@disposabl/dev",
+  "name": "@disposabl-kit/server",
   "private": true,
   "type": "module",
   "exports": {
-    "./server/api": "./server/api.ts",
-    "./server/functions": "./server/functions.ts",
-    "./server/mcp": "./server/mcp.ts"
+    "./api": "./server/api.ts",
+    "./functions": "./server/functions.ts",
+    "./mcp": "./server/mcp.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",

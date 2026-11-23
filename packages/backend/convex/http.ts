@@ -1,8 +1,8 @@
 import { httpCookies, isTokenExpiring, type HttpCookies, type TokenBundle } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
-import { registerApi } from "@disposabl/dev/server/api";
-import type { PublicRead } from "@disposabl/dev/server/functions";
-import { registerMcp } from "@disposabl/dev/server/mcp";
+import { registerApi } from "@disposabl-kit/server/api";
+import type { PublicRead } from "@disposabl-kit/server/functions";
+import { registerMcp } from "@disposabl-kit/server/mcp";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
 import { api, components, internal } from "./_generated/api";
