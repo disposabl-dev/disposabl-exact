@@ -50,14 +50,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || github.ref_name == 'ci/exact-boat-benchmark' && '["boat-large"]' || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
+        runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || github.ref_name == 'ci/exact-boat-benchmark' && '["boat-large"]' || '["blacksmith-8vcpu-ubuntu-2604"]') }}
         platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || github.ref_name == 'ci/exact-ubuntu-web-verify' && '["web"]' || github.ref_name == 'ci/exact-ubuntu-android-verify' && '["android"]' || '["web","android"]') }}
         app:
-          - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
-          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 0dac6f24ed3486b83bfaae3576b1c246e1ae1f10}
-          - {name: Field Journal, repo: exact-first-field-hosts, ref: 444f6e1e3821cebf5cf12279af96382cb44e72ba}
-          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: 4ec86e25c73486668a931119e3db2650bcf568e2}
-          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 96fa3ae437b03a77d3cf3e94a9fe4f6966f1095c}
+          - {name: Field Journal, repo: exact-first-field-hosts, ref: 2a56824c219177e00732d58b2d59154f46165792}
+          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: d742d4f40a281ec7a4443a78d0df48e77215de70}
+          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 629db1d7046f8f2c52d87477229ab6cb36637447}
     env:
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
