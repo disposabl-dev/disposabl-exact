@@ -10,6 +10,11 @@ manifest="$scripts/../inputs.json"
 if [[ $SETUP_BUNDLE_VERSION -ge 9 ]]; then manifest="$scripts/../inputs-v${SETUP_BUNDLE_VERSION}.json"; fi
 staging=$(mktemp -d "$RUNNER_TEMP/exact-inputs.XXXXXX")
 trap 'rm -rf "$staging"' EXIT
+if [[ $SETUP_BUNDLE_VERSION -ge 11 ]]; then
+  manifest="$staging/inputs.json"
+  python3 "$scripts/release-manifest.py" \
+    "$SETUP_BUNDLE_VERSION" "$ref" "$SETUP_BUN_VERSION" "$manifest"
+fi
 publisher=".cache/exact/publisher/$ref"
 cache="$RUNNER_TEMP/exact-bundles"
 cargo_target="$HOME/.cache/exact-native/cargo"
