@@ -1,0 +1,76 @@
+name: Verify the shared Exact setup on the starter app
+on:
+  push:
+    branches: [ci/verify-shared-exact-macos]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.target }} on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: macos, runner: blacksmith-8vcpu-ubuntu-2604}
+          - {target: macos, runner: ubuntu-26.04}
+          - {target: ios, runner: blacksmith-6vcpu-macos-27}
+          - {target: android, runner: blacksmith-8vcpu-ubuntu-2604}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      CONVEX_ORIGIN: wss://preview.example.com
+      CONVEX_SITE_ORIGIN: https://preview.example.com
+      EXACT_FEEDBACK: '0'
+      EXACT_TOOLS_ORIGIN: none
+      EXACT_UPDATE_GENESIS: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - id: setup
+        uses: ./.github/actions/exact-setup
+        with:
+          platform: ${{ matrix.target }}
+          exact-ref: ${{ steps.pin.outputs.exact-ref }}
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+          bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Check shared source and restored mobile caches
+        env:
+          TARGET: ${{ matrix.target }}
+          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
+          SOURCE: ${{ steps.setup.outputs.source }}
+        run: |
+          set -euo pipefail
+          test "$(git -C "$EXACT" rev-parse HEAD)" = "$EXACT_REF"
+          test "$SOURCE" = release
+          test "$(readlink "$NATIVE_APP_DIR/.exact/checkout")" = "$EXACT"
+          case "$TARGET" in
+            android)
+              test -x "$EXACT_PUBLISH_TOOLS/exact-js-bake"
+              test -f "$ANDROID_NDK_HOME/source.properties"
+              test -n "$(find "$CARGO_TARGET_DIR" -path '*/aarch64-linux-android/*' -name '*.rlib' -print -quit)"
+              ;;
+            ios)
+              test -x "$EXACT_PUBLISH_TOOLS/exact-js-bake"
+              test -s "$EXACT_HOST_CATALOG/manifest.json"
+              test -s "$EXACT_IOS_SOURCE_TIMES"
+              test -n "$(find "$CARGO_TARGET_DIR" -path '*/aarch64-apple-ios/*' -name '*.rlib' -print -quit)"
+              ;;
+            macos) test -r "$EXACT_APPLE_SDK/swift-sdk.json" ;;
+          esac
+      - name: Build and verify the starter macOS preview
+        if: matrix.target == 'macos'
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/macos-preview.sh"
+      - uses: actions/upload-artifact@v7.0.2
+        if: matrix.target == 'macos'
+        with:
+          name: starter-macos-${{ matrix.runner }}
+          path: ${{ runner.temp }}/macos-preview/app.zip
+          if-no-files-found: error
+          retention-days: 1
