@@ -3,8 +3,8 @@
 // the header is the navigation bar, its heading the title, its button a bar item.
 use ConvexLive from "@exact/convex"
 
-shape Greeting
-  text: string
+shape Language
+  resolvedLocale: string
 
 shape Counter
   count: number
@@ -24,8 +24,33 @@ shape GoogleReply
 routes nav
   home "/"
 
+style LanguagePanel
+  padding=12 gap=4 border-radius=14
+  background-color="-exact-secondary-background"
+
+fn authErrorText(code: string): string = (
+  code == "session-check" ? t("auth.error.sessionCheck") :
+  code == "session-update" ? t("auth.error.sessionUpdate") :
+  code == "rate-limited" ? t("auth.error.rateLimit") :
+  code == "invalid-credentials" ? t("auth.error.credentials") :
+  code == "username-taken" ? t("auth.error.usernameTaken") :
+  code == "password-short" ? t("auth.passwordHint") :
+  code == "password-common" ? t("auth.error.passwordCommon") :
+  code == "username-invalid" ? t("auth.error.usernameInvalid") :
+  code == "password-invalid" ? t("auth.error.passwordInvalid") :
+  code == "create-account" ? t("auth.error.createAccount") :
+  code == "google-failed" ? t("auth.error.googleFailed") :
+  code == "google-cancelled" ? t("auth.error.googleCancelled") :
+  code == "google-cancelled-web" ? t("auth.error.googleCancelledWeb") :
+  code == "google-incomplete" ? t("auth.error.googleIncomplete") :
+  code == "sign-out" ? t("auth.error.signOut") :
+  t("auth.error.signIn")
+)
+
 component Apps
-  resource greeting = greeting("Apps") as shape Greeting
+  resource language = exactTime() as shape Language
+  derive languageName = language.resolvedLocale == "ar" ? t("language.ar") : language.resolvedLocale == "hi" ? t("language.hi") : t("language.en")
+  state languageOpen = false
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
   mutation incremented as shape IncrementReply
@@ -54,6 +79,11 @@ component Apps
     every(1000, retry)
   task recovered when live.status == "ready" and wait > 1
     after(1000, resetWait)
+  action toggleLanguage
+    languageOpen = not languageOpen
+  action chooseLanguage(locale: string)
+    setLocale(locale)
+    languageOpen = false
   action checkSession
     if not authBusy
       authAttempted = true
@@ -70,7 +100,7 @@ component Apps
         else if not authReady
           authError = result.error
       case none
-        authError = "Could not check your session. Try again."
+        authError = "session-check"
   action sessionChanged
     match changedSession
       case some(result)
@@ -82,7 +112,7 @@ component Apps
           username = ""
           creating = false
       case none
-        authError = "Could not update your session. Try again."
+        authError = "session-update"
   action editUsername(value: string)
     username = value
   action editPassword(value: string)
@@ -112,7 +142,7 @@ component Apps
         else
           authError = result.error
       case none
-        authError = "Could not sign in with Google. Try again."
+        authError = "google-failed"
   action logout
     if not authBusy
       authError = ""
@@ -140,49 +170,62 @@ component Apps
       for e in stack(nav) key=e.id
         column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column"
           header display="flex" align-items="center"
-            text "App" role="heading" aria-level=1 flex=1
-            button press=like aria-label=(liked ? "Unlike" : "Like") testId="like"
+            text t("app.title") role="heading" aria-level=1 flex=1
+            button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
               image (liked ? "symbol:heart-fill" : "symbol:heart")
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
-              text greeting.text testId="greeting"
+              text t("app.greeting", name=t("app.name")) testId="greeting"
+              column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
+                button press=toggleLanguage aria-label=t("language.picker", name=languageName) aria-expanded=languageOpen testId="language-picker"
+                  image "symbol:translate"
+                  text languageName
+                if languageOpen
+                  button press=chooseLanguage("en") aria-pressed=(language.resolvedLocale == "en") testId="language-en"
+                    text t("language.en")
+                  button press=chooseLanguage("ar") aria-pressed=(language.resolvedLocale == "ar") testId="language-ar"
+                    text t("language.ar")
+                  button press=chooseLanguage("hi") aria-pressed=(language.resolvedLocale == "hi") testId="language-hi"
+                    text t("language.hi")
+                  button press=chooseLanguage("") testId="language-system"
+                    text t("language.system")
               column gap=10 width="100%" max-width="26.25rem"
-                text (signedIn ? "Account" : creating ? "Create an account" : "Sign in") role="heading" aria-level=2 font="-exact-title2"
+                text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
                 if authReady and signedIn
                   text account testId="account-name"
                   button press=logout disabled=authBusy testId="logout"
-                    text (pending(changedSession) ? "Signing out…" : "Sign out")
+                    text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
                 else if authReady
-                  input id="username" value=username input=editUsername autocomplete="username" placeholder="Username" aria-label="Username" testId="username" disabled=authChanging
-                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder="Password" aria-label="Password" testId="password" disabled=authChanging
+                  input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
+                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
                   if creating
-                    text "Use at least 15 characters for your password." font="-exact-footnote" color="-exact-secondary-label"
+                    text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
                   button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
-                    text (creating ? "Create account" : "Sign in")
+                    text (creating ? t("auth.create") : t("auth.signIn"))
                   button press=toggleCreate disabled=authChanging testId="toggle-create"
-                    text (creating ? "Back to sign in" : "Create an account")
+                    text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
                   if googleAvailable
                     if pending(googleBrowser)
                       button press=cancelGoogle testId="cancel-google"
-                        text "Cancel Google sign-in"
+                        text t("auth.cancelGoogle")
                     else
                       button press=submitGoogle disabled=authBusy testId="google-sign-in"
-                        text "Sign in with Google"
+                        text t("auth.google")
                 else if authError == ""
-                  text "Checking your session…" color="-exact-secondary-label"
+                  text t("auth.checking") color="-exact-secondary-label"
                 else
                   button press=checkSession disabled=authBusy testId="retry-auth"
-                    text "Try again"
+                    text t("app.tryAgain")
                 if authError != ""
-                  text authError color="-exact-system-red" role="alert" testId="auth-error"
-              text "Live counter" role="heading" aria-level=2 font="-exact-title2"
-              text (live.status == "closed" ? "Disconnected. Reconnecting…" : live.status == "failed" or failed(counter) ? "Could not load the counter" : live.status == "ready" and counter.count >= 0 ? "Connected to Convex" : "Connecting to Convex…") testId="convex-status"
+                  text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
+              text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
+              text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
               if counter.count >= 0
-                text `${counter.count}` font="-exact-large-title" testId="convex-count"
+                text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
               button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
-                text (pending(incremented) ? "Saving…" : "Increment")
+                text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
               if failed(incremented)
-                text "Could not save the count. Try again." color="-exact-system-red" testId="convex-error"
+                text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
               if live.status == "failed" or failed(counter)
                 button press=reconnectNow
-                  text "Retry connection"
+                  text t("counter.retry")

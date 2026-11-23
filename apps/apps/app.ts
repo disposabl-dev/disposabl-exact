@@ -13,7 +13,6 @@ const incrementCounter = makeFunctionReference<'mutation', Record<string, never>
 
 const sources: Sources = {
   ...authSources,
-  greeting: ([name]): Result<'greeting'> => ({ text: `Hello from ${name}.` }),
   live: () => client.live(),
   counter: ([rev]) => client.query(rev, getCounter, {}),
   increment: async () => {
