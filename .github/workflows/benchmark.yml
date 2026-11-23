@@ -1,0 +1,106 @@
+name: Benchmark Exact builds
+
+on:
+  push:
+    branches: [ci/exact-ubuntu-benchmark]
+  workflow_dispatch:
+    inputs:
+      runner:
+        type: choice
+        options: [ubuntu-26.04, blacksmith-8vcpu-ubuntu-2604, boat-large]
+        default: ubuntu-26.04
+      ios:
+        description: Build iOS only, on a runner with the xTool SDK and compiler tools
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.app.name }} / ${{ matrix.platform }} / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner == 'boat-large' && (vars.EXACT_BOAT_RUNNER || 'boat-large') || matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
+        platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || '["web","android"]') }}
+        app:
+          - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 8c0d8501ff1d545e77307a4a30331e18d2be841a}
+          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 89e33722664312c29c653cda4a41b915510c657f}
+          - {name: Field Journal, repo: exact-first-field-hosts, ref: d4f38769b2916c4e728f0487d965648d022ee288}
+          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: 76d595c491b5ff4302809aeb03af0e70575fe0cc}
+          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 13c2b03c1a602242f01b0ec4fc966511ab37c792}
+    env:
+      EXACT_TOOLS_ORIGIN: none
+      CONVEX_ORIGIN: ws://127.0.0.1:3210
+      CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: disposabl-dev/${{ matrix.app.repo }}
+          ref: ${{ matrix.app.ref }}
+          path: fixture
+          persist-credentials: false
+      - name: Set up Exact
+        uses: ./.github/actions/exact-setup
+        env:
+          EXACT_APP_CHECKOUT: ${{ github.workspace }}/fixture
+          EXACT_APPLE_SDK: ${{ vars.EXACT_APPLE_SDK }}
+          EXACT_APPLE_LLVM_BIN: ${{ vars.EXACT_APPLE_LLVM_BIN }}
+          EXACT_XCODE_XIP: ${{ vars.EXACT_XCODE_XIP }}
+        with:
+          platform: ${{ matrix.platform }}
+          exact-ref: a55c5581c7e1a62cdee1f09367ea2909c74c7292
+      - name: Install web dependencies
+        if: matrix.platform == 'web'
+        working-directory: fixture/apps/apps
+        run: |
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+      - name: Build web
+        if: matrix.platform == 'web'
+        working-directory: fixture/apps/apps
+        run: |
+          bun exact.mjs web-build --out dist
+          test -s dist/index.html
+      - name: Prepare APK signing
+        if: matrix.platform == 'android'
+        run: |
+          keytool -genkeypair -storetype PKCS12 -keystore "$RUNNER_TEMP/benchmark.p12" \
+            -storepass benchmark -keypass benchmark -alias benchmark -keyalg RSA -keysize 2048 \
+            -validity 7 -dname 'CN=Exact benchmark'
+      - name: Build signed APK
+        if: matrix.platform == 'android'
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        env:
+          EXACT_KEYSTORE: ${{ runner.temp }}/benchmark.p12
+          EXACT_KEY_ALIAS: benchmark
+          EXACT_KEYSTORE_PASSWORD: benchmark
+          EXACT_KEY_PASSWORD: benchmark
+          EXACT_ANDROID_APK_ONLY: '1'
+        run: |
+          bun exact.mjs android --release --no-install --json > "$RUNNER_TEMP/build.json"
+          apk=$(jq -er .path "$RUNNER_TEMP/build.json")
+          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify "$apk"
+      - name: Build unsigned device IPA
+        if: matrix.platform == 'ios-linux'
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        run: |
+          bun exact.mjs ios --device --release --unsigned --archive "$RUNNER_TEMP/apps.ipa"
+          unzip -tq "$RUNNER_TEMP/apps.ipa"
+      - name: Upload unsigned device IPA
+        if: matrix.platform == 'ios-linux'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.app.name }}-${{ matrix.runner }}-ipa
+          path: ${{ runner.temp }}/apps.ipa
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
