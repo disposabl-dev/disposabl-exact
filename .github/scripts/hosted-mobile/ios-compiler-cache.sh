@@ -20,7 +20,11 @@ key() {
   } | sha256sum | cut -d ' ' -f 1
 }
 activate() {
-  [[ ! -e "$target" && -d "$staged" && "$(cat "$bundle/compiler-key")" == "$(key)" ]]
+  [[ ! -e "$target" && -d "$staged" ]]
+  if [[ "$(cat "$bundle/compiler-key")" != "$(key)" ]]; then
+    printf 'Compiler cache key mismatch with Swift %s and Clang %s\n' "$(command -v swiftc)" "$(command -v clang)" >&2
+    return 1
+  fi
   mv "$staged" "$target"
 }
 case "$mode" in

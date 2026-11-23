@@ -148,7 +148,10 @@ jobs:
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
       - name: Verify the prepared Linux iOS SDK and Rust inputs
         if: env.EXACT_IOS_PARALLEL_SETUP == 'true'
-        run: bash .github/scripts/hosted-mobile/prepare-apple-exact.sh ios check
+        run: |
+          bash .github/actions/exact-setup/scripts/setup-linux-ios.sh
+          export PATH="$EXACT_APPLE_LLVM_BIN:$PATH"
+          bash .github/scripts/hosted-mobile/prepare-apple-exact.sh ios check
       - name: Stabilize timestamps of the pinned Exact and Hermes inputs
         if: env.EXACT_IOS_CACHE_MODE != ''
         run: |
