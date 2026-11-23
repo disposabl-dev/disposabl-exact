@@ -34,6 +34,7 @@ jobs:
         run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
       - name: Verify cache publication
         env:
+          GH_TOKEN: ${{ github.token }}
           EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
           BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
           BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
