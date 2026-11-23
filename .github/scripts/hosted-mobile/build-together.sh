@@ -2,8 +2,7 @@
 set -euo pipefail
 
 scripts="$GITHUB_WORKSPACE/.github/scripts/hosted-mobile"
-ios="$RUNNER_TEMP/ios-app"
-cp -a "$GITHUB_WORKSPACE/fixture/apps/apps" "$ios"
+ios="$GITHUB_WORKSPACE/fixture/apps/apps"
 mkdir -p "$ios/.exact"
 ln -sfn "$EXACT" "$ios/.exact/checkout"
 bash "$scripts/prepare-apple-exact.sh"
