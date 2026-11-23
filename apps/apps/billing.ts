@@ -1,10 +1,23 @@
 import { acknowledge, consume } from '@exact/purchases';
 
-import type { Result, Sources } from './app.contract.d.ts';
-import { appRequest } from './auth';
+import type { Result, Sources, Store } from './app.contract.d.ts';
+import { appRequest, authSources } from './auth';
 
 type BillingReply = Result<'startBilling'>;
 const unavailable: BillingReply = { url: '', ok: false };
+
+async function submitBilling<T>(body: object, store: Store): Promise<T> {
+  const submit = () => appRequest<T>(body, store, undefined, 'billing');
+  try {
+    return await submit();
+  } catch (error) {
+    // Only a rejected session is safe to retry. Preserve the purchase request ID.
+    if (!(error instanceof Error) || error.message !== 'SIGN_IN_REQUIRED') throw error;
+    const restored = await authSources.restoreSession([], store);
+    if (!restored.signedIn) throw error;
+    return submit();
+  }
+}
 
 export const billingSources = {
   async loadBilling([, platform], store) {
@@ -12,8 +25,8 @@ export const billingSources = {
   },
   async startBilling([operation, offer, platform], store) {
     try {
-      const result = await appRequest<{ url?: string; ok?: boolean }>(
-        { operation, offer, platform, requestId: crypto.randomUUID() }, store, undefined, 'billing',
+      const result = await submitBilling<{ url?: string; ok?: boolean }>(
+        { operation, offer, platform, requestId: crypto.randomUUID() }, store,
       );
       return { url: result.url ?? '', ok: !!(result.url || result.ok) };
     } catch {
@@ -28,8 +41,8 @@ export const billingSources = {
       const proof = platform === 'app-store' ? purchase.apple?.jwsRepresentation : purchase.purchaseToken;
       if (!offer || !proof || purchase.purchaseState !== 'purchased') continue;
       try {
-        await appRequest(
-          { operation: 'storePurchase', platform, offer, proof }, store, undefined, 'billing',
+        await submitBilling(
+          { operation: 'storePurchase', platform, offer, proof }, store,
         );
         if (!purchase.acknowledged) {
           const options = { purchaseToken: purchase.purchaseToken };

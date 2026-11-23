@@ -129,7 +129,7 @@ component Apps
     every(60000, deliverRenewals)
   task restore when not authAttempted
     after(1, checkSession)
-  task renew when authReady and not authChanging
+  task renew when authReady and not authChanging and not pending(billingReply) and not pending(delivered)
     every(30000, checkSession)
   task reconnect when live.status == "closed"
     every(1000, retry)
@@ -203,7 +203,7 @@ component Apps
       case none
         authError = "google-failed"
   action logout
-    if not authBusy
+    if not authBusy and not pending(billingReply) and not pending(delivered)
       authError = ""
       send changedSession = signOut()
   action follow(url: string)
@@ -215,13 +215,13 @@ component Apps
       refresh ownedPurchases
       refresh purchaseQueue
   action deliverBilling
-    if not pending(delivered) and not authChanging
+    if not pending(delivered) and not pending(billingReply) and not authBusy
       send delivered = deliverPurchases(store.store, billing.accountToken, billing.monthlyProduct, billing.topupProduct, deliverable)
   action deliverRenewals
-    if not pending(delivered) and not authChanging
+    if not pending(delivered) and not pending(billingReply) and not authBusy
       send delivered = deliverPurchases(store.store, billing.accountToken, billing.monthlyProduct, billing.topupProduct, renewals)
   action selectOffer(offer: string)
-    if signedIn and billing.authenticated and not authChanging and not billingBusy
+    if signedIn and billing.authenticated and not authBusy and not billingBusy and not pending(delivered)
       checkoutUrl = ""
       billingError = false
       if store.store == "none"
@@ -231,7 +231,7 @@ component Apps
       else if billing.storeEnabled and store.canMakePayments
         send storePurchase = purchase(itemId=(offer == "monthly" ? billing.monthlyProduct : billing.topupProduct), accountToken=billing.accountToken)
   action showBillingPortal
-    if signedIn and not authChanging and not billingBusy
+    if signedIn and not authBusy and not billingBusy and not pending(delivered)
       checkoutUrl = ""
       billingError = false
       send billingReply = startBilling("portal", "", store.store)
@@ -245,7 +245,7 @@ component Apps
         billingError = false
     refresh billing
   action restoreBilling
-    if billing.storeEnabled and not authChanging and not billingBusy
+    if billing.storeEnabled and not authBusy and not billingBusy and not pending(delivered)
       if store.store == "app-store"
         send restored = restorePurchases()
       else
@@ -293,7 +293,7 @@ component Apps
                   text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
                   if authReady and signedIn
                     text account testId="account-name"
-                    button press=logout disabled=authBusy testId="logout"
+                    button press=logout disabled=(authBusy or pending(billingReply) or pending(delivered)) testId="logout"
                       text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
                   else if authReady
                     input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
