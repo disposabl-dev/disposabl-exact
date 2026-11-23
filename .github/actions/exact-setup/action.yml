@@ -3,7 +3,7 @@ description: Install or publish pinned Exact tools for the selected runner
 inputs:
   platform:
     required: true
-    description: web, android, or ios
+    description: web, android, ios, or macos
   exact-ref:
     required: true
     description: Full Exact commit SHA
@@ -50,10 +50,15 @@ runs:
         SETUP_BUNDLE_VERSION: ${{ inputs.bundle-version }}
       run: |
         case "$SETUP_PLATFORM:$RUNNER_OS:$RUNNER_ARCH" in
-          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64) ;;
+          web:Linux:X64|android:Linux:X64|ios:macOS:ARM64|macos:Linux:X64|macos:macOS:ARM64) ;;
           *) echo "::error::Unexpected runner for $SETUP_PLATFORM"; exit 1 ;;
         esac
         [[ "$SETUP_MODE" =~ ^(consume|build)$ ]]
+        if [[ "$SETUP_PLATFORM" == macos ]] &&
+           [[ "$SETUP_MODE" != consume || "$SETUP_BUNDLE_VERSION" -lt 11 ]]; then
+          echo '::error::macos requires a published Exact bundle v11 or newer.'
+          exit 1
+        fi
         [[ "$SETUP_EXACT_REF" =~ ^[0-9a-f]{40}$ && "$SETUP_BUN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
         # Prebuilt publisher tools embed the SDK checkout path used to compile them.
         exact="$RUNNER_TEMP/exact-sdk"
@@ -97,6 +102,24 @@ runs:
         else
           bash "$GITHUB_ACTION_PATH/scripts/consume.sh"
         fi
+    - name: Install the pinned Linux Apple tools
+      if: inputs.platform == 'macos' && runner.os == 'Linux'
+      shell: bash
+      env:
+        EXACT_FAST_UBUNTU_MIRROR: '1'
+      run: bash "$GITHUB_ACTION_PATH/scripts/apple-linux-tools.sh"
+    - name: Prepare the macOS SDK and compiler inputs
+      if: inputs.platform == 'macos'
+      shell: bash
+      run: |
+        scripts="$GITHUB_ACTION_PATH/scripts"
+        if [[ "$RUNNER_OS" == Linux ]]; then
+          git -C "$EXACT" apply "$scripts/macos-cross.patch" "$scripts/ios-contacts-compat.patch"
+          bash "$scripts/apple-linux-sdk.sh" macos
+        else
+          xcrun --sdk macosx --show-sdk-version
+        fi
+        bash "$scripts/prepare-apple.sh" macos bootstrap
     - name: Build bundle
       if: inputs.mode == 'build'
       shell: bash

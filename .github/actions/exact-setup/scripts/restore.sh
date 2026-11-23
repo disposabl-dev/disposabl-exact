@@ -41,11 +41,13 @@ source_tree() {
 }
 source_tree &
 pids=($!)
-bundle="exact-$ref-$platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
 source_kind=release
-if [[ -f "$cache/$bundle" ]]; then source_kind=cache; fi
-extract "$bundle" "$HOME" "$cache/$bundle" &
-pids+=($!)
+if [[ $platform != macos ]]; then
+  bundle="exact-$ref-$platform-$RUNNER_OS-$RUNNER_ARCH-bun-$SETUP_BUN_VERSION.tar.zst"
+  if [[ -f "$cache/$bundle" ]]; then source_kind=cache; fi
+  extract "$bundle" "$HOME" "$cache/$bundle" &
+  pids+=($!)
+fi
 case "$platform" in
   android)
     extract cargo-android.zst "$cargo_target" "$staging/cargo.zst" & pids+=($!)
@@ -66,14 +68,16 @@ case "$platform" in
       asset "$file" "$ios_tools/$file" & pids+=($!)
     done
     ;;
-  web) ;;
+  web|macos) ;;
   *) exit 2 ;;
 esac
 status=0
 for pid in "${pids[@]}"; do wait "$pid" || status=1; done
 [[ $status == 0 ]] || exit 1
-[[ -x "$HOME/$publisher/exact-bake" && -x "$HOME/$publisher/exact-js-bake" ]]
-echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+if [[ $platform != macos ]]; then
+  [[ -x "$HOME/$publisher/exact-bake" && -x "$HOME/$publisher/exact-js-bake" ]]
+  echo "EXACT_PUBLISH_TOOLS=$HOME/$publisher" >> "$GITHUB_ENV"
+fi
 echo "source=$source_kind" >> "$GITHUB_OUTPUT"
 if [[ $platform == ios ]]; then
   if [[ -d /Applications/Xcode_27.2.app/Contents/Developer ]]; then
