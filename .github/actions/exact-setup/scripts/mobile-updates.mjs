@@ -66,6 +66,9 @@ env.EXACT_VERSION = manifest.version;
 const secret = Buffer.from(env.EXACT_UPDATE_SEED || '', 'base64');
 delete env.EXACT_UPDATE_SEED;
 if (secret.length !== 32) throw Error('Set EXACT_UPDATE_SEED to a base64-encoded 32-byte key for this environment');
+if (command === 'deliver' || command === 'seed') {
+  execFileSync(process.execPath, ['scripts/locales.mjs'], { stdio: 'inherit' });
+}
 
 // A different native source tree needs its own baseline even when Exact computes
 // the same runtime ABI. Bind it to the signed key so old installs keep their feed.
@@ -75,6 +78,8 @@ const nativeFiles = execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', '.']).t
     if (!row) return false;
     const path = row.split('\t')[1];
     if (iconPaths.has(path)) return true;
+    // Exact checks whether a locale roster or localised native permission changed.
+    if (/^strings\/[^/]+\.json$/.test(path)) return false;
     return !/^(?:assets|deck)\//.test(path) && !/\.(?:ts|contract|md)$/.test(path);
   });
 function updateKey(platform) {

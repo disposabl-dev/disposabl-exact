@@ -56,21 +56,21 @@ function authFailure(error: string): AuthReply {
 function passwordError(error: unknown, create: boolean): string {
   const code = error instanceof Error ? error.message : '';
   switch (code) {
-    case 'RATE_LIMITED': return 'Too many attempts. Wait a minute and try again.';
-    case 'INVALID_CREDENTIALS': return 'Check your username and password.';
-    case 'USERNAME_TAKEN': return 'That username is unavailable.';
-    case 'PASSWORD_TOO_SHORT': return 'Use at least 15 characters for your password.';
-    case 'PASSWORD_TOO_COMMON': return 'Choose a less common password.';
+    case 'RATE_LIMITED': return 'rate-limited';
+    case 'INVALID_CREDENTIALS': return 'invalid-credentials';
+    case 'USERNAME_TAKEN': return 'username-taken';
+    case 'PASSWORD_TOO_SHORT': return 'password-short';
+    case 'PASSWORD_TOO_COMMON': return 'password-common';
     default:
-      if (code.startsWith('USERNAME_')) return 'Choose a shorter username using letters and numbers.';
-      if (code.startsWith('PASSWORD_') || code === 'INVALID_REQUEST') return 'Check your username and password length and try again.';
-      return create ? 'Could not create your account. Try again.' : 'Could not sign in. Try again.';
+      if (code.startsWith('USERNAME_')) return 'username-invalid';
+      if (code.startsWith('PASSWORD_') || code === 'INVALID_REQUEST') return 'password-invalid';
+      return create ? 'create-account' : 'sign-in';
   }
 }
 
 let googleAttempt: AbortController | undefined;
 let googleTicket: { code: string; state: string } | undefined;
-const googleError = 'Could not sign in with Google. Try again.';
+const googleError = 'google-failed';
 
 async function openGoogleSession(store: Store): Promise<Result<'openGoogleSession'>> {
   const attempt = new AbortController();
@@ -82,17 +82,17 @@ async function openGoogleSession(store: Store): Promise<Result<'openGoogleSessio
     const callback = authCallback();
     const state = crypto.randomUUID();
     const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store, attempt.signal);
-    if (attempt.signal.aborted) return { error: 'Google sign-in was cancelled.' };
+    if (attempt.signal.aborted) return { error: 'google-cancelled' };
     const options = { callback, state, prepared: prepared ?? undefined };
     const returned = new URL(await openAuthSession(started.redirect, options));
-    if (attempt.signal.aborted) return { error: 'Google sign-in was cancelled.' };
+    if (attempt.signal.aborted) return { error: 'google-cancelled' };
     const code = returned.searchParams.get('convexAuthCode');
-    if (!code || returned.searchParams.has('convexAuthError')) return { error: 'Google sign-in was not completed.' };
+    if (!code || returned.searchParams.has('convexAuthError')) return { error: 'google-incomplete' };
     googleTicket = { code, state: started.state };
     return { error: '' };
   } catch (error) {
     if (attempt.signal.aborted || (error instanceof Error && 'status' in error && error.status === 499)) {
-      return { error: 'Google sign-in was cancelled.' };
+      return { error: 'google-cancelled' };
     }
     return { error: googleError };
   } finally {
@@ -106,7 +106,7 @@ export const authSources = {
     try {
       return acceptSession(await authRequest<AuthResponse>({ operation: 'status' }, store), store);
     } catch {
-      return authFailure('Could not check your session. Try again.');
+      return authFailure('session-check');
     }
   },
   passwordSession: async ([username, password, create], store) => {
@@ -122,8 +122,8 @@ export const authSources = {
     googleAttempt?.abort();
     googleTicket = undefined;
     return { error: exactHost() === 'web'
-      ? 'Google sign-in cancelled. You can close the Google window.'
-      : 'Google sign-in cancelled.' };
+      ? 'google-cancelled-web'
+      : 'google-cancelled' };
   },
   finishGoogleSession: async (_args, store) => {
     const ticket = googleTicket;
@@ -140,7 +140,7 @@ export const authSources = {
     try {
       return acceptSession(await authRequest<AuthResponse>({ operation: 'signOut' }, store), store);
     } catch {
-      return authFailure('Could not sign out. Try again to end your session.');
+      return authFailure('sign-out');
     }
   },
 } satisfies Pick<Sources, 'restoreSession' | 'passwordSession' | 'openGoogleSession' | 'cancelGoogleSession' | 'finishGoogleSession' | 'signOut'>;
