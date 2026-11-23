@@ -40,8 +40,11 @@ bun exact.mjs android --release --no-install --json > "$RUNNER_TEMP/public-fixtu
 # project output, or incremental compilation state. The cache is disposable.
 tar -cf - --exclude='incremental' --exclude='apps-android-*' --exclude='libapps_android*' --exclude='apps_android*' \
   -C "$target" release aarch64-linux-android/release | zstd -T0 -3 -o "$out/cargo-android.zst"
+gradle_version=$(sed -nE 's#^distributionUrl=.*/gradle-([A-Za-z0-9.-]+)-(bin|all)\.zip$#\1#p' \
+  "$EXACT/host/android/gradle/wrapper/gradle-wrapper.properties")
+[[ "$gradle_version" =~ ^[0-9][A-Za-z0-9.-]*$ ]] || { echo 'Cannot read the pinned Gradle version' >&2; exit 1; }
 gradle_paths=()
-for path in caches/build-cache-1 caches/modules-2 caches/9.8.0 wrapper/dists; do
+for path in caches/build-cache-1 caches/modules-2 "caches/$gradle_version" wrapper/dists; do
   [[ ! -e "$gradle/$path" ]] || gradle_paths+=("$path")
 done
 (( ${#gradle_paths[@]} )) || { echo 'Missing public Gradle caches' >&2; exit 1; }
