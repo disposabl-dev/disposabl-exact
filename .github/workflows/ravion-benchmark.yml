@@ -1,0 +1,101 @@
+name: Benchmark Exact Linux builds
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'ci/ravion-benchmark'
+    name: ${{ matrix.platform }} / ${{ matrix.provider }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [web, android]
+        provider: ${{ fromJSON(vars.RAVION_EXECUTION_ENVIRONMENT_ID && '["github", "blacksmith", "ravion"]' || '["github", "blacksmith"]') }}
+        include:
+          - platform: web
+            blacksmith: blacksmith-8vcpu-ubuntu-2604
+            cpu: 8
+            memory: 32
+          - platform: android
+            blacksmith: blacksmith-16vcpu-ubuntu-2604
+            cpu: 16
+            memory: 64
+    runs-on: >-
+      ${{ matrix.provider == 'ravion' && format('ravion/ee={0}/type=sandbox/cpu={1}/memory={2}/disk_cache=off/id={3}-{4}-exact-{5}', vars.RAVION_EXECUTION_ENVIRONMENT_ID, matrix.cpu, matrix.memory, github.run_id, github.run_attempt, strategy.job-index)
+          || matrix.provider == 'blacksmith' && matrix.blacksmith
+          || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      CONVEX_ORIGIN: wss://benchmark.example.com
+      CONVEX_SITE_ORIGIN: https://benchmark.example.com
+      EXACT_TOOLS_ORIGIN: none
+      EXACT_UPDATE_TRUST: production
+      EXACT_UPDATE_GENESIS: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Record runner configuration
+        run: |
+          grep '^PRETTY_NAME=' /etc/os-release
+          uname -m
+          nproc
+          free -h
+          df -h "$RUNNER_TEMP"
+          printf 'Ravion host: %s %s\n' "${RAVION_HOST_INSTANCE_TYPE:-}" "${RAVION_HOST_CPU_MODEL:-}"
+      - uses: actions/setup-java@v6.3.0
+        if: matrix.platform == 'android' && matrix.provider == 'ravion'
+        with:
+          distribution: temurin
+          java-version: '25'
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - name: Set up pinned Exact tools
+        uses: ./.github/actions/exact-setup
+        with:
+          platform: ${{ matrix.platform }}
+          exact-ref: ${{ steps.pin.outputs.exact-ref }}
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+          bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Install web dependencies
+        if: matrix.platform == 'web'
+        working-directory: apps/apps
+        run: |
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+      - name: Build and verify web
+        if: matrix.platform == 'web'
+        working-directory: apps/apps
+        run: |
+          bun exact.mjs web-build --out dist/convex
+          test -s dist/convex/index.html
+      - name: Generate a temporary Android signing key
+        if: matrix.platform == 'android'
+        run: |
+          java -version
+          keytool -genkeypair -storetype PKCS12 -keystore "$RUNNER_TEMP/benchmark.p12" \
+            -storepass benchmark -keypass benchmark -alias benchmark -keyalg RSA -keysize 2048 \
+            -validity 1 -dname 'CN=Exact CI benchmark'
+      - name: Build and verify Android release APK
+        if: matrix.platform == 'android'
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        env:
+          EXACT_KEYSTORE: ${{ runner.temp }}/benchmark.p12
+          EXACT_KEY_ALIAS: benchmark
+          EXACT_KEYSTORE_PASSWORD: benchmark
+          EXACT_KEY_PASSWORD: benchmark
+          EXACT_ANDROID_APK_ONLY: '1'
+        run: |
+          bun exact.mjs android --release --no-install --json > "$RUNNER_TEMP/android-build.json"
+          apk=$(jq -er '.path' "$RUNNER_TEMP/android-build.json")
+          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner" verify "$apk"
