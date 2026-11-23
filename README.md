@@ -73,26 +73,15 @@ bun exact.mjs test web
 
 ## Optional billing
 
-Billing starts disabled. Set `BILLING_MODE=preview` on a separate Convex deployment to let signed-in Android and iOS testers buy simulated products. A simulated purchase is labeled in the app, goes through Convex, and updates a preview-only credit balance. Apple and Google accounts are unnecessary for this test.
+Set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. Native store purchases require a managed store integration.
 
-Set `AUTUMN_SECRET_KEY` on the preview deployment to an Autumn **test-mode** key to enable web checkout at `/pricing`. Exact pricing reads the [code catalog](packages/backend/convex/billingCatalog.ts), Convex calls Autumn, and the browser opens Stripe Checkout. The app refreshes the balance from Autumn after payment. Keep the key in Convex.
+[The catalog and Convex billing functions](packages/backend/convex/billing/index.ts) live in one file. Autumn stores customer balances and Stripe checkout state. Convex verifies the Exact session before calling Autumn.
 
-From `packages/backend`, inspect the selected deployment's catalog before turning on checkout.
+From `packages/backend`, preview the catalog changes and apply them when ready.
 
 ```sh
-bun run convex run billing:syncCatalog '{"apply":false}'
-bun run convex run billing:syncCatalog '{"apply":true}'
+bun run convex run billing/index:syncCatalog '{"apply":false}'
+bun run convex run billing/index:syncCatalog '{"apply":true}'
 ```
 
-The second command creates missing catalog entries and publishes a new plan version when the configured price or credits change. Existing subscribers stay on their version. Only apply it on an Autumn environment where this repository owns the configured plan IDs. Set the production GitHub Actions variable `BILLING_SYNC_CATALOG=true` to sync automatically after deploying the production backend. The catalog's default amounts are USD, so use a matching Autumn catalog currency.
-
-### Live store purchases
-
-Set `BILLING_MODE=production` and a live `AUTUMN_SECRET_KEY` on the production Convex deployment. This enables web checkout. Native offers appear for a connected platform once the app can read the corresponding products from the store. Set up the store product IDs from the code catalog, with one monthly Play base plan and one consumable credit pack on each platform. The store supplies the displayed native price.
-
-- **Apple.** Configure the matching bundle ID, products, agreements, distribution signing and App Store Server Notifications V2 at `/api/billing/apple-notifications`. Set `BILLING_APPLE_BUNDLE_ID`, `BILLING_APPLE_APP_ID` and `BILLING_APPLE_ROOTS` in Convex. Roots are comma-separated base64 DER certificates from Apple PKI. Set `BILLING_APPLE_CONNECTED=true` after connecting the store and notification endpoint.
-- **Google.** Configure the Play package, its products, a service account with Android Publisher access, and an authenticated Pub/Sub push subscription for Play billing notifications to `/api/billing/google-notifications`. Set `BILLING_GOOGLE_PACKAGE`, `BILLING_GOOGLE_SERVICE_ACCOUNT` (service account JSON), `BILLING_GOOGLE_PUSH_AUDIENCE` and `BILLING_GOOGLE_PUSH_EMAIL` in Convex. Build the Play AAB through the existing `ANDROID_PLAY_CONNECTED` production setting.
-
-The app verifies and records the purchase in Convex before finishing it in StoreKit or Play. The pricing screen combines Autumn web credits with credits granted by the native stores. For an App Store IPA, set the Actions variable `IOS_APP_STORE_CONNECTED=true` in `android-production` and add the secrets `IOS_DISTRIBUTION_P12` and `IOS_APP_STORE_PROFILE` as single-line base64-encoded files, plus `IOS_DISTRIBUTION_PASSWORD` for the certificate. The next iOS native build produces a separate `ios-app-store` artifact, signed with that certificate and profile. Bump the native version to trigger a new native build if needed. Submit the artifact through App Store Connect. The existing AppDrop build remains available for sideloading.
-
-Native preview mode simulates purchases. The production receipt verifiers currently accept production store transactions. Support for real Apple and Google sandbox receipts, including Apple App Review transactions, and end-to-end verification of purchases, restore, renewals, and refunds remain to be completed before a live rollout.
+Catalog sync is limited to the two plans and the credits feature declared in the file. Plans use USD, so configure the Autumn account to match.

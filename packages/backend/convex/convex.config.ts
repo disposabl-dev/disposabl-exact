@@ -13,16 +13,7 @@ const googleConfigured = Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && pr
 const googleCredential = googleConfigured ? v.string() : v.optional(v.string());
 const app = defineApp({
   env: {
-    BILLING_MODE: v.optional(v.string()),
     AUTUMN_SECRET_KEY: v.optional(v.string()),
-    BILLING_APPLE_CONNECTED: v.optional(v.string()),
-    BILLING_GOOGLE_PUSH_AUDIENCE: v.optional(v.string()),
-    BILLING_GOOGLE_PUSH_EMAIL: v.optional(v.string()),
-    BILLING_APPLE_BUNDLE_ID: v.optional(v.string()),
-    BILLING_APPLE_APP_ID: v.optional(v.string()),
-    BILLING_APPLE_ROOTS: v.optional(v.string()),
-    BILLING_GOOGLE_PACKAGE: v.optional(v.string()),
-    BILLING_GOOGLE_SERVICE_ACCOUNT: v.optional(v.string()),
     AUTH_GOOGLE_CLIENT_ID: googleCredential,
     AUTH_GOOGLE_CLIENT_SECRET: googleCredential,
   },

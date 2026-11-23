@@ -135,14 +135,6 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
         run: &deploy-web bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
-      - name: Sync the opted-in Autumn catalog
-        if: steps.first.outputs.first != 'true' && vars.BILLING_SYNC_CATALOG == 'true'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: &billing-sync |
-          set -o pipefail
-          bun run convex run --prod billing:syncCatalog '{"apply":true}' | jq -e '.drift | length == 0'
       - name: Publish compatible mobile updates
         id: updates
         if: steps.first.outputs.first != 'true'
@@ -219,12 +211,6 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
         run: *deploy-web
-      - name: Sync the opted-in Autumn catalog
-        if: matrix.platform == 'web' && vars.BILLING_SYNC_CATALOG == 'true'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: *billing-sync
       - name: Configure updates
         if: matrix.platform != 'web'
         working-directory: ${{ env.NATIVE_APP_DIR }}
@@ -247,24 +233,6 @@ jobs:
           ANDROID_PLAY_UPLOAD_SIGNING: ${{ matrix.platform == 'android' && vars.ANDROID_PLAY_CONNECTED == 'true' && secrets.ANDROID_PLAY_UPLOAD_SIGNING || '' }}
           ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
         run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/native-build.sh" "${{ matrix.platform }}"
-      - name: Build the App Store IPA
-        if: matrix.platform == 'ios' && vars.IOS_APP_STORE_CONNECTED == 'true'
-        id: ios-store
-        working-directory: ${{ env.NATIVE_APP_DIR }}
-        env:
-          IOS_DISTRIBUTION_P12: ${{ secrets.IOS_DISTRIBUTION_P12 }}
-          IOS_DISTRIBUTION_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_PASSWORD }}
-          IOS_APP_STORE_PROFILE: ${{ secrets.IOS_APP_STORE_PROFILE }}
-        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/ios-store-build.sh"
-      - name: Upload App Store IPA
-        if: ${{ !cancelled() && steps.ios-store.outcome == 'success' }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: ios-app-store
-          path: ${{ runner.temp }}/ios-store-artifacts/
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
       - name: Publish the install link and seed signed updates
         if: ${{ !cancelled() && (matrix.platform == 'ios' && steps.native-build.outcome == 'success' || matrix.platform == 'android' && steps.native-build.outputs.apk_verified == 'true') }}
         working-directory: ${{ env.NATIVE_APP_DIR }}

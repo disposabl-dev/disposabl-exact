@@ -57,8 +57,6 @@
   "billing.topup": "Credit top-up",
   "billing.topupCredits": "{count} one-time credits",
   "billing.continue": "Continue to checkout",
-  "billing.pending": "Purchase is awaiting approval.",
-  "billing.restore": "Restore purchases",
   "billing.manage": "Manage web billing",
   "billing.storeUnavailable": "Unavailable in this store.",
   "billing.buyAt": "Buy for {price}"

@@ -57,8 +57,6 @@
   "billing.topup": "إضافة رصيد",
   "billing.topupCredits": "{count} وحدة رصيد لمرة واحدة",
   "billing.continue": "المتابعة للدفع",
-  "billing.pending": "عملية الشراء بانتظار الموافقة.",
-  "billing.restore": "استعادة المشتريات",
   "billing.manage": "إدارة الفوترة عبر الويب",
   "billing.storeUnavailable": "غير متاح في هذا المتجر.",
   "billing.buyAt": "شراء مقابل {price}"

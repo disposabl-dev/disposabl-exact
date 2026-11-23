@@ -57,8 +57,6 @@
   "billing.topup": "क्रेडिट टॉप-अप",
   "billing.topupCredits": "एक बार के {count} क्रेडिट",
   "billing.continue": "चेकआउट पर जाएँ",
-  "billing.pending": "खरीद को मंज़ूरी मिलना बाकी है।",
-  "billing.restore": "खरीदारी बहाल करें",
   "billing.manage": "वेब बिलिंग प्रबंधित करें",
   "billing.storeUnavailable": "इस स्टोर में उपलब्ध नहीं है।",
   "billing.buyAt": "{price} में खरीदें"
