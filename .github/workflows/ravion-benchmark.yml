@@ -28,7 +28,7 @@ jobs:
     runs-on: >-
       ${{ matrix.provider == 'ravion' && format('ravion/ee={0}/type=sandbox/cpu={1}/memory={2}/disk_cache=off/id={3}-{4}-exact-{5}', vars.RAVION_EXECUTION_ENVIRONMENT_ID, matrix.cpu, matrix.memory, github.run_id, github.run_attempt, strategy.job-index)
           || matrix.provider == 'blacksmith' && matrix.blacksmith
-          || 'ubuntu-24.04' }}
+          || 'ubuntu-26.04' }}
     timeout-minutes: 30
     defaults:
       run:
@@ -36,6 +36,7 @@ jobs:
     env:
       CONVEX_ORIGIN: wss://benchmark.example.com
       CONVEX_SITE_ORIGIN: https://benchmark.example.com
+      EXACT_FEEDBACK: '0'
       EXACT_TOOLS_ORIGIN: none
       EXACT_UPDATE_TRUST: production
       EXACT_UPDATE_GENESIS: '1'
