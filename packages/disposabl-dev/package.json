@@ -1,0 +1,17 @@
+{
+  "name": "@disposabl/dev",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server/api": "./server/api.ts",
+    "./server/functions": "./server/functions.ts",
+    "./server/mcp": "./server/mcp.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "^4.2.0"
+  },
+  "peerDependencies": {
+    "convex": "^1.51.0"
+  }
+}

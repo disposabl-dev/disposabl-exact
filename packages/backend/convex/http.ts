@@ -1,5 +1,8 @@
 import { httpCookies, isTokenExpiring, type HttpCookies, type TokenBundle } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
+import { registerApi } from "@disposabl/dev/server/api";
+import type { PublicRead } from "@disposabl/dev/server/functions";
+import { registerMcp } from "@disposabl/dev/server/mcp";
 import { ConvexHttpClient } from "convex/browser";
 import { httpRouter } from "convex/server";
 import { api, components, internal } from "./_generated/api";
@@ -181,9 +184,20 @@ const webReturn = httpAction(async (ctx) => {
 });
 
 const http = httpRouter();
+const publicReads = [
+  {
+    name: "get_counter",
+    description: "Read the shared demo counter.",
+    path: "/api/counter",
+    query: api.counter.get,
+  },
+] satisfies PublicRead[];
+
 http.route({ path: "/api/auth/web", method: "POST", handler: session });
 http.route({ path: "/api/auth/native", method: "POST", handler: session });
 http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
 http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
+registerApi(http, publicReads);
+registerMcp(http, publicReads);
 registerStaticRoutes(http, components.staticHosting);
 export default http;
