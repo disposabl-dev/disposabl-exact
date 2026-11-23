@@ -86,6 +86,7 @@ runs:
       if: inputs.mode == 'consume'
       shell: bash
       env:
+        GH_TOKEN: ${{ github.token }}
         SETUP_PLATFORM: ${{ inputs.platform }}
         SETUP_EXACT_REF: ${{ inputs.exact-ref }}
         SETUP_BUN_VERSION: ${{ inputs.bun-version }}

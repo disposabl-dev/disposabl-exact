@@ -230,16 +230,15 @@ for (const update of candidates) {
   // files against the two reviewed variants before admitting a Linux publish.
   const appleBuilder = 'host/apple/build.mjs';
   let sameAppleBuilder = false;
-  if (platform === 'ios' && EXACT_REF === 'a55c5581c7e1a62cdee1f09367ea2909c74c7292' &&
-      update.build.pendingInputs.includes(`exact/${appleBuilder}`)) {
-    const known = new Set([
-      '0306f15724f34e8fd3bad29fff511ce16ae829c9625bedddc32e3a2fb684ba6a',
-      'd140dc0ab3866a6572ec52c696c7724430e0ad207b1a38df225404638127c99e',
-    ]);
-    const signed = await readBinaryInputFile(origin, update.row.receipt);
-    const recorded = signed && JSON.parse(signed.bytes).files.filter(file => file.root === 'exact' && file.path === appleBuilder);
-    const local = createHash('sha256').update(readFileSync(resolve(EXACT, appleBuilder))).digest('hex');
-    sameAppleBuilder = recorded?.length === 1 && known.has(recorded[0].sha256) && known.has(local);
+  if (platform === 'ios' && update.build.pendingInputs.includes(`exact/${appleBuilder}`)) {
+    const hook = JSON.parse(readFileSync(resolve(import.meta.dir, '../ios-link-hooks.json'), 'utf8'))[EXACT_REF];
+    if (hook) {
+      const known = new Set([hook.original, hook.patched, ...hook.previous]);
+      const signed = await readBinaryInputFile(origin, update.row.receipt);
+      const recorded = signed && JSON.parse(signed.bytes).files.filter(file => file.root === 'exact' && file.path === appleBuilder);
+      const local = createHash('sha256').update(readFileSync(resolve(EXACT, appleBuilder))).digest('hex');
+      sameAppleBuilder = recorded?.length === 1 && known.has(recorded[0].sha256) && known.has(local);
+    }
   }
   const changed = update.build.pendingInputs.filter(path =>
     !(sameAppleBuilder && path === `exact/${appleBuilder}`) &&

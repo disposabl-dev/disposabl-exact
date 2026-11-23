@@ -2,8 +2,8 @@
 # Apply the same pinned Android release profile on producer and consumer.
 set -euo pipefail
 : "${EXACT:?Set EXACT to the pinned SDK checkout}"
-expected=a55c5581c7e1a62cdee1f09367ea2909c74c7292
-[[ $(git -C "$EXACT" rev-parse HEAD) == "$expected" ]] || { echo 'Unsupported Exact revision for Android fast profile' >&2; exit 1; }
+expected=${SETUP_EXACT_REF:-${EXACT_REF:?Set the Exact revision}}
+[[ $(git -C "$EXACT" rev-parse HEAD) == "$expected" ]] || { echo 'Android SDK checkout differs from its pin' >&2; exit 1; }
 python3 - "$EXACT" <<'PY'
 import os, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1])
@@ -11,9 +11,9 @@ path = root / 'scripts/cargo-check.mjs'
 original = subprocess.check_output(['git', '-C', str(root), 'show', 'HEAD:scripts/cargo-check.mjs'])
 old = b"return ['apple','ios','macos','tvos','android'].includes(kind)"
 new = b'''if (kind === 'android' && profile === 'release') return ['--config','profile.release.lto="off"','--config','profile.release.codegen-units=16'];\n  ''' + old
-if original.count(old) != 1:
-    raise SystemExit('Unsupported Android release profile source')
-patched = original.replace(old, new)
+patched = original.replace(old, new) if original.count(old) == 1 else original
+if patched == original:
+    print('Using the upstream Android release profile for this SDK')
 if path.read_bytes() not in (original, patched):
     raise SystemExit('Android release profile has unexpected edits')
 if path.read_bytes() != patched:

@@ -30,7 +30,7 @@ Blacksmith macOS 27 with Xcode builds the first IPA and any replacement native b
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the production build receipt to initialize each stream. For a new phone, use the existing install link. Compatible deployments keep that link in the Actions summary. CI saves it in the Convex environment as `EXACT_INSTALL_ANDROID` or `EXACT_INSTALL_IOS` after a successful native build.
 
-Only the canonical repository publishes tools. Merge a tools PR into `disposabl-dev/disposabl-exact:main` to publish the version selected in [publish.yml](.github/workflows/publish.yml). Once that release exists, update the deployment pins in a separate PR. Clones download the published bundles on their first deployment and cache them for later runs.
+Change the Exact SHA in [pin.env](.github/actions/exact-setup/pin.env) and merge the PR into `disposabl-dev/disposabl-exact:main`. The publisher builds the matching web tools, Android Cargo and Gradle caches, and iOS Cargo cache. Reviewed iOS linker configurations also get a Swift host catalog. Deployment waits for the versioned release and checks its asset digests before using it. Ordinary app changes reuse the release for the current pin.
 
 The one-minute target covers web deployment and compatible mobile updates, including queueing and transfers.
 

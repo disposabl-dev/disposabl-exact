@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
-SDK_REF = 'a55c5581c7e1a62cdee1f09367ea2909c74c7292'
 TRIPLE = 'arm64-apple-ios17.0'
 CONDITIONS = {'intent_files': False, 'widget_gallery': False, 'watch_sync': False, 'composition': 'updating'}
 
@@ -185,11 +184,12 @@ def link(args):
     catalog = Path(os.environ['EXACT_HOST_CATALOG']).resolve()
     destination = Path(args.out).resolve()
     require(not destination.exists(), 'output exists')
-    require(output(['git', '-C', str(sdk), 'rev-parse', 'HEAD']) == SDK_REF, 'SDK revision differs')
+    ref = output(['git', '-C', str(sdk), 'rev-parse', 'HEAD'])
+    require(ref in kit_tools.HOOKS, 'SDK revision has no reviewed iOS link hook')
     original = kit_tools.load(kit / 'kit.json')
     manifest = kit_tools.load(catalog / 'manifest.json')
     toolchain = kit_tools.toolchain()
-    require(manifest['ref'] == SDK_REF and manifest['target'] == TRIPLE and manifest['profile'] == 'release-balanced'
+    require(manifest['ref'] == ref and manifest['target'] == TRIPLE and manifest['profile'] == 'release-balanced'
             and manifest['conditions'] == CONDITIONS and original['toolchain'] == manifest['toolchain'] == toolchain,
             'unsupported SDK or compiler configuration')
     expected = {'EXACT_APP_COMPOSITION':'updating', 'EXACT_UPDATE_TRUST':'production',
