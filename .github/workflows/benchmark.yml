@@ -82,10 +82,22 @@ jobs:
           path: fixture
           persist-credentials: false
       - name: Install Linux compiler tools
-        run: bash .github/scripts/hosted-mobile/toolchain.sh
+        run: |
+          scripts=.github/scripts/hosted-mobile
+          if [[ "$BENCHMARK_TARGET:$EXACT_IOS_CACHE_MODE" == ios:restore ]] && command -v zstd >/dev/null; then
+            bash "$scripts/install-sdk.sh" fetch & sdk=$!
+            bash "$scripts/toolchain.sh" & tools=$!
+            status=0
+            for pid in "$sdk" "$tools"; do wait "$pid" || status=$?; done
+            exit "$status"
+          fi
+          bash "$scripts/toolchain.sh"
       - name: Install xTool SDK
         if: matrix.target != 'android'
-        run: bash .github/scripts/hosted-mobile/install-sdk.sh
+        run: |
+          phase=all
+          if [[ -d "$RUNNER_TEMP/sdk-private/darwin.xtoolsdk" ]]; then phase=install; fi
+          bash .github/scripts/hosted-mobile/install-sdk.sh "$phase"
       - id: pin
         run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
       - name: Restore Exact v11 inputs

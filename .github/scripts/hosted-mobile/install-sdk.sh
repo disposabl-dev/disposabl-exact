@@ -3,44 +3,57 @@ set -euo pipefail
 umask 077
 
 private="$RUNNER_TEMP/sdk-private"
-mkdir -m 700 "$private"
-trap 'rm -rf "$private" "$RUNNER_TEMP/sdk-recipient.key"' EXIT
-url="$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$BENCHMARK_APP"
-for attempt in {1..180}; do
-  if curl -fSs --max-time 8 "$url" -o "$private/wrapped" 2>/dev/null; then break; fi
-  sleep 2
-done
-[[ -s "$private/wrapped" ]] || { echo 'The SDK relay did not authorize this runner'; exit 1; }
-openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/sdk-recipient.key" -in "$private/wrapped" \
-  -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 > "$private/material"
-mapfile -t material < "$private/material"
-[[ ${material[0]} =~ ^[0-9a-f]{64}$ && ${material[1]} =~ ^[0-9a-f]{64}$ ]]
-printf '%s\n' "${material[0]}" > "$private/passphrase"
-if [[ -n "${EXACT_IOS_CACHE_MODE:-}" ]]; then
-  install -m 600 "$private/passphrase" "$RUNNER_TEMP/ios-cache-passphrase"
+phase=${1:-all}
+case "$phase" in all|fetch|install) ;; *) exit 2 ;; esac
+keep_download=false
+trap '
+  if [[ "$keep_download" == false ]]; then rm -rf "$private"; fi
+  rm -f "$RUNNER_TEMP/sdk-recipient.key"
+' EXIT
+if [[ "$phase" != install ]]; then
+  mkdir -m 700 "$private"
+  url="$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$BENCHMARK_APP"
+  for attempt in {1..180}; do
+    if curl -fSs --max-time 8 "$url" -o "$private/wrapped" 2>/dev/null; then break; fi
+    sleep 2
+  done
+  [[ -s "$private/wrapped" ]] || { echo 'The SDK relay did not authorize this runner'; exit 1; }
+  openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/sdk-recipient.key" -in "$private/wrapped" \
+    -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 > "$private/material"
+  mapfile -t material < "$private/material"
+  [[ ${material[0]} =~ ^[0-9a-f]{64}$ && ${material[1]} =~ ^[0-9a-f]{64}$ ]]
+  printf '%s\n' "${material[0]}" > "$private/passphrase"
+  if [[ -n "${EXACT_IOS_CACHE_MODE:-}" ]]; then
+    install -m 600 "$private/passphrase" "$RUNNER_TEMP/ios-cache-passphrase"
+  fi
+  mirror=
+  if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
+    mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
+  fi
+  case "$mirror" in
+    https://release-assets.githubusercontent.com/*|https://objects.githubusercontent.com/*)
+      curl -fsS --retry 4 --retry-all-errors --max-time 240 "$mirror" -o "$private/sdk.enc" || rm -f "$private/sdk.enc"
+      ;;
+  esac
+  if [[ ! -s "$private/sdk.enc" ]]; then
+    curl -fsS --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
+    test -s "$private/pieces"
+    if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
+    export sdk_pieces="$private"
+    xargs -P 3 -n 1 bash -euc '
+      curl -fsS --retry 4 --retry-all-errors --max-time 60 "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
+    ' bash < "$private/pieces"
+    while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$private/sdk.enc"
+  fi
+  printf '%s  %s\n' "${material[1]}" "$private/sdk.enc" | sha256sum -c -
+  openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/sdk.enc" \
+    | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
+  rm -f "$private/sdk.enc" "$private/material" "$private/passphrase" "$RUNNER_TEMP/sdk-recipient.key"
 fi
-mirror=
-if curl -fsS --max-time 10 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.mirror" -o "$private/mirror.enc" 2>/dev/null; then
-  mirror=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/mirror.enc")
+if [[ "$phase" == fetch ]]; then
+  keep_download=true
+  exit
 fi
-case "$mirror" in
-  https://release-assets.githubusercontent.com/*|https://objects.githubusercontent.com/*)
-    curl -fsS --retry 4 --retry-all-errors --max-time 240 "$mirror" -o "$private/sdk.enc" || rm -f "$private/sdk.enc"
-    ;;
-esac
-if [[ ! -s "$private/sdk.enc" ]]; then
-  curl -fsS --retry 4 --retry-all-errors --max-time 20 "$SDK_RELAY/sdk-pieces.txt" -o "$private/pieces"
-  test -s "$private/pieces"
-  if grep -qvE '^part-[0-9]{3}$' "$private/pieces"; then exit 1; fi
-  export sdk_pieces="$private"
-  xargs -P 3 -n 1 bash -euc '
-    curl -fsS --retry 4 --retry-all-errors --max-time 60 "$SDK_RELAY/pieces/$1" -o "$sdk_pieces/$1"
-  ' bash < "$private/pieces"
-  while IFS= read -r part; do cat "$private/$part"; done < "$private/pieces" > "$private/sdk.enc"
-fi
-printf '%s  %s\n' "${material[1]}" "$private/sdk.enc" | sha256sum -c -
-openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 -pass "file:$private/passphrase" -in "$private/sdk.enc" \
-  | zstd -dc | tar --no-same-owner --warning=no-unknown-keyword -xf - -C "$private"
 xtool --version
 xtool sdk install "$private/darwin.xtoolsdk"
 sdk_status=$(xtool sdk status)
