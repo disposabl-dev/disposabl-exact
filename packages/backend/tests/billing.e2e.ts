@@ -62,5 +62,7 @@ describe("billing boundary", () => {
     expect(otherStatus.monthlyActive).toBe(false);
     expect(otherStatus.credits).toBe(first.credits);
     expect((await post(native, { operation: "storePurchase", platform, offer: "monthly", proof: "agent-fake" }, session)).status).toBe(503);
+    expect((await post("/api/auth/native", { operation: "signOut" }, session)).ok).toBe(true);
+    expect((await purchase("topup", crypto.randomUUID())).status).toBe(401);
   });
 });

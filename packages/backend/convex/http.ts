@@ -153,9 +153,11 @@ const billing = httpAction(async (ctx, request) => {
   if (body === null) return authError("INVALID_REQUEST");
 
   const session = readSession(web ? await httpCookies(request).get(cookieName) : request.headers.get(sessionHeader));
-  const userId = session && !isTokenExpiring(session.accessToken)
+  // Convex verifies the actual expiry and session revocation. Auth's refresh
+  // buffer should not reject a still-valid token between refreshes.
+  const userId = session
     ? await new ConvexHttpClient(env.CONVEX_CLOUD_URL, { auth: session.accessToken, logger: false })
-      .query(api.billingData.viewerId, {})
+      .query(api.billingData.viewerId, {}).catch(() => null)
     : null;
   const platform = !web && (body.platform === "app-store" || body.platform === "google-play") ? body.platform : null;
   if (body.operation === "status") {
