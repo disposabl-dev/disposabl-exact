@@ -38,7 +38,7 @@ assert (resources / "clang/lib/darwin/libclang_rt.ios.a").is_file()
 target_triples = {}
 for platform, target in (("iPhoneOS", "arm64-apple-ios"), ("MacOSX", "arm64-apple-macosx")):
     platform_developer = developer / "Platforms" / f"{platform}.platform" / "Developer"
-    sdk_root, = platform_developer.glob(f"SDKs/{platform}[0-9]*.sdk")
+    sdk_root = platform_developer / "SDKs" / f"{platform}.sdk"
     assert (sdk_root / "SDKSettings.json").is_file()
     server = platform_developer / "usr/bin/swift-plugin-server"
     server.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +48,8 @@ for platform, target in (("iPhoneOS", "arm64-apple-ios"), ("MacOSX", "arm64-appl
         "sdkRootPath": str(sdk_root.relative_to(root)),
         "swiftResourcesPath": str(resources.relative_to(root)),
         "swiftStaticResourcesPath": str(resources.with_name("swift_static").relative_to(root)),
+        "includeSearchPaths": [str((platform_developer / "usr/lib").relative_to(root))],
+        "librarySearchPaths": [str((platform_developer / "usr/lib").relative_to(root))],
         "toolsetPaths": ["toolset.json"],
     }
 (root / "swift-sdk.json").write_text(json.dumps({"schemaVersion": "4.0", "targetTriples": target_triples}))
