@@ -19,13 +19,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON((contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
+        app: ${{ fromJSON((contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || endsWith(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
         target: ${{ fromJSON(contains(github.ref_name, '-together') && '["both"]' || contains(github.ref_name, '-split') && '["android","ios"]' || contains(github.ref_name, '-macos') && '["macos"]' || '["ios"]') }}
     env:
       SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
       BENCHMARK_APP: ${{ matrix.app }}
       BENCHMARK_TARGET: ${{ matrix.target }}
       EXACT_TOOLS_ORIGIN: none
+      EXACT_IOS_CACHE_PROBE: ${{ endsWith(github.ref_name, '-ios-cache') }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
@@ -89,6 +90,9 @@ jobs:
           exact-ref: ${{ steps.pin.outputs.exact-ref }}
           bun-version: ${{ steps.pin.outputs.bun-version }}
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Compile shared iOS dependencies with the public seed app
+        if: endsWith(github.ref_name, '-ios-cache')
+        run: bash .github/scripts/hosted-mobile/seed-ios-cache.sh
       - name: Build and verify device IPA
         if: matrix.target == 'ios'
         working-directory: ${{ env.NATIVE_APP_DIR }}

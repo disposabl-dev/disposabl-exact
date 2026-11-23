@@ -3,13 +3,24 @@ set -euo pipefail
 
 start=$(date +%s)
 export EXACT_UPDATE_GENESIS=1 EXACT_UPDATE_TRUST=production
-export EXACT_BAKE_OUTPUT="$RUNNER_TEMP/ios-bake"
-export CARGO_TARGET_DIR="$RUNNER_TEMP/ios-target"
+dir="${EXACT_IOS_ARTIFACT_DIR:-$RUNNER_TEMP/verified-ios}"
+export EXACT_BAKE_OUTPUT="$dir/bake"
+export CARGO_TARGET_DIR="${EXACT_IOS_COMPILER_DIR:-$RUNNER_TEMP/ios-target}"
 unset CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS CARGO_PROFILE_BALANCED_LTO CARGO_PROFILE_SIZE_LTO
 bun "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/configure-app.mjs"
-ipa="$RUNNER_TEMP/verified-ios/apps.ipa"
+ipa="$dir/apps.ipa"
 mkdir -p "$(dirname "$ipa")"
+if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
+  export IOS_REAL_CARGO=$(command -v cargo)
+  export IOS_EVIDENCE_PUBLIC_SEED=1 IOS_EVIDENCE_DIR="$dir/cargo-evidence"
+  mkdir -p "$dir/capture-bin"
+  ln -s "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/ios-cargo-capture.sh" "$dir/capture-bin/cargo"
+  export PATH="$dir/capture-bin:$PATH"
+fi
 bun exact.mjs ios --device --release --unsigned --no-install --archive "$ipa"
+if [[ "${EXACT_IOS_CACHE_PROBE:-}" == true ]]; then
+  jq -rs 'map(select(.reason == "compiler-artifact")) | "Cargo units reused: \(map(select(.fresh == true)) | length)/\(length)"' "$IOS_EVIDENCE_DIR"/cargo-ios.*
+fi
 unzip -tq "$ipa"
 unpacked=$(mktemp -d "$RUNNER_TEMP/ipa.XXXXXX")
 trap 'rm -rf "$unpacked"' EXIT
@@ -17,7 +28,16 @@ unzip -q "$ipa" -d "$unpacked"
 apps=("$unpacked"/Payload/*.app)
 [[ ${#apps[@]} == 1 && -f "${apps[0]}/Info.plist" ]]
 [[ -z "$(find "$unpacked" -name embedded.mobileprovision -print -quit)" ]]
-exe=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "${apps[0]}/Info.plist")
+id=$(jq -er '.app.id' app.json)
+exe=$(python3 - "${apps[0]}/Info.plist" "$id" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], "rb") as file:
+    info = plistlib.load(file)
+if info["CFBundleIdentifier"] != sys.argv[2]:
+    raise SystemExit("IPA bundle identifier does not match the app")
+print(info["CFBundleExecutable"])
+PY
+)
 [[ "$exe" != */* && "$exe" != . && "$exe" != .. ]]
 "$EXACT_APPLE_LLVM_BIN/llvm-lipo" "${apps[0]}/$exe" -verify_arch arm64
 "$EXACT_APPLE_LLVM_BIN/llvm-objdump" --macho --private-headers "${apps[0]}/$exe" > "$unpacked/load-commands"
