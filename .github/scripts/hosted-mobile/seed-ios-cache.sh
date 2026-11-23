@@ -14,7 +14,8 @@ ln -s "$EXACT" .exact/checkout
 bun install --frozen-lockfile
 jq '.app.id = "dev.disposabl.compilerseed" | .id = .app.id' app.json > app.cache-seed.json
 mv app.cache-seed.json app.json
-EXACT_IOS_ARTIFACT_DIR="$output" EXACT_IOS_COMPILER_DIR="$cache" bash "$scripts/build-ios.sh"
+IOS_PRIME_PUBLIC_CAPABILITIES="${EXACT_IOS_PRIME_PUBLIC_CAPABILITIES:-false}" \
+  EXACT_IOS_ARTIFACT_DIR="$output" EXACT_IOS_COMPILER_DIR="$cache" bash "$scripts/build-ios.sh"
 
 # Discard the seed's native crate, staged app, and bake receipts. Keep the
 # dependency build units and SwiftPM scratch that Exact shares across apps.
