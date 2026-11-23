@@ -38,24 +38,31 @@ case "$mode" in
     : "${EXACT_IOS_CACHE_DIGEST:?Use a pinned compiler cache archive digest}"
     private=$(mktemp -d "$RUNNER_TEMP/compiler-transfer.XXXXXX")
     trap 'rm -rf "$private"' EXIT
-    for attempt in {1..30}; do
-      if curl -fSs --max-time 8 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.compiler" -o "$private/url.enc" 2>/dev/null; then
-        url=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 \
-          -pass "file:$RUNNER_TEMP/ios-cache-passphrase" -in "$private/url.enc")
-        case "$url" in
-          https://*.blob.core.windows.net/*|https://*.actions.githubusercontent.com/*|https://release-assets.githubusercontent.com/*) ;;
-          *) echo 'Unexpected compiler cache download host' >&2; exit 1 ;;
-        esac
-        if curl -fSsL --max-time 240 "$url" -o "$private/compiler.zip"; then break; fi
-        rm -f "$private/compiler.zip"
-      fi
-      sleep 2
-    done
-    [[ -s "$private/compiler.zip" ]]
-    printf '%s  %s\n' "$EXACT_IOS_CACHE_DIGEST" "$private/compiler.zip" | sha256sum -c -
+    archive="$private/compiler.zip"
+    disk=/tmp/exact-ios-compiler-disk
+    mode=${EXACT_IOS_COMPILER_DISK_MODE:-}
+    if [[ "$mode" == read ]]; then
+      archive="$disk/compiler.zip"
+    else
+      for attempt in {1..30}; do
+        if curl -fSs --max-time 8 "$SDK_RELAY/keys/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.compiler" -o "$private/url.enc" 2>/dev/null; then
+          url=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 100000 \
+            -pass "file:$RUNNER_TEMP/ios-cache-passphrase" -in "$private/url.enc")
+          case "$url" in
+            https://*.blob.core.windows.net/*|https://*.actions.githubusercontent.com/*|https://release-assets.githubusercontent.com/*) ;;
+            *) echo 'Unexpected compiler cache download host' >&2; exit 1 ;;
+          esac
+          if curl -fSsL --max-time 240 "$url" -o "$archive"; then break; fi
+          rm -f "$archive"
+        fi
+        sleep 2
+      done
+    fi
+    [[ -s "$archive" ]]
+    printf '%s  %s\n' "$EXACT_IOS_CACHE_DIGEST" "$archive" | sha256sum -c -
     mkdir -p "$bundle"
     for file in compiler-key SHA256SUMS compiler.tar.zst.enc; do
-      unzip -p "$private/compiler.zip" "$file" > "$bundle/$file"
+      unzip -p "$archive" "$file" > "$bundle/$file"
     done
     [[ ! -e "$target" && "$(cat "$bundle/compiler-key")" == "$(key)" ]]
     (cd "$bundle" && sha256sum -c SHA256SUMS)
@@ -66,6 +73,10 @@ case "$mode" in
       -pass "file:$RUNNER_TEMP/ios-cache-passphrase" -in "$bundle/compiler.tar.zst.enc" \
       | zstd -dc | tar --no-same-owner -xf - -C "$staged"
     mv "$staged" "$target"
+    if [[ "$mode" == seed ]]; then
+      install -m 600 "$archive" "$disk/compiler.zip.next"
+      mv "$disk/compiler.zip.next" "$disk/compiler.zip"
+    fi
     ;;
   *) exit 2 ;;
 esac

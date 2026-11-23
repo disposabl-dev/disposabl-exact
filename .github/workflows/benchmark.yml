@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON(endsWith(github.ref_name, '-ios-cache-suite') && '["paperstack","trail","field","aperture","voice","template"]' || (contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
+        app: ${{ fromJSON(endsWith(github.ref_name, '-suite') && '["paperstack","trail","field","aperture","voice","template"]' || (contains(github.ref_name, '-together') || contains(github.ref_name, '-split') || contains(github.ref_name, '-macos') || contains(github.ref_name, '-ios-cache')) && '["paperstack"]' || '["paperstack","trail","field","aperture","voice"]') }}
         target: ${{ fromJSON(contains(github.ref_name, '-together') && '["both"]' || contains(github.ref_name, '-split') && '["android","ios"]' || contains(github.ref_name, '-macos') && '["macos"]' || '["ios"]') }}
     env:
       SDK_RELAY: https://box-node-ac8946db2e01068c-8765.on.boat.dev
@@ -28,8 +28,12 @@ jobs:
       EXACT_TOOLS_ORIGIN: none
       EXACT_FAST_UBUNTU_MIRROR: ${{ !contains(github.ref_name, '-boat') && !contains(github.ref_name, '-github') && '1' || '' }}
       EXACT_IOS_CACHE_PROBE: ${{ contains(github.ref_name, '-ios-cache') }}
-      EXACT_IOS_FAST_PREVIEW: ${{ endsWith(github.ref_name, '-ios-cache-fast') || endsWith(github.ref_name, '-ios-cache-publish') || endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite') }}
-      EXACT_IOS_CACHE_MODE: ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' || (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-ios-cache-suite')) && 'restore' || '' }}
+      EXACT_IOS_FAST_PREVIEW: ${{ contains(github.ref_name, '-ios-cache-') }}
+      EXACT_IOS_CACHE_MODE: >-
+        ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' ||
+            (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-suite') ||
+            endsWith(github.ref_name, '-ios-cache-sticky-seed')) && 'restore' || '' }}
+      EXACT_IOS_COMPILER_DISK_MODE: ${{ endsWith(github.ref_name, '-ios-cache-sticky-seed') && 'seed' || endsWith(github.ref_name, '-ios-cache-sticky-suite') && 'read' || '' }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
@@ -126,6 +130,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - name: Mount Blacksmith iOS dependency cache
+        if: env.EXACT_IOS_COMPILER_DISK_MODE != ''
+        uses: useblacksmith/stickydisk@042b9308ad79836dd69e87754a9dfbe4aba60d21 # v1
+        with:
+          key: exact-ios-compiler-${{ steps.pin.outputs.ios-cache-digest }}
+          path: /tmp/exact-ios-compiler-disk
       - name: Restore iOS compiler dependencies
         if: env.EXACT_IOS_CACHE_MODE == 'restore'
         env:
