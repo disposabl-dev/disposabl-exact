@@ -2,7 +2,7 @@ name: Benchmark Exact builds
 
 on:
   push:
-    branches: [ci/exact-ubuntu-benchmark, ci/exact-ubuntu-web-verify, ci/exact-boat-benchmark]
+    branches: [ci/exact-ubuntu-benchmark, ci/exact-ubuntu-web-verify, ci/exact-ubuntu-android-verify, ci/exact-boat-benchmark]
   workflow_dispatch:
     inputs:
       runner:
@@ -51,13 +51,13 @@ jobs:
       fail-fast: false
       matrix:
         runner: ${{ fromJSON(inputs.runner && format('["{0}"]', inputs.runner) || github.ref_name == 'ci/exact-boat-benchmark' && '["boat-large"]' || '["ubuntu-26.04","blacksmith-8vcpu-ubuntu-2604"]') }}
-        platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || github.ref_name == 'ci/exact-ubuntu-web-verify' && '["web"]' || '["web","android"]') }}
+        platform: ${{ fromJSON(inputs.ios && '["ios-linux"]' || github.ref_name == 'ci/exact-ubuntu-web-verify' && '["web"]' || github.ref_name == 'ci/exact-ubuntu-android-verify' && '["android"]' || '["web","android"]') }}
         app:
           - {name: Paperstack, repo: exact-first-paperstack-hosts, ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8}
-          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 30806e698e0c2f888ced2d758fedfb6e25246013}
-          - {name: Field Journal, repo: exact-first-field-hosts, ref: 6e267e6a266d9be6af2351b91614c837ed191c4e}
-          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: b26e698abface1fa97b38da2c27c61a8fde72e47}
-          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 0707cd8eac0b90e34ef1a27c0ee249a9a8595b0d}
+          - {name: Trail Coach, repo: exact-first-trail-hosts, ref: 0dac6f24ed3486b83bfaae3576b1c246e1ae1f10}
+          - {name: Field Journal, repo: exact-first-field-hosts, ref: 0eb00f3f554757e5a7c6f0e7753e5237114ec98b}
+          - {name: Aperture Log, repo: exact-first-aperture-hosts, ref: a6e7ee874daa0f964cbe8782322a9c01c0604efb}
+          - {name: Voice Notes, repo: exact-first-voice-hosts-clean, ref: 4a96dea6ff83a4c1fef5ba5287b6d27fff881fb3}
     env:
       EXACT_TOOLS_ORIGIN: none
       CONVEX_ORIGIN: ws://127.0.0.1:3210
