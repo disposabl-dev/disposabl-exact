@@ -117,7 +117,9 @@ elif [[ $platform == ios-linux ]]; then
   baker="$HOME/$publisher/exact-js-bake"
   printf 'EXACT_IOS_BAKER_PATH=%s\nEXACT_IOS_BAKER_SHA256=%s\n' \
     "$baker" "$(sha256sum "$baker" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
-  bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/prepare-apple-exact.sh"
+  if [[ "${EXACT_IOS_PARALLEL_SETUP:-}" != true ]]; then
+    bash "$GITHUB_WORKSPACE/.github/scripts/hosted-mobile/prepare-apple-exact.sh"
+  fi
 elif [[ $platform == android ]]; then
   # Resolve the pinned host plugins while Exact bakes and compiles Rust. Keep
   # Gradle's project state separate from the real app and its dependency locks.

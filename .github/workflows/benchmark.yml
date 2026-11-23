@@ -34,7 +34,8 @@ jobs:
         ${{ endsWith(github.ref_name, '-ios-cache-publish') && 'pack' ||
             (endsWith(github.ref_name, '-ios-cache-restore') || endsWith(github.ref_name, '-suite') ||
             contains(github.ref_name, '-ios-cache-sticky-')) && 'restore' || '' }}
-      EXACT_IOS_COMPILER_DISK_MODE: ${{ endsWith(github.ref_name, '-ios-cache-sticky-seed') && 'seed' || (endsWith(github.ref_name, '-ios-cache-sticky-suite') || endsWith(github.ref_name, '-ios-cache-sticky-read')) && 'read' || '' }}
+      EXACT_IOS_COMPILER_DISK_MODE: ${{ endsWith(github.ref_name, '-ios-cache-sticky-seed') && 'seed' || (endsWith(github.ref_name, '-ios-cache-sticky-suite') || (endsWith(github.ref_name, '-ios-cache-sticky-read') || endsWith(github.ref_name, '-ios-cache-sticky-parallel'))) && 'read' || '' }}
+      EXACT_IOS_PARALLEL_SETUP: ${{ endsWith(github.ref_name, '-ios-cache-sticky-parallel') }}
       CONVEX_ORIGIN: ws://127.0.0.1:3210
       CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
     steps:
@@ -94,14 +95,28 @@ jobs:
         with:
           key: exact-ios-compiler-${{ env.EXACT_IOS_SWIFT_CACHE == 'true' && steps.pin.outputs.ios-cas-cache-digest || steps.pin.outputs.ios-cache-digest }}
           path: /tmp/exact-ios-compiler-disk
+      - name: Restore Exact v11 inputs early
+        if: env.EXACT_IOS_PARALLEL_SETUP == 'true'
+        uses: ./.github/actions/exact-setup
+        env:
+          EXACT_APP_CHECKOUT: ${{ github.workspace }}/fixture
+        with:
+          platform: ${{ matrix.target == 'ios' && 'ios-linux' || matrix.target == 'macos' && 'web' || 'android' }}
+          exact-ref: ${{ steps.pin.outputs.exact-ref }}
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+          bundle-version: ${{ steps.pin.outputs.bundle-version }}
       - name: Install Linux compiler tools
         run: |
           scripts=.github/scripts/hosted-mobile
           if [[ "$BENCHMARK_TARGET:$EXACT_IOS_CACHE_MODE" == ios:restore ]] && command -v zstd >/dev/null; then
             bash "$scripts/install-sdk.sh" fetch & sdk=$!
             bash "$scripts/toolchain.sh" & tools=$!
+            pids=("$sdk" "$tools")
+            if [[ "$EXACT_IOS_PARALLEL_SETUP" == true ]]; then
+              bash "$scripts/prepare-apple-exact.sh" ios bootstrap & pids+=("$!")
+            fi
             status=0
-            for pid in "$sdk" "$tools"; do wait "$pid" || status=$?; done
+            for pid in "${pids[@]}"; do wait "$pid" || status=$?; done
             exit "$status"
           fi
           bash "$scripts/toolchain.sh"
@@ -112,6 +127,7 @@ jobs:
           if [[ -d "$RUNNER_TEMP/sdk-private/darwin.xtoolsdk" ]]; then phase=install; fi
           bash .github/scripts/hosted-mobile/install-sdk.sh "$phase"
       - name: Restore Exact v11 inputs
+        if: env.EXACT_IOS_PARALLEL_SETUP != 'true'
         uses: ./.github/actions/exact-setup
         env:
           EXACT_APP_CHECKOUT: ${{ github.workspace }}/fixture
@@ -120,6 +136,9 @@ jobs:
           exact-ref: ${{ steps.pin.outputs.exact-ref }}
           bun-version: ${{ steps.pin.outputs.bun-version }}
           bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Verify the prepared Linux iOS SDK and Rust inputs
+        if: env.EXACT_IOS_PARALLEL_SETUP == 'true'
+        run: bash .github/scripts/hosted-mobile/prepare-apple-exact.sh ios check
       - name: Stabilize timestamps of the pinned Exact and Hermes inputs
         if: env.EXACT_IOS_CACHE_MODE != ''
         run: |

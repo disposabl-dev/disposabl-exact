@@ -83,7 +83,7 @@ runs:
     - uses: android-actions/setup-android@v4.0.4
       if: steps.android-sdk.outputs.install == 'true'
     - name: Prepare the xTool SDK
-      if: inputs.platform == 'ios-linux' && inputs.mode == 'consume'
+      if: inputs.platform == 'ios-linux' && inputs.mode == 'consume' && env.EXACT_IOS_PARALLEL_SETUP != 'true'
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/scripts/setup-linux-ios.sh"
     - id: consume
