@@ -27,7 +27,7 @@ jobs:
           ~/.local/bin/exact-sandbox-run bun install --frozen-lockfile
       - name: Build the web app
         working-directory: apps/apps
-        run: ~/.local/bin/exact-sandbox-run bun exact.mjs web-build --out dist-portable-ci
+        run: ~/.local/bin/exact-sandbox-run bun exact.mjs web-build --out dist/portable-ci
       - name: Run Exact web verification
         working-directory: apps/apps
         run: ~/.local/bin/exact-sandbox-run bun exact.mjs verify web --json
