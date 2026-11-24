@@ -63,6 +63,7 @@ describe("disposabl.json", () => {
         };
         expect(open("/", "GET")).toBe(web);
         expect(open("/pricing", "GET")).toBe(web && payments);
+        if (!authentication || !config.frontend) expect(open("/oauth/google/callback", "GET")).toBe(false);
         expect(has("/api/auth/web", "POST")).toBe(authentication && web);
         expect(has("/api/auth/native", "POST")).toBe(authentication && (mobile.length > 0 || macos));
         expect(has("/api/billing/web", "POST")).toBe(payments && web);

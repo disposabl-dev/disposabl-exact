@@ -57,6 +57,9 @@ export function createHttp(config = project) {
   http.route({ pathPrefix: "/api/", method: "GET", handler: notFound });
   http.route({ pathPrefix: "/mcp/", method: "GET", handler: notFound });
   if (!config.payments) http.route({ path: "/pricing", method: "GET", handler: notFound });
+  if (!config.authentication || !config.frontend) {
+    http.route({ pathPrefix: "/oauth/google/", method: "GET", handler: notFound });
+  }
   if (!config.authentication || !config.web) {
     http.route({ path: "/.exact/auth/callback", method: "GET", handler: notFound });
   }
