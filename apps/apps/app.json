@@ -22,7 +22,7 @@
   "host": {
     "web": {
       "head": [
-        { "script": { "src": "/assets/mcp-consent.js", "defer": true } }
+        { "script": { "src": "/assets/platform-web.js", "defer": true } }
       ]
     },
     "android": {

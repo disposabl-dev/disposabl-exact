@@ -4,7 +4,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import config from "../../../disposabl.json";
 import { api } from "../convex/_generated/api";
-import { mcp as server } from "../convex/mcp";
+import { mcp as server } from "@disposabl-kit/server/mcp";
 
 const platforms: readonly string[] = config.platforms;
 const site = process.env.CONVEX_SITE_URL;
@@ -50,6 +50,18 @@ function form(
   });
 }
 
+function credentials(cookie?: string, body?: object, origin = site) {
+  return fetch(`${site}/api/platform/credentials`, {
+    method: body ? "POST" : "GET",
+    headers: {
+      "X-Exact-Auth": "1",
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(body ? { "Content-Type": "application/json", Origin: origin! } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 async function signIn() {
   const response = await fetch(`${site}/api/auth/web`, {
     method: "POST",
@@ -88,17 +100,39 @@ test("only the selected transports expose the internal counter query", async () 
   expect(response.status).toBe(platforms.includes("api") ? 401 : 404);
   const missing = await mcp("tools/list");
   expect(missing.status).toBe(platforms.includes("mcp") ? 401 : 404);
-  if (!platforms.includes("api") && !platforms.includes("mcp")) return;
+  const openapi = await fetch(`${site}/openapi.json`);
+  expect(openapi.status).toBe(platforms.includes("api") ? 200 : 404);
+  if (platforms.includes("api")) {
+    const spec = await openapi.json();
+    expect(spec.openapi).toMatch(/^3\.1\./);
+    expect(spec.security).toEqual([{ apiKey: [] }]);
+    const path = spec.paths["/api/counter/current"];
+    expect(path.post).toBeUndefined();
+    expect(path.get).toMatchObject({
+      operationId: "counter_current",
+      description: "Read the current value of the shared demo counter.",
+      parameters: [],
+      "x-required-scope": "read",
+      responses: { "200": { content: { "application/json": { schema: {
+        type: "object",
+        required: ["count"],
+      } } } } },
+    });
+    expect(spec.paths["/api/platform/credentials"]).toBeUndefined();
+  }
+  if (!platforms.includes("api") && !platforms.includes("mcp")) {
+    expect((await credentials()).status).toBe(404);
+    return;
+  }
 
   const cookie = await signIn();
-  const issued = await form(
-    "/api-keys",
-    { name: "Local integration key" },
-    cookie,
-  );
+  expect((await credentials()).status).toBe(401);
+  expect((await credentials(cookie, { operation: "create", name: "Disallowed", write: false }, "https://example.com")).status).toBe(403);
+  const issued = await credentials(cookie, { operation: "create", name: "Local integration key", write: false });
   expect(issued.status).toBe(200);
-  const key = (await issued.text()).match(/<code>([^<]+)<\/code>/)?.[1];
-  if (!key) throw new Error("Expected an API key.");
+  expect(issued.headers.get("Cache-Control")).toBe("no-store");
+  const { key } = await issued.json();
+  expect(typeof key).toBe("string");
   const headers = { Authorization: `Bearer ${key}` };
   if (platforms.includes("api")) {
     const allowed = await fetch(endpoint, { headers });
@@ -117,9 +151,9 @@ test("only the selected transports expose the internal counter query", async () 
 
   if (platforms.includes("mcp")) {
     const { tools } = await mcpResult(await mcp("tools/list", undefined, key));
-    expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({
+    expect(tools.find((tool: { name: string }) => tool.name === "counter_current")).toMatchObject({
       name: "counter_current",
+      description: "Read the current value of the shared demo counter.",
       inputSchema: { properties: {} },
       annotations: { readOnlyHint: true },
     });
@@ -132,14 +166,13 @@ test("only the selected transports expose the internal counter query", async () 
     ).toBe(403);
   }
 
-  const credentials = await fetch(`${site}/api-keys`, {
-    headers: { Cookie: cookie },
-  });
-  const grant = (await credentials.text()).match(
-    /name="revoke" value="([^"]+)"/,
-  )?.[1];
-  if (!grant) throw new Error("Expected a revocable key.");
-  expect((await form("/api-keys", { revoke: grant }, cookie)).status).toBe(303);
+  const listed = await credentials(cookie);
+  const { connections } = await listed.json();
+  expect(connections).toMatchObject([{ name: "Local integration key", scopes: ["read"] }]);
+  expect(JSON.stringify(connections)).not.toContain(key);
+  const grant = connections[0].id;
+  expect((await credentials(cookie, { operation: "revoke", id: grant })).status).toBe(200);
+  expect(await (await credentials(cookie)).json()).toEqual({ connections: [] });
   if (platforms.includes("api"))
     expect((await fetch(endpoint, { headers })).status).toBe(401);
   if (platforms.includes("mcp"))

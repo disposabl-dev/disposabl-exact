@@ -3,9 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "convex dev",
-    "predev": "bun run generate:platforms && convex dev --until-success && convex dashboard",
-    "generate:platforms": "bun generate-platforms.ts",
+    "dev": "bun ../disposabl-kit/server/dev.ts",
+    "generate:platforms": "bun ../disposabl-kit/server/generate-platforms.ts",
     "logs": "convex logs",
     "typecheck": "tsc -p convex",
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"
@@ -15,7 +14,7 @@
     "@convex-dev/mcp": "0.1.0-alpha.7",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
-    "@disposabl-kit/server": "file:../disposabl-kit",
+    "@disposabl-kit/server": "workspace:*",
     "convex": "^1.51.0"
   },
   "devDependencies": {

@@ -56,13 +56,15 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
 
-Sign in to Exact and visit `/api-keys` to create or revoke a key. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
+Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 
 - Queries use GET. Pass named arguments as query parameters, using plain text for string fields and JSON for other values.
 - Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.
 - MCP marks queries read-only and publishes the argument schema for each tool. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
 
-The backend discovers marked internal functions and writes a registry using Convex's generated references and argument validators. Local startup and CI generate it. After editing platform functions with the dev server running, run `bun run generate:platforms` from `packages/backend`.
+The kit discovers marked functions in the Convex source. `bun run dev` from `packages/backend` updates the registry as you add, change, or remove functions. CI generates it before deploying. A Node-runtime action can be called from an opted-in default-runtime internal action.
+
+When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
 
 ### Translations
 

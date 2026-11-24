@@ -22,6 +22,7 @@ export const get = query({
 
 export const current = internalQuery({
   platforms: true,
+  description: "Read the current value of the shared demo counter.",
   args: { userId: v.id("users") },
   returns: counterResult,
   handler: readCounter,

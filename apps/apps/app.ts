@@ -1,6 +1,6 @@
 import type { Answer, Result, Sources } from './app.contract.d.ts';
 import { authGrants, authSources } from './auth';
-import { consentSources } from './mcp-consent';
+import { platformSources } from './platform';
 import { languages } from './locales.generated';
 import { convex } from '@exact/convex';
 import { getFunctionName, makeFunctionReference } from 'convex/server';
@@ -15,7 +15,7 @@ const incrementCounter = makeFunctionReference<'mutation', Record<string, never>
 
 const sources: Sources = {
   ...authSources,
-  ...consentSources,
+  ...platformSources,
   locales: () => ({ choices: languages }),
   live: () => client.live(),
   counter: ([rev]) => client.query(rev, getCounter, {}),

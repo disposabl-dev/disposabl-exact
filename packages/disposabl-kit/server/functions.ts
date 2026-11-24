@@ -1,29 +1,16 @@
 import {
   getFunctionName,
-  internalActionGeneric,
-  internalMutationGeneric,
-  internalQueryGeneric,
-  type ActionBuilder,
   type FunctionReference,
   type FunctionType,
   type GenericActionCtx,
   type GenericDataModel,
-  type MutationBuilder,
-  type QueryBuilder,
 } from "convex/server";
-import type {
-  GenericValidator,
-  PropertyValidators,
-  Value,
-} from "convex/values";
-
-export interface ServerTypes {}
-
-type DataModel = ServerTypes extends {
-  dataModel: infer Model extends GenericDataModel;
-}
-  ? Model
-  : GenericDataModel;
+import type { GenericValidator, PropertyValidators, Value } from "convex/values";
+import {
+  internalAction as action,
+  internalMutation as mutation,
+  internalQuery as query,
+} from "../../backend/convex/_generated/server";
 
 function withPlatforms<Definition, Registered extends object>(
   builder: (definition: Definition) => Registered,
@@ -33,19 +20,16 @@ function withPlatforms<Definition, Registered extends object>(
       args: PropertyValidators;
       returns: GenericValidator;
       platforms?: true;
+      description?: string;
     },
   ): Registered =>
     Object.assign(builder(definition), {
       platforms: definition.platforms,
       platformArgs: definition.args,
       platformReturns: definition.returns,
+      platformDescription: definition.description,
     });
 }
-
-const query: QueryBuilder<DataModel, "internal"> = internalQueryGeneric;
-const mutation: MutationBuilder<DataModel, "internal"> =
-  internalMutationGeneric;
-const action: ActionBuilder<DataModel, "internal"> = internalActionGeneric;
 
 export const internalQuery = withPlatforms(query);
 export const internalMutation = withPlatforms(mutation);
@@ -54,6 +38,7 @@ export const internalAction = withPlatforms(action);
 type PlatformValidators = {
   args: PropertyValidators;
   returns: GenericValidator;
+  description?: string;
 };
 
 export function getPlatformValidators(
@@ -64,6 +49,7 @@ export function getPlatformValidators(
     platforms?: true;
     platformArgs?: PropertyValidators;
     platformReturns?: GenericValidator;
+    platformDescription?: string;
   };
   if (
     definition.platforms !== true ||
@@ -80,7 +66,7 @@ export function getPlatformValidators(
     userId.isOptional !== "required"
   )
     throw new Error(`${id}: platform functions require userId: v.id("users")`);
-  return { args, returns: definition.platformReturns };
+  return { args, returns: definition.platformReturns, description: definition.platformDescription };
 }
 
 export type PlatformDefinition = PlatformValidators &
@@ -115,14 +101,18 @@ export function platformScope(operation: PlatformOperation) {
 export function createPlatformOperations(
   definitions: readonly PlatformDefinition[],
 ): PlatformOperation[] {
+  const names = new Set<string>();
+  const paths = new Set<string>();
   return definitions.map((definition) => {
     const id = getFunctionName(definition.reference);
-    return {
-      ...definition,
-      name: id.replace(/[^A-Za-z0-9_.-]/g, "_"),
-      description: `Call ${id}.`,
-      path: `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}`,
-    };
+    const name = id.replace(/[^A-Za-z0-9_.-]/g, "_");
+    const path = `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}` as const;
+    if (names.has(name) || paths.has(path)) {
+      throw new Error(`${id}: duplicate platform tool name or API path`);
+    }
+    names.add(name);
+    paths.add(path);
+    return { ...definition, name, path, description: definition.description ?? `Call ${id}.` };
   });
 }
 

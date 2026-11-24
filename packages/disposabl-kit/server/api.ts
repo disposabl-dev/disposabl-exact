@@ -7,6 +7,7 @@ import {
   type AuthenticatePlatform,
   type PlatformOperation,
 } from "./functions";
+import { isTextParameter } from "./openapi";
 
 function queryArgs(request: Request, operation: PlatformOperation) {
   const params = new URL(request.url).searchParams;
@@ -14,13 +15,7 @@ function queryArgs(request: Request, operation: PlatformOperation) {
     [...params].map(([name, value]) => {
       if (params.getAll(name).length !== 1)
         throw new Error("Repeated query parameter");
-      const kind = operation.args[name]?.kind;
-      const expectsString =
-        kind === "string" ||
-        kind === "id" ||
-        kind === "bytes" ||
-        kind === "int64";
-      return [name, expectsString ? value : JSON.parse(value)];
+      return [name, isTextParameter(operation.args[name]) ? value : JSON.parse(value)];
     }),
   );
 }
