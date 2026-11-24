@@ -178,7 +178,7 @@ const nativeReturn = httpAction(async (_ctx, request) => {
   return new Response(null, { status: 302, headers: { ...privateHeaders, Location: callback.href } });
 });
 
-export async function serveWebDocument(
+async function serveWebDocument(
   ctx: ActionCtx,
   path: string,
   policy: string,
@@ -212,9 +212,13 @@ const webReturn = httpAction(async (ctx) => {
   );
 });
 
-export function registerAuth(http: HttpRouter) {
-  http.route({ path: "/api/auth/web", method: "POST", handler: session });
-  http.route({ path: "/api/auth/native", method: "POST", handler: session });
-  http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
-  http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
+export function registerAuth(http: HttpRouter, web: boolean, native: boolean) {
+  if (web) {
+    http.route({ path: "/api/auth/web", method: "POST", handler: session });
+    http.route({ path: GOOGLE_WEB_RETURN, method: "GET", handler: webReturn });
+  }
+  if (native) {
+    http.route({ path: "/api/auth/native", method: "POST", handler: session });
+    http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
+  }
 }

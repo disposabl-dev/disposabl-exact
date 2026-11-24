@@ -1,6 +1,6 @@
 import type { Result, Sources, Store } from './app.contract.d.ts';
 
-const site = import.meta.env.CONVEX_SITE_ORIGIN ?? 'http://127.0.0.1:3211';
+export const site = import.meta.env.CONVEX_SITE_ORIGIN ?? 'http://127.0.0.1:3211';
 const nativeCallback = 'dev.disposabl.exact:/oauth/google';
 const sessionKey = 'exact.auth.session';
 export const authGrants = [

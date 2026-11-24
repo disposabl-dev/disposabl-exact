@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { McpServer, tool } from "@convex-dev/mcp";
 import type { FunctionReference, FunctionType } from "convex/server";
+import { project } from "../../../scripts/project-config.mjs";
 import { components, internal } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "../../backend/convex/authSettings";
 import {
@@ -73,9 +74,15 @@ export const mcp: McpServer = new McpServer(components.mcp, {
   deviceFlow: false,
 });
 
-export const { authorize, createApiKey, listConnections, revokeConnection } = mcp.api({
-  getUserId: (ctx) =>
-    "runQuery" in ctx && typeof ctx.runQuery === "function"
-      ? getAuthUserId(ctx as Parameters<typeof getAuthUserId>[0])
-      : Promise.resolve(null),
+function platformUser(ctx: { auth: Parameters<typeof getAuthUserId>[0]["auth"] }) {
+  return "runQuery" in ctx && typeof ctx.runQuery === "function"
+    ? getAuthUserId(ctx as Parameters<typeof getAuthUserId>[0])
+    : Promise.resolve(null);
+}
+
+export const { authorize } = mcp.api({
+  getUserId: (ctx) => project.consent ? platformUser(ctx) : Promise.resolve(null),
+});
+export const { createApiKey, listConnections, revokeConnection } = mcp.api({
+  getUserId: (ctx) => project.credentials ? platformUser(ctx) : Promise.resolve(null),
 });

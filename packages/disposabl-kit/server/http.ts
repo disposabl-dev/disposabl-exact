@@ -1,31 +1,34 @@
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { httpRouter } from "convex/server";
-import config from "../../../disposabl.json";
+import { project } from "../../../scripts/project-config.mjs";
 import { components } from "../../backend/convex/_generated/api";
 import { httpAction } from "../../backend/convex/_generated/server";
 import { siteOrigin } from "../../backend/convex/authSettings";
 import { registerApi } from "./api";
-import { registerAuth, reply, serveWebDocument } from "./auth";
+import { registerBilling } from "./billing";
+import { registerAuth, reply } from "./auth";
 import { mcp, platformOperations, service } from "./mcp";
 import { createOpenApi } from "./openapi";
 import { registerConsent, registerCredentials } from "./platform-auth";
 
-// The Exact web app renders these routes. Keep its authorization controls out of frames.
-const exactDocument = httpAction((ctx) =>
-  // Preserve Origin on the browser's consent form submission.
-  serveWebDocument(ctx, "/index.html", "frame-ancestors 'none'", "same-origin"),
-);
-
 const notFound = httpAction(async () => reply({ error: "NOT_FOUND" }, 404));
 
-export function createHttp() {
+export function createHttp(config = project) {
   const http = httpRouter();
-  const platforms: readonly string[] = config.platforms;
-  const apiEnabled = platforms.includes("api");
-  const mcpEnabled = platforms.includes("mcp");
+  http.route({
+    path: "/api/disposabl/config",
+    method: "GET",
+    handler: httpAction(async () => reply({
+      authentication: config.authentication,
+      payments: config.payments,
+      credentials: config.credentials,
+      consent: config.consent,
+    })),
+  });
 
-  registerAuth(http);
-  if (apiEnabled) {
+  if (config.authentication) registerAuth(http, config.web, config.native);
+  if (config.payments) registerBilling(http, config.web, config.native);
+  if (config.api) {
     registerApi(http, platformOperations, mcp.authenticate.bind(mcp));
     const { title, version } = service;
     const spec = createOpenApi(platformOperations, { title, version }, siteOrigin());
@@ -36,20 +39,36 @@ export function createHttp() {
         headers: { "Cache-Control": "no-cache" },
       })),
     });
+  } else {
+    http.route({ path: "/openapi.json", method: "GET", handler: notFound });
   }
-  if (mcpEnabled) {
+  if (config.consent) {
     mcp.registerRoutes(http);
     registerConsent(http);
   } else {
+    if (config.mcp) {
+      http.route({ path: "/mcp", method: "POST", handler: httpAction((ctx, request) => mcp.handleMcp(ctx, request)) });
+    }
     http.route({ path: "/mcp", method: "GET", handler: notFound });
+    for (const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-authorization-server",
+    ]) http.route({ path, method: "GET", handler: notFound });
   }
-  if (apiEnabled || mcpEnabled) registerCredentials(http);
+  if (config.credentials) registerCredentials(http);
 
-  http.route({ path: "/consent", method: "GET", handler: mcpEnabled ? exactDocument : notFound });
-  http.route({ path: "/api-keys", method: "GET", handler: apiEnabled || mcpEnabled ? exactDocument : notFound });
-  // The web shell must not handle missing or disabled API endpoints.
+  if (!config.consent) http.route({ path: "/consent", method: "GET", handler: notFound });
+  if (!config.credentials) http.route({ path: "/api-keys", method: "GET", handler: notFound });
+  // Disabled endpoints must not resolve to the static host's SPA fallback.
   http.route({ pathPrefix: "/api/", method: "GET", handler: notFound });
   http.route({ pathPrefix: "/mcp/", method: "GET", handler: notFound });
-  registerStaticRoutes(http, components.staticHosting);
+  http.route({ pathPrefix: "/api/", method: "POST", handler: notFound });
+  http.route({ pathPrefix: "/mcp/", method: "POST", handler: notFound });
+  if (!config.payments) http.route({ path: "/pricing", method: "GET", handler: notFound });
+  if (!config.authentication || !config.web) {
+    http.route({ path: "/.exact/auth/callback", method: "GET", handler: notFound });
+  }
+  if (config.web) registerStaticRoutes(http, components.staticHosting);
   return http;
 }

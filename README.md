@@ -2,9 +2,26 @@
 
 Starter kit for building apps and agents with Exact and Convex.
 
+## Choose platforms and features
+
+[disposabl.json](disposabl.json) controls which platforms deploy and which features the deployed app uses.
+
+```json
+{
+  "platforms": ["web", "android", "ios", "macos", "api", "mcp"],
+  "features": ["authentication"]
+}
+```
+
+- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, and `mcp`. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
+- Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
+- Commit and deploy a configuration change to enable or disable a selection. The feature code and existing account and billing records are retained. An empty platform list stops client builds and disables previously deployed surfaces when the deployment key is configured.
+
+Run `bun test packages/backend/tests/project-config.test.ts` to check all platform and feature selections.
+
 ## First deployment from a new repository
 
-Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex project with Static Hosting enabled. Configure the following GitHub Actions secrets before the push that starts your first deployment.
+Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex project. Enable Static Hosting if you select web. Configure the following GitHub Actions secrets before the push that starts your first deployment.
 
 | Scope | Name | Value |
 | --- | --- | --- |
@@ -12,15 +29,15 @@ Create a repository from this template and enable it in GitHub Actions and Black
 | `android-production` environment | `EXACT_UPDATE_SEED` | Independent 32-byte, base64-encoded mobile update signing seed |
 | `android-production` environment | `ANDROID_APK_SIGNING` | JSON containing the base64 PKCS12 `keystore` and its `password`, with key alias `android` |
 
-Create `android-production` in **Settings → Environments** and restrict it to `main`. Both mobile platforms use this environment. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+Create `android-production` in **Settings → Environments** and restrict it to `main`. Mobile builds use the signing secrets in this environment. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
-Set the Convex key at repository scope. To provision the mobile signing secrets, run the following once from your clone with a repository administrator's GitHub CLI login. A GitHub-hosted runner generates the keys and encrypts them with the environment's public key. The command saves the encrypted values and keeps any existing keys.
+Set the Convex key at repository scope. If you select Android or iOS, provision the mobile signing secrets once from your clone with a repository administrator's GitHub CLI login. A GitHub-hosted runner generates the keys and encrypts them with the environment's public key. The command saves the encrypted values and keeps any existing keys.
 
 ```sh
 python3 .github/actions/exact-setup/scripts/setup-signing.py
 ```
 
-Push or merge to `main` to deploy. The first deployment starts web, Android and iOS in parallel. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
+Push or merge to `main` to deploy. The first deployment starts the selected platform jobs. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
 
 ## iPhone builds
 
@@ -54,7 +71,7 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 ### API and MCP
 
-Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
+Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json). Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
 
 Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 
@@ -65,6 +82,14 @@ Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconn
 The kit discovers marked functions in the Convex source. `bun run dev` from `packages/backend` updates the registry as you add, change, or remove functions. CI generates it before deploying. A Node-runtime action can be called from an opted-in default-runtime internal action.
 
 When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
+
+With web and authentication enabled, Exact web serves `/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a read-only key from `packages/backend` and store the returned key securely.
+
+```sh
+bun run convex run mcp:createServiceKey '{"name":"My integration"}'
+```
+
+Pass `"readOnly":false` to grant write access. Revoke the key with `mcp:revokeServiceKey`, passing the `id` and `userId` returned on creation. Use `--prod` for the production deployment.
 
 ### Translations
 
@@ -87,7 +112,7 @@ bun exact.mjs test web
 
 ## Optional billing
 
-Set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. The mobile app displays the Autumn plan and balance and tells web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
+Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. The mobile app displays the Autumn plan and balance and tells web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
 
 [The catalog and Convex billing functions](packages/backend/convex/billing/index.ts) live in one file. Autumn stores customer balances and Stripe checkout state. Convex verifies the Exact session before calling Autumn.
 

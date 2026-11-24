@@ -7,10 +7,11 @@ import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
+import { project } from "../../../scripts/project-config.mjs";
 
 // Config evaluation decides whether to mount the component before Convex can generate typed env.
 // eslint-disable-next-line @convex-dev/no-process-env
-const googleConfigured = Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && process.env.AUTH_GOOGLE_CLIENT_SECRET?.trim());
+const googleConfigured = project.authentication && project.frontend && Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && process.env.AUTH_GOOGLE_CLIENT_SECRET?.trim());
 const googleCredential = googleConfigured ? v.string() : v.optional(v.string());
 const app = defineApp({
   env: {

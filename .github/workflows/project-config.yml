@@ -1,0 +1,26 @@
+name: Check project configuration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+      - run: bun install --cwd packages --frozen-lockfile
+      - run: bun run --cwd packages/backend generate:platforms
+      - run: bun run --cwd packages/backend lint
+      - run: bun test packages/backend/tests/project-config.test.ts

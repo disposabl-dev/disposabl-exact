@@ -1,3 +1,4 @@
+import { site } from './auth';
 import type { Result, Sources } from './app.contract.d.ts';
 
 declare global {
@@ -29,7 +30,19 @@ async function changeCredentials(body: object): Promise<Result<'createKey'>> {
 }
 
 export const platformSources = {
-  webHost: () => ({ enabled: exactHost() === 'web' && typeof exactPlatformWeb !== 'undefined' }),
+  async loadProject(): Promise<Result<'loadProject'>> {
+    const web = exactHost() === 'web';
+    const response = await fetch(new URL('/api/disposabl/config', web ? authCallback() : site).href);
+    if (!response.ok) throw new Error('Could not load project configuration');
+    const flags = await response.json();
+    const topLevelWeb = web && typeof exactPlatformWeb !== 'undefined';
+    return {
+      authentication: flags.authentication === true,
+      payments: flags.payments === true,
+      credentials: topLevelWeb && flags.credentials === true,
+      consent: topLevelWeb && flags.consent === true,
+    };
+  },
   loadMcpConsent: async ([id]): Promise<Result<'loadMcpConsent'>> => {
     const response = await webRequest(`/api/mcp/consent?request=${encodeURIComponent(id)}`);
     if (response.status === 400 || response.status === 404)
@@ -51,4 +64,4 @@ export const platformSources = {
   },
   createKey: ([name, write]) => changeCredentials({ operation: 'create', name, write }),
   revokeConnection: ([id]) => changeCredentials({ operation: 'revoke', id }),
-} satisfies Pick<Sources, 'webHost' | 'loadMcpConsent' | 'decideMcpConsent' | 'listCredentials' | 'createKey' | 'revokeConnection'>;
+} satisfies Pick<Sources, 'loadProject' | 'loadMcpConsent' | 'decideMcpConsent' | 'listCredentials' | 'createKey' | 'revokeConnection'>;
