@@ -31,10 +31,13 @@ jobs:
           "$runner" bun exact.mjs --help >/dev/null
           "$runner" bun install --frozen-lockfile
           "$runner" env EXACT_FEEDBACK=0 bun exact.mjs android --no-install --json | tee build.json
-          apk=$(jq -er '.path' build.json)
-          test -s "$apk"
-          "$HOME/.local/share/exact-sandbox/android/sdk/build-tools/37.0.0/apksigner" verify "$apk"
-          cp "$apk" "${RUNNER_TEMP}/paperstack-portable.apk"
+          "$runner" bash -eu -c '
+            apk=$(jq -er .path build.json)
+            test -s "$apk"
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+            cp "$apk" paperstack-portable.apk
+          '
+          cp paperstack-portable.apk "${RUNNER_TEMP}/paperstack-portable.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: paperstack-portable-android

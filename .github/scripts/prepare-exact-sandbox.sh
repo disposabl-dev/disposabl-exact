@@ -31,6 +31,9 @@ case "$mode" in all|ci) ;; *) die 'EXACT_SANDBOX_PROFILE must be all or ci.' ;; 
 if [[ $mode == all && $(ps -p 1 -o comm=) != systemd ]]; then
     die 'The device profile requires an Ubuntu VM booted with systemd.'
 fi
+if [[ $mode == all && ! -c /dev/kvm ]]; then
+    die 'The device profile needs /dev/kvm for Android. Use the CI profile on a VM without KVM.'
+fi
 root="$HOME/.local/share/exact-sandbox"
 bin="$HOME/.local/bin"
 mkdir -p "$root"/{downloads,runner/home,android} "$bin"
@@ -137,7 +140,8 @@ prepare_android() {
     sdk="$tools_dir/bin/sdkmanager"
     (set +o pipefail; yes | "$sdk" --sdk_root="$ANDROID_HOME" --licenses >/dev/null)
     log 'Installing Android build SDK'
-    "$sdk" --sdk_root="$ANDROID_HOME" 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.3.13750724'
+    "$sdk" --sdk_root="$ANDROID_HOME" 'platform-tools' 'platforms;android-37.2' \
+        'build-tools;36.0.0' 'build-tools;37.0.0' 'ndk;27.3.13750724'
     if [[ $mode == all ]]; then
         log 'Installing Android emulator'
         "$sdk" --sdk_root="$ANDROID_HOME" 'emulator' "$android_image"
@@ -261,7 +265,7 @@ serial=emulator-5558
 unit=exact-sandbox-android
 mkdir -p "$root/logs"
 
-android_ready() { [[ $("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; }
+android_ready() { [[ $(timeout 5 "$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; }
 
 start_android() {
     [[ -x "$emulator" ]] || { echo 'Android emulator is not prepared.' >&2; return 1; }
@@ -374,6 +378,9 @@ case "$action" in
         if [[ $target == all || $target == pool1 ]]; then phone_command stop pool1; fi
         if [[ $target == all || $target == android ]]; then
             if systemctl --user is-active --quiet "$unit"; then
+                if android_ready && ! timeout 90 "$adb" -s "$serial" emu avd snapshot save default_boot; then
+                    echo 'Android Quick Boot save failed. The next start may cold boot.' >&2
+                fi
                 "$adb" -s "$serial" emu kill || systemctl --user stop "$unit"
                 for ((i=0; i<60; i++)); do
                     systemctl --user is-active --quiet "$unit" || break
@@ -419,7 +426,7 @@ User=$(id -un)
 ExecStart=$bin/exact-sandbox-devices up
 ExecStop=$bin/exact-sandbox-devices down
 TimeoutStartSec=1800
-TimeoutStopSec=150
+TimeoutStopSec=240
 RemainAfterExit=yes
 
 [Install]
