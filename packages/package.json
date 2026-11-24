@@ -1,5 +1,0 @@
-{
-  "name": "disposabl-exact-packages",
-  "private": true,
-  "workspaces": ["backend", "disposabl-kit"]
-}

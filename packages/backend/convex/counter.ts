@@ -1,6 +1,5 @@
-import { internalQuery } from "@disposabl-kit/server";
 import { v } from "convex/values";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 
 const counter = (db: QueryCtx["db"]) =>
   db
@@ -8,7 +7,7 @@ const counter = (db: QueryCtx["db"]) =>
     .withIndex("by_name", (q) => q.eq("name", "shared"))
     .unique();
 
-const counterResult = v.object({ count: v.number() });
+export const counterResult = v.object({ count: v.number() });
 const readCounter = async ({ db }: QueryCtx) => ({
   count: (await counter(db))?.count ?? 0,
 });
@@ -21,8 +20,6 @@ export const get = query({
 });
 
 export const current = internalQuery({
-  platforms: true,
-  description: "Read the current value of the shared demo counter.",
   args: { userId: v.id("users") },
   returns: counterResult,
   handler: readCounter,

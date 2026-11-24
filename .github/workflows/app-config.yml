@@ -20,8 +20,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: ${{ steps.pin.outputs.bun-version }}
-      - run: bun install --cwd packages --frozen-lockfile
+      - run: bun install --cwd packages/backend --frozen-lockfile
       - run: bun run --cwd packages/backend lint
+      - run: node --check .github/actions/exact-setup/scripts/mobile-updates.mjs
       - run: bun test packages/backend/tests/platforms.test.ts
       - run: bun run --cwd packages/backend dev --once
         env:

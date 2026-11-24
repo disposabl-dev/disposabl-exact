@@ -6,7 +6,6 @@ declare global {
 }
 
 const credentials = '/api/platform/credentials';
-const emptyConsent = { client: '', destination: '', scopes: [] };
 
 function webRequest(path: string, body?: object) {
   if (exactHost() !== 'web') throw new Error('Requires the web app');
@@ -31,17 +30,14 @@ async function changeCredentials(body: object): Promise<Result<'createKey'>> {
 export const platformSources = {
   loadMcpConsent: async ([id]): Promise<Result<'loadMcpConsent'>> => {
     const response = await webRequest(`/api/mcp/consent?request=${encodeURIComponent(id)}`);
-    if (response.status === 400 || response.status === 404)
-      return { ...emptyConsent, error: 'expired' };
     if (!response.ok) throw new Error('Could not load consent');
-    const data = await response.json();
-    return { client: data.client, destination: data.destination, scopes: data.scopes, error: '' };
+    return response.json();
   },
   decideMcpConsent: ([id, decision]) => {
     if (exactHost() !== 'web' || typeof submitMcpConsent !== 'function')
-      return { error: 'unavailable' };
+      throw new Error('Requires the top-level web app');
     submitMcpConsent(id, decision);
-    return { error: '' };
+    return { ok: true };
   },
   listCredentials: async (): Promise<Result<'listCredentials'>> => {
     const response = await webRequest(credentials);

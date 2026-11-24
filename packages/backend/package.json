@@ -13,7 +13,7 @@
     "@convex-dev/mcp": "0.1.0-alpha.7",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
-    "@disposabl-kit/server": "workspace:*",
+    "@disposabl-kit/server": "link:../disposabl-kit",
     "autumn-js": "1.6.37",
     "convex": "^1.51.0"
   },

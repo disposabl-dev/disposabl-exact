@@ -1,8 +1,8 @@
 import { httpCookies, type HttpCookies } from "@convex-dev/auth/ssr";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../backend/convex/_generated/api";
-import { env } from "../../backend/convex/_generated/server";
-import { siteOrigin } from "../../backend/convex/authSettings";
+import { api } from "./_generated/api";
+import { env } from "./_generated/server";
+import { siteOrigin } from "./authSettings";
 
 export const cookieName = "__Host-exact-session";
 export const sessionHeader = "X-Exact-Session";

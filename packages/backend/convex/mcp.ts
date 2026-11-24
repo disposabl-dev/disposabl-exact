@@ -1,10 +1,52 @@
 import { v } from "convex/values";
+import { McpServer, tool, type ToolCtx } from "@convex-dev/mcp";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { appPlatform as platform } from "../app-platform";
-import { mcp } from "@disposabl-kit/server/mcp";
 import { internalMutation } from "./_generated/server";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { siteOrigin } from "./authSettings";
+import { counterResult } from "./counter";
 
-export { authorize, createApiKey, listConnections, revokeConnection } from "@disposabl-kit/server/mcp";
+export const service = { name: "disposabl-exact", title: "Disposabl Exact", version: "0.1.0" };
+export const counterTool = {
+  description: "Read the current value of the shared demo counter.",
+  args: {},
+  returns: counterResult,
+  scope: "read",
+  annotations: { readOnlyHint: true },
+  handler: (ctx: ToolCtx, _args: object, { userId }: { userId: string }) =>
+    ctx.runQuery(internal.counter.current, { userId: userId as Id<"users"> }),
+};
+
+class AppMcpServer extends McpServer {
+  override async authenticate(ctx: ToolCtx, request: Request) {
+    const user = await super.authenticate(ctx, request);
+    return !platform.consent && user?.clientId !== undefined ? null : user;
+  }
+}
+
+export const mcp: McpServer = new AppMcpServer(components.mcp, {
+  ...service,
+  siteUrl: siteOrigin(),
+  consentUrl: `${siteOrigin()}/consent`,
+  tools: { counter_current: tool(counterTool) },
+  scopes: { read: "Read app data", write: "Change app data and run actions" },
+  deviceFlow: false,
+});
+
+function platformUser(ctx: { auth: Parameters<typeof getAuthUserId>[0]["auth"] }) {
+  return "runQuery" in ctx && typeof ctx.runQuery === "function"
+    ? getAuthUserId(ctx as Parameters<typeof getAuthUserId>[0])
+    : Promise.resolve(null);
+}
+
+export const { authorize } = mcp.api({
+  getUserId: (ctx) => platform.consent ? platformUser(ctx) : Promise.resolve(null),
+});
+export const { createApiKey, listConnections, revokeConnection } = mcp.api({
+  getUserId: (ctx) => platform.credentials ? platformUser(ctx) : Promise.resolve(null),
+});
 
 // Create the identity once so issuing or rotating a key uses the same user ID.
 export const createServiceUser = internalMutation({

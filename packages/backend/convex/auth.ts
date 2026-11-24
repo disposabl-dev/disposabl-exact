@@ -16,27 +16,15 @@ const auth = setupConvexAuth({
   refreshInactivityTimeoutSeconds: 7 * 24 * 60 * 60,
 });
 const sessionArgs = { refreshToken: v.string() };
-export const refreshSession = mutation({
+export const refreshSession: typeof auth.refreshSession = platform.authentication ? auth.refreshSession : mutation({
   args: sessionArgs,
-  returns: v.union(
-    v.object({ kind: v.literal("noSession") }),
-    v.object({
-      kind: v.literal("rotated"),
-      tokens: v.object({
-        accessToken: v.string(), refreshToken: v.string(),
-        refreshTokenExpiresAt: v.number(), userId: v.string(),
-      }),
-    }),
-  ),
-  handler: (ctx, args) => {
-    if (!platform.authentication) return { kind: "noSession" } as const;
-    return runAuthMethod(auth.refreshSession, ctx, args);
-  },
+  returns: v.object({ kind: v.literal("noSession") }),
+  handler: () => ({ kind: "noSession" as const }),
 });
-export const signOut = mutation({
+export const signOut = platform.authentication ? auth.signOut : mutation({
   args: sessionArgs,
   returns: v.null(),
-  handler: (ctx, args) => platform.authentication ? runAuthMethod(auth.signOut, ctx, args) : null,
+  handler: () => null,
 });
 
 const password = setupUsernamePassword(auth, {

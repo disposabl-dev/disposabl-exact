@@ -54,29 +54,32 @@ describe("disposabl.json", () => {
         }
 
         const router = createHttp(config);
-        const has = (path: string, method: "GET" | "POST") =>
-          router.exactRoutes.get(path)?.has(method) ?? false;
-        const notFound = router.lookup("/api/disposabl/missing", "GET")?.[0];
-        const open = (path: string, method: "GET" | "POST") => {
-          const route = router.lookup(path, method);
-          return Boolean(route && route[0] !== notFound &&
-            route[0] !== router.lookup("/api/disposabl/missing", "POST")?.[0]);
-        };
-        expect(open("/", "GET")).toBe(web);
-        expect(open("/pricing", "GET")).toBe(web && payments);
-        if (!authentication || !config.frontend) expect(open("/oauth/google/callback", "GET")).toBe(false);
-        expect(has("/api/auth/web", "POST")).toBe(authentication && web);
-        expect(has("/api/auth/native", "POST")).toBe(authentication && (mobile.length > 0 || macos));
-        expect(has("/api/billing/web", "POST")).toBe(payments && web);
-        expect(has("/api/billing/native", "POST")).toBe(payments && (mobile.length > 0 || macos));
-        expect(open("/openapi.json", "GET")).toBe(api);
-        expect(has("/api/counter/current", "GET")).toBe(api);
-        expect(open("/mcp", "POST")).toBe(mcp);
-        expect(open("/.well-known/oauth-authorization-server", "GET")).toBe(consent);
-        expect(has("/api/mcp/consent", "POST")).toBe(consent);
-        expect(has("/api/platform/credentials", "POST")).toBe(credentials);
-        expect(open("/consent", "GET")).toBe(consent);
-        expect(open("/api-keys", "GET")).toBe(credentials);
+        const native = mobile.length > 0 || macos;
+        const missing = router.lookup("/api/missing", "GET")?.[0];
+        const routes = [
+          ["/", web],
+          ["/pricing", web && payments],
+          ["/api/auth/web", web && authentication, "POST"],
+          ["/api/auth/native", native && authentication, "POST"],
+          ["/api/billing/web", web && payments, "POST"],
+          ["/api/billing/native", native && payments, "POST"],
+          ["/openapi.json", api],
+          ["/api/counter/current", api],
+          ["/mcp", mcp, "POST"],
+          ["/.well-known/oauth-authorization-server", consent],
+          ["/api/mcp/consent", consent, "POST"],
+          ["/api/platform/credentials", credentials, "POST"],
+          ["/consent", consent],
+          ["/api-keys", credentials],
+        ] as const;
+        for (const [path, enabled, method = "GET"] of routes) {
+          const handler = router.lookup(path, method)?.[0];
+          expect(Boolean(handler && handler !== missing), `${method} ${path}`).toBe(enabled);
+        }
+        if (!authentication || !(web || native)) {
+          const callback = router.lookup("/oauth/google/callback", "GET")?.[0];
+          expect(callback).toBe(missing);
+        }
         if (consent) expect(router.lookup("/consent", "GET")?.[0]).toBe(router.lookup("/", "GET")?.[0]);
         if (credentials) expect(router.lookup("/api-keys", "GET")?.[0]).toBe(router.lookup("/", "GET")?.[0]);
       });

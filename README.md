@@ -73,17 +73,11 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 ### API and MCP
 
-Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json). Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
+Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json). The demo counter runs one internal Convex query through [REST](packages/backend/convex/rest.ts) and [MCP](packages/backend/convex/mcp.ts). Use those files as examples when exposing another function. Pass the verified account ID from the connection to the internal function.
 
 Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 
-- Queries use GET. Pass named arguments as query parameters, using plain text for string fields and JSON for other values.
-- Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.
-- MCP marks queries read-only and publishes the argument schema for each tool. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
-
-Add the function's module to [operations.ts](packages/disposabl-kit/server/operations.ts). REST and MCP both use that list. A Node-runtime action can be called from a default-runtime internal action on the list.
-
-When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
+The demo is `GET /api/counter/current` and MCP tool `counter_current`. `/openapi.json` documents REST when enabled.
 
 With web and authentication enabled, Exact web serves `/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
 
@@ -119,13 +113,4 @@ Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRE
 
 Removing `payments` hides pricing and disables the app’s billing endpoints. Existing subscriptions continue in the billing provider. Manage renewals and cancellations there before removing the app’s customer portal.
 
-[The catalog and Convex billing functions](packages/backend/convex/billing/index.ts) live in one file. Autumn stores customer balances and Stripe checkout state. Convex verifies the Exact session before calling Autumn.
-
-From `packages/backend`, preview the catalog changes and apply them when ready.
-
-```sh
-bun run convex run billing/index:syncCatalog '{"apply":false}'
-bun run convex run billing/index:syncCatalog '{"apply":true}'
-```
-
-Catalog sync is limited to the two plans and the credits feature declared in the file. Plans use USD, so configure the Autumn account to match.
+In Autumn, create a consumable metered feature named `disposabl_credits`, a USD 5 monthly plan `disposabl_monthly` with 750 credits resetting each month, and a prepaid add-on `disposabl_topup` priced at USD 5 per 500 credits. The [billing action](packages/backend/convex/billing/index.ts) checks the configured offer before sending a signed-in user to checkout.

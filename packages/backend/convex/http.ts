@@ -3,16 +3,14 @@ import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { httpRouter } from "convex/server";
 import type { PlatformSelection } from "@disposabl-kit/server/platforms.ts";
 import { appPlatform as platform } from "../app-platform";
-import { registerApi } from "@disposabl-kit/server/api";
-import { mcp, service } from "@disposabl-kit/server/mcp";
-import { platformOperations } from "../../disposabl-kit/server/operations";
-import { createOpenApi } from "../../disposabl-kit/server/openapi";
-import { registerBilling } from "../../disposabl-kit/server/billing";
-import { registerConsent, registerCredentials } from "../../disposabl-kit/server/platform-auth";
-import { authClient, cookieName, isAppRequest, privateHeaders, readBody, readSession, reply, sessionHeader, statePattern, tokenPattern } from "../../disposabl-kit/server/requests";
+import { registerBilling } from "./billing/http";
+import { registerConsent, registerCredentials } from "./connections";
+import { authClient, cookieName, isAppRequest, privateHeaders, readBody, readSession, reply, sessionHeader, statePattern, tokenPattern } from "./requests";
 import { api, components, internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled, siteOrigin } from "./authSettings";
+import { mcp } from "./mcp";
+import { registerRest } from "./rest";
+import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled } from "./authSettings";
 
 const cookieOptions = { path: "/", secure: true, httpOnly: true, sameSite: "strict" } as const;
 
@@ -156,20 +154,8 @@ export function createHttp(config: PlatformSelection = platform) {
     http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
   }
   if (config.payments) registerBilling(http, config.web, config.native);
-  if (config.api) {
-    registerApi(http, platformOperations, mcp.authenticate.bind(mcp));
-    const { title, version } = service;
-    const spec = createOpenApi(platformOperations, { title, version }, siteOrigin());
-    http.route({
-      path: "/openapi.json",
-      method: "GET",
-      handler: httpAction(async () => Response.json(spec, {
-        headers: { "Cache-Control": "no-cache" },
-      })),
-    });
-  } else {
-    http.route({ path: "/openapi.json", method: "GET", handler: notFound });
-  }
+  if (config.api) registerRest(http);
+  else http.route({ path: "/openapi.json", method: "GET", handler: notFound });
   if (config.consent) {
     mcp.registerRoutes(http);
     registerConsent(http);

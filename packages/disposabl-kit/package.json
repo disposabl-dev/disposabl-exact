@@ -3,18 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./server/functions.ts",
-    "./api": "./server/api.ts",
-    "./mcp": "./server/mcp.ts",
     "./platforms.ts": {
       "types": "./server/platform-types.d.ts",
       "default": "./server/platforms.ts"
     }
-  },
-  "peerDependencies": {
-    "@convex-dev/auth": "2.1.0",
-    "@convex-dev/mcp": "0.1.0-alpha.7",
-    "@convex-dev/static-hosting": "0.2.2",
-    "convex": "^1.51.0"
   }
 }

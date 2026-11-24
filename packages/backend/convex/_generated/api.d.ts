@@ -11,11 +11,15 @@
 import type * as app from "../app.js";
 import type * as auth from "../auth.js";
 import type * as authSettings from "../authSettings.js";
+import type * as billing_http from "../billing/http.js";
 import type * as billing_index from "../billing/index.js";
+import type * as connections from "../connections.js";
 import type * as counter from "../counter.js";
 import type * as http from "../http.js";
 import type * as mcp from "../mcp.js";
 import type * as myFunctions from "../myFunctions.js";
+import type * as requests from "../requests.js";
+import type * as rest from "../rest.js";
 
 import type {
   ApiFromModules,
@@ -27,11 +31,15 @@ declare const fullApi: ApiFromModules<{
   app: typeof app;
   auth: typeof auth;
   authSettings: typeof authSettings;
+  "billing/http": typeof billing_http;
   "billing/index": typeof billing_index;
+  connections: typeof connections;
   counter: typeof counter;
   http: typeof http;
   mcp: typeof mcp;
   myFunctions: typeof myFunctions;
+  requests: typeof requests;
+  rest: typeof rest;
 }>;
 
 /**
