@@ -2,11 +2,10 @@ import { expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
-import config from "../../../disposabl.json";
+import { project } from "../../../scripts/project-config.mjs";
 import { api } from "../convex/_generated/api";
 import { mcp as server } from "@disposabl-kit/server/mcp";
 
-const platforms: readonly string[] = config.platforms;
 const site = process.env.CONVEX_SITE_URL;
 const cloud = process.env.CONVEX_URL;
 if (
@@ -97,12 +96,12 @@ test("only the selected transports expose the internal counter query", async () 
   ).rejects.toThrow("Could not find public function");
   const endpoint = `${site}/api/counter/current`;
   const response = await fetch(endpoint);
-  expect(response.status).toBe(platforms.includes("api") ? 401 : 404);
+  expect(response.status).toBe(project.api ? 401 : 404);
   const missing = await mcp("tools/list");
-  expect(missing.status).toBe(platforms.includes("mcp") ? 401 : 404);
+  expect(missing.status).toBe(project.mcp ? 401 : 404);
   const openapi = await fetch(`${site}/openapi.json`);
-  expect(openapi.status).toBe(platforms.includes("api") ? 200 : 404);
-  if (platforms.includes("api")) {
+  expect(openapi.status).toBe(project.api ? 200 : 404);
+  if (project.api) {
     const spec = await openapi.json();
     expect(spec.openapi).toMatch(/^3\.1\./);
     expect(spec.security).toEqual([{ apiKey: [] }]);
@@ -120,7 +119,7 @@ test("only the selected transports expose the internal counter query", async () 
     });
     expect(spec.paths["/api/platform/credentials"]).toBeUndefined();
   }
-  if (!platforms.includes("api") && !platforms.includes("mcp")) {
+  if (!project.credentials) {
     expect((await credentials()).status).toBe(404);
     return;
   }
@@ -134,7 +133,7 @@ test("only the selected transports expose the internal counter query", async () 
   const { key } = await issued.json();
   expect(typeof key).toBe("string");
   const headers = { Authorization: `Bearer ${key}` };
-  if (platforms.includes("api")) {
+  if (project.api) {
     const allowed = await fetch(endpoint, { headers });
     expect(allowed.status).toBe(200);
     expect(await allowed.json()).toEqual(expected);
@@ -149,7 +148,7 @@ test("only the selected transports expose the internal counter query", async () 
     ).toBe(400);
   }
 
-  if (platforms.includes("mcp")) {
+  if (project.mcp) {
     const { tools } = await mcpResult(await mcp("tools/list", undefined, key));
     expect(tools.find((tool: { name: string }) => tool.name === "counter_current")).toMatchObject({
       name: "counter_current",
@@ -173,13 +172,42 @@ test("only the selected transports expose the internal counter query", async () 
   const grant = connections[0].id;
   expect((await credentials(cookie, { operation: "revoke", id: grant })).status).toBe(200);
   expect(await (await credentials(cookie)).json()).toEqual({ connections: [] });
-  if (platforms.includes("api"))
+  if (project.api)
     expect((await fetch(endpoint, { headers })).status).toBe(401);
-  if (platforms.includes("mcp"))
+  if (project.mcp)
     expect((await mcp("tools/list", undefined, key)).status).toBe(401);
 });
 
-test.skipIf(!platforms.includes("mcp"))(
+test.skipIf(project.credentials || (!project.api && !project.mcp))(
+  "headless transports accept a scoped operator key without app authentication",
+  async () => {
+    async function run(name: string, args: object) {
+      const command = Bun.spawn(["bun", "run", "convex", "run", name, JSON.stringify(args)], {
+        stdout: "pipe", stderr: "pipe",
+      });
+      const json = await new Response(command.stdout).text();
+      if (await command.exited !== 0) throw new Error(`Local operator command failed: ${name}`);
+      return json.trim() ? JSON.parse(json) : null;
+    }
+    const { id, userId, apiKey } = await run("mcp:createServiceKey", { name: "Headless verification" });
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    const endpoint = `${site}/api/counter/current`;
+    try {
+      expect((await fetch(endpoint, { headers })).status).toBe(project.api ? 200 : 404);
+      const result = await mcp("tools/list", undefined, apiKey);
+      expect(result.status).toBe(project.mcp ? 200 : 404);
+      if (project.mcp) expect((await result.json()).result.tools[0].name).toBe("counter_current");
+      expect((await fetch(`${site}/.well-known/oauth-authorization-server`)).status).toBe(404);
+      expect((await fetch(`${site}/api-keys`)).status).toBe(404);
+    } finally {
+      await run("mcp:revokeServiceKey", { id, userId });
+    }
+    if (project.api) expect((await fetch(endpoint, { headers })).status).toBe(401);
+    if (project.mcp) expect((await mcp("tools/list", undefined, apiKey)).status).toBe(401);
+  },
+);
+
+test.skipIf(!project.consent)(
   "MCP issues a scoped token after signed-in PKCE consent",
   async () => {
     const challenge = await mcp("tools/list");
@@ -276,7 +304,7 @@ test.skipIf(!platforms.includes("mcp"))(
     );
     expect(result.structuredContent).toHaveProperty("count");
     expect((await form("/mcp/oauth/token", exchange)).status).toBe(400);
-    if (platforms.includes("api")) {
+    if (project.api) {
       expect(
         (
           await fetch(`${site}/api/counter/current`, {

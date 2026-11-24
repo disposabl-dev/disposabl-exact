@@ -3,13 +3,7 @@ import { ConvexHttpClient } from "convex/browser";
 import type { HttpRouter } from "convex/server";
 import { api, internal } from "../../backend/convex/_generated/api";
 import { env, httpAction } from "../../backend/convex/_generated/server";
-import { siteOrigin } from "../../backend/convex/authSettings";
-import { authError, cookieName, readBody, readSession, reply, sessionHeader, statePattern } from "./auth";
-
-function isAppRequest(request: Request, web: boolean) {
-  const origin = request.headers.get("Origin");
-  return request.headers.get("X-Exact-Auth") === "1" && (web ? origin === siteOrigin() : origin === null);
-}
+import { authError, cookieName, isAppRequest, readBody, readSession, reply, sessionHeader, statePattern } from "./auth";
 
 const billing = httpAction(async (ctx, request) => {
   const web = new URL(request.url).pathname.endsWith("/web");

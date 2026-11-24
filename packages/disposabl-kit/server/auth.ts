@@ -83,12 +83,16 @@ export async function platformSession(request: Request) {
   return account ? client : null;
 }
 
+export function isAppRequest(request: Request, web: boolean) {
+  const origin = request.headers.get("Origin");
+  return request.headers.get("X-Exact-Auth") === "1" && (web ? origin === siteOrigin() : origin === null);
+}
+
 const session = httpAction(async (ctx, request) => {
   const web = new URL(request.url).pathname.endsWith("/web");
-  const origin = request.headers.get("Origin");
   // Web mutations require the exact, configured origin and a preflight-only
   // header. No cross-origin or browser-to-native requests are accepted.
-  if (request.headers.get("X-Exact-Auth") !== "1" || (web ? origin !== siteOrigin() : origin !== null)) {
+  if (!isAppRequest(request, web)) {
     return reply({ error: "FORBIDDEN" }, 403);
   }
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
