@@ -34,8 +34,9 @@ fi
 root="$HOME/.local/share/exact-sandbox"
 bin="$HOME/.local/bin"
 mkdir -p "$root"/{downloads,runner/home,android} "$bin"
-exec 9>"$root/prepare.lock"
-flock 9
+if [[ ${EXACT_SANDBOX_PREPARING:-0} != 1 ]]; then
+    exec flock --close "$root/prepare.lock" env EXACT_SANDBOX_PREPARING=1 bash "$0"
+fi
 export PATH="$bin:$PATH"
 export ANDROID_HOME="$root/android/sdk"
 export ANDROID_AVD_HOME="$root/android/avd"
@@ -218,6 +219,7 @@ exec "${docker[@]}" run --pull=never --rm --init --network host --user "$(id -u)
     --env HOME=/home/exact --env EXACT=/home/exact/sdk --env EXACT_TOOLS_ORIGIN=none \
     --env "EXACT_PUBLISH_TOOLS=/home/exact/.cache/exact/publisher/$ref" --env CHROME=/usr/bin/google-chrome \
     --env RUSTUP_HOME=/home/exact/.rustup --env CARGO_HOME=/home/exact/.cargo \
+    --env CARGO_TARGET_DIR=/home/exact/.cache/exact-native/cargo \
     --env "ANDROID_HOME=$root/android/sdk" --env "ANDROID_SDK_ROOT=$root/android/sdk" \
     --env JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 --env CONVEX_ORIGIN --env CONVEX_SITE_ORIGIN \
     --mount "type=bind,source=$root/runner/home,target=/home/exact" \
@@ -317,20 +319,43 @@ wait_local_home() {
 }
 
 start_ios() {
-    local device=$1
+    local device=$1 started=$SECONDS snapshot
     if ! systemctl --user is-active --quiet "agent-sim-phone-$device"; then
         phone_command start "$device"
     fi
-    TIMEOUT=360 phone_command wait "$device"
+    # x86Sim's pixel heuristic can miss Home with the iPhone 18 Pro wallpaper.
+    # Check a fresh accessibility response from an app or the SpringBoard icons.
+    while (( SECONDS - started < 360 )); do
+        if snapshot=$(timeout 12 "$HOME/.local/bin/agent-sim" --device "$device" snapshot --json 2>/dev/null) &&
+            jq -e '
+                (.elements | length > 0) and
+                ((.app != null and (.app_not_answering | not)) or
+                 ([.elements[].label | select(. == "Safari" or . == "Files" or . == "Settings" or . == "Messages")]
+                  | unique | length >= 2))
+            ' >/dev/null <<< "$snapshot"; then
+            printf 'iOS ready (%s) after %ss\n' "$device" "$((SECONDS - started))"
+            return
+        fi
+        systemctl --user is-active --quiet "agent-sim-phone-$device" || break
+        sleep 2
+    done
+    echo "iOS device $device did not become ready. See journalctl --user -u agent-sim-phone-$device." >&2
+    return 1
 }
 
 action=${1:-up}
 target=${2:-all}
 case "$target" in all|android|pool1|pool2) ;; *) echo "Unknown device: $target" >&2; exit 2 ;; esac
 case "$action" in
+    up|down)
+        if [[ ${EXACT_SANDBOX_DEVICE_LOCKED:-0} != 1 ]]; then
+            # ADB may daemonize while a device starts. Keep the lock out of its process.
+            exec flock --close "$root/devices.lock" env EXACT_SANDBOX_DEVICE_LOCKED=1 "$0" "$action" "$target"
+        fi
+        ;;
+esac
+case "$action" in
     up)
-        exec 9>"$root/devices.lock"
-        flock 9
         wait_local_home
         if [[ $target == all || $target == android ]]; then start_android; fi
         if [[ $target == all ]]; then
@@ -345,8 +370,6 @@ case "$action" in
         if [[ $target == all || $target == android ]]; then wait_android; fi
         ;;
     down)
-        exec 9>"$root/devices.lock"
-        flock 9
         if [[ $target == all || $target == pool2 ]]; then phone_command stop pool2; fi
         if [[ $target == all || $target == pool1 ]]; then phone_command stop pool1; fi
         if [[ $target == all || $target == android ]]; then

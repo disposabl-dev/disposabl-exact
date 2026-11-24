@@ -1,13 +1,13 @@
-name: Portable Exact sandbox CI
+name: Portable Exact sandbox Android CI
 on:
   push:
     branches: [ci/portable-exact-sandbox-20261124]
 permissions:
   contents: read
 jobs:
-  verify:
+  android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 35
     env:
       EXACT_SANDBOX_PROFILE: ci
       CONVEX_ORIGIN: ws://127.0.0.1:3210
@@ -16,18 +16,27 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Prepare Exact and prefetch Rust dependencies
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: disposabl-dev/exact-first-paperstack-hosts
+          ref: 76ad1acc932a31d7bc731b35dde47ab75e778ad8
+          path: paperstack
+          persist-credentials: false
+      - name: Prepare Exact, Android SDK, and caches
         run: bash .github/scripts/prepare-exact-sandbox.sh
-      - name: Verify offline Rust dependency cache
-        run: ~/.local/bin/exact-sandbox-run bash -eu -c 'cd "$EXACT"; cargo fetch --offline --locked'
-      - name: Install the app dependencies
-        working-directory: apps/apps
+      - name: Build Paperstack APK
+        working-directory: paperstack/apps/apps
         run: |
-          ~/.local/bin/exact-sandbox-run bun exact.mjs --help >/dev/null
-          ~/.local/bin/exact-sandbox-run bun install --frozen-lockfile
-      - name: Build the web app
-        working-directory: apps/apps
-        run: ~/.local/bin/exact-sandbox-run bun exact.mjs web-build --out dist/portable-ci
-      - name: Run Exact web verification
-        working-directory: apps/apps
-        run: ~/.local/bin/exact-sandbox-run bun exact.mjs verify web --json
+          runner="$HOME/.local/bin/exact-sandbox-run"
+          "$runner" bun exact.mjs --help >/dev/null
+          "$runner" bun install --frozen-lockfile
+          "$runner" env EXACT_FEEDBACK=0 bun exact.mjs android --no-install --json | tee build.json
+          apk=$(jq -er '.path' build.json)
+          test -s "$apk"
+          "$HOME/.local/share/exact-sandbox/android/sdk/build-tools/37.0.0/apksigner" verify "$apk"
+          cp "$apk" "${RUNNER_TEMP}/paperstack-portable.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paperstack-portable-android
+          path: ${{ runner.temp }}/paperstack-portable.apk
+          retention-days: 1
