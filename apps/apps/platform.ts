@@ -1,4 +1,11 @@
-import type { Result, Sources } from './app.contract.d.ts';
+import type { Result, Sources, Store } from './app.contract.d.ts';
+import { jsonToConvex, type JSONValue, type Value } from 'convex/values';
+import { appRequest } from './auth';
+
+export async function callPlatform<T extends Value>(operation: string, args: object, store: Store): Promise<T> {
+  const result = await appRequest<JSONValue>({ operation, args }, store, undefined, 'platform');
+  return jsonToConvex(result) as T;
+}
 
 declare global {
   var exactPlatformWeb: boolean | undefined;

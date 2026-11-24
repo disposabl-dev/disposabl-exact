@@ -19,7 +19,7 @@ const billing = httpAction(async (ctx, request) => {
   if (operation === "checkout" && (!offer || !requestId)) return reply({ error: "INVALID_REQUEST" }, 400);
 
   const client = await requestClient(request, web);
-  const userId = await client?.query(api.billing.index.viewerId, {}).catch(() => null) ?? null;
+  const userId = await client?.query(api.auth.viewerId, {}).catch(() => null) ?? null;
   if (operation !== "status" && !userId) return reply({ error: "SIGN_IN_REQUIRED" }, 401);
   try {
     const result = await ctx.runAction(internal.billing.index.request, { operation, userId, offer, requestId });

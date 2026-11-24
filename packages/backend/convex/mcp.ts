@@ -3,21 +3,20 @@ import { McpServer, tool, type ToolCtx } from "@convex-dev/mcp";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { appPlatform as platform } from "../app-platform";
 import { internalMutation } from "./_generated/server";
-import { components, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 import { siteOrigin } from "./authSettings";
-import { counterResult } from "./counter";
+import { invoke, operations } from "./operations";
+import type { Value } from "convex/values";
 
 export const service = { name: "disposabl-exact", title: "Disposabl Exact", version: "0.1.0" };
-export const counterTool = {
-  description: "Read the current value of the shared demo counter.",
-  args: {},
-  returns: counterResult,
-  scope: "read",
-  annotations: { readOnlyHint: true },
-  handler: (ctx: ToolCtx, _args: object, { userId }: { userId: string }) =>
-    ctx.runQuery(internal.counter.current, { userId: userId as Id<"users"> }),
-};
+const tools = Object.fromEntries(operations.map(operation => [
+  operation.name,
+  tool({
+    args: operation.args, returns: operation.returns, description: operation.description,
+    scope: operation.scope, annotations: { readOnlyHint: operation.kind === "query" },
+    handler: (ctx, args, user) => invoke(ctx, operation, args as Record<string, Value>, user.userId),
+  }),
+]));
 
 class AppMcpServer extends McpServer {
   override async authenticate(ctx: ToolCtx, request: Request) {
@@ -30,7 +29,7 @@ export const mcp: McpServer = new AppMcpServer(components.mcp, {
   ...service,
   siteUrl: siteOrigin(),
   consentUrl: `${siteOrigin()}/consent`,
-  tools: { counter_current: tool(counterTool) },
+  tools,
   scopes: { read: "Read app data", write: "Change app data and run actions" },
   deviceFlow: false,
 });

@@ -3,9 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "bun app-platform.ts && convex dev",
+    "dev": "bun app-platform.ts && bun platforms-build.ts dev",
+    "generate:platforms": "bun platforms-build.ts",
+    "deploy": "bun run generate:platforms && convex deploy",
     "logs": "convex logs",
-    "typecheck": "tsc -p convex",
+    "typecheck": "bun run generate:platforms && tsc -p convex",
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {

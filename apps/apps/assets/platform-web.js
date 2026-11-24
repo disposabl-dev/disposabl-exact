@@ -2,6 +2,7 @@
 if (window.top === window.self) {
   globalThis.exactPlatformWeb = true;
   globalThis.goToBilling = (url) => {
+    if (window.location.pathname !== '/pricing') return;
     const target = new URL(url);
     if (target.protocol !== 'https:') throw new Error('Invalid billing URL');
     window.location.assign(target.href);

@@ -18,6 +18,7 @@ import type * as counter from "../counter.js";
 import type * as http from "../http.js";
 import type * as mcp from "../mcp.js";
 import type * as myFunctions from "../myFunctions.js";
+import type * as operations from "../operations.js";
 import type * as requests from "../requests.js";
 import type * as rest from "../rest.js";
 
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   mcp: typeof mcp;
   myFunctions: typeof myFunctions;
+  operations: typeof operations;
   requests: typeof requests;
   rest: typeof rest;
 }>;

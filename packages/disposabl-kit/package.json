@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./server/functions.ts",
     "./platforms.ts": {
       "types": "./server/platform-types.d.ts",
       "default": "./server/platforms.ts"

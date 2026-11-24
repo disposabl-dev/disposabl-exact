@@ -60,7 +60,7 @@ if (command === 'plan' && !platform) {
 const probing = command === 'first' && !platform;
 if (!probing && (!['configure', 'deliver', 'seed'].includes(command) || !['ios', 'android'].includes(platform)))
   throw Error('expected first, plan or configure|deliver|seed ios|android');
-if (platform && !appPlatform.mobile.includes(platform)) throw Error(`${platform} is not selected in disposabl.json`);
+if (command === 'deliver' && !appPlatform.mobile.includes(platform)) throw Error(`${platform} is not selected in disposabl.json`);
 
 const env = process.env;
 const { EXACT, EXACT_REF, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;

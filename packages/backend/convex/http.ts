@@ -9,7 +9,7 @@ import { authClient, cookieName, isAppRequest, privateHeaders, readBody, readSes
 import { api, components, internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { mcp } from "./mcp";
-import { registerRest } from "./rest";
+import { registerAppOperations, registerRest } from "./rest";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled } from "./authSettings";
 
 const cookieOptions = { path: "/", secure: true, httpOnly: true, sameSite: "strict" } as const;
@@ -154,6 +154,7 @@ export function createHttp(config: PlatformSelection = platform) {
     http.route({ path: GOOGLE_NATIVE_RETURN, method: "GET", handler: nativeReturn });
   }
   if (config.payments) registerBilling(http, config.web, config.native);
+  if (config.authentication) registerAppOperations(http, config.web, config.native);
   if (config.api) registerRest(http);
   else http.route({ path: "/openapi.json", method: "GET", handler: notFound });
   if (config.consent) {

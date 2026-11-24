@@ -11,15 +11,17 @@ export const billingSources = {
     return { ...billing, web: exactHost() === 'web' };
   },
   async startBilling([operation, offer], store) {
-    if (typeof goToBilling !== 'function') throw new Error('Billing requires the web app');
     const body = { operation, offer, requestId: crypto.randomUUID() };
     const submit = () => appRequest<{ url: string }>(body, store, undefined, 'billing');
-    const { url } = await submit().catch(async error => {
+    return submit().catch(async error => {
       if (!(error instanceof Error) || error.message !== 'SIGN_IN_REQUIRED') throw error;
       if (!(await authSources.restoreSession([], store)).signedIn) throw error;
       return submit();
     });
+  },
+  openBilling([url]) {
+    if (typeof goToBilling !== 'function') throw new Error('Billing requires the web app');
     goToBilling(url);
     return { ok: true };
   },
-} satisfies Pick<Sources, 'loadBilling' | 'startBilling'>;
+} satisfies Pick<Sources, 'loadBilling' | 'startBilling' | 'openBilling'>;

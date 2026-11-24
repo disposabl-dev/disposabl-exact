@@ -61,6 +61,8 @@ describe("disposabl.json", () => {
           ["/pricing", web && payments],
           ["/api/auth/web", web && authentication, "POST"],
           ["/api/auth/native", native && authentication, "POST"],
+          ["/api/platform/web", web && authentication, "POST"],
+          ["/api/platform/native", native && authentication, "POST"],
           ["/api/billing/web", web && payments, "POST"],
           ["/api/billing/native", native && payments, "POST"],
           ["/openapi.json", api],

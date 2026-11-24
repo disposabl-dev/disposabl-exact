@@ -70,6 +70,16 @@ export const viewer = query({
   },
 });
 
+export const viewerId = query({
+  args: {},
+  returns: v.union(v.id("users"), v.null()),
+  handler: async (ctx) => {
+    if (!platform.authentication) return null;
+    const userId = await getAuthUserId(ctx);
+    return userId && await ctx.db.get("users", userId) ? userId : null;
+  },
+});
+
 const authResult = v.union(
   v.object({ tokens: v.object({
     accessToken: v.string(),

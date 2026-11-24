@@ -112,7 +112,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Install backend dependencies
         working-directory: packages/backend
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile && bun run generate:platforms
       - name: Resolve production backend
         if: needs.config.outputs.frontend == 'true'
         id: origin
@@ -176,7 +176,7 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
-          bun run convex deploy
+          bun run deploy
       - name: Publish compatible mobile updates
         id: updates
         if: needs.config.outputs.mobile == 'true' && steps.first.outputs.first != 'true'
@@ -235,7 +235,7 @@ jobs:
           bundle-version: ${{ env.BUNDLE_VERSION }}
       - name: Install backend dependencies
         working-directory: packages/backend
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile && bun run generate:platforms
       - name: Install app dependencies
         if: matrix.platform == 'web'
         working-directory: apps/apps

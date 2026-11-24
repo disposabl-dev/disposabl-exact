@@ -1,8 +1,7 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { Autumn, type GetPlanResponse } from "autumn-js";
 import { v, type Infer } from "convex/values";
 import { appPlatform as platform } from "../../app-platform";
-import { env, internalAction, query } from "../_generated/server";
+import { env, internalAction } from "../_generated/server";
 
 const credits = "disposabl_credits";
 const plans = { monthly: "disposabl_monthly", topup: "disposabl_topup" };
@@ -19,16 +18,6 @@ function matchesPlan(plan: GetPlanResponse) {
     && item.price.interval === "one_off" && item.price.amount === offers.topupAmount
     && item.price.billingUnits === offers.topupCredits;
 }
-
-export const viewerId = query({
-  args: {},
-  returns: v.union(v.id("users"), v.null()),
-  handler: async (ctx) => {
-    if (!platform.payments) return null;
-    const userId = await getAuthUserId(ctx);
-    return userId && await ctx.db.get("users", userId) ? userId : null;
-  },
-});
 
 const operation = v.union(v.literal("status"), v.literal("checkout"), v.literal("portal"));
 const offer = v.union(v.literal("monthly"), v.literal("topup"));

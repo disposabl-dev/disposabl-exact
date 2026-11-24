@@ -40,6 +40,9 @@ shape Billing
   topupAmount: number
   topupCredits: number
 
+shape Checkout
+  url: string
+
 shape AppFeatures
   ready: bool
   authentication: bool
@@ -414,8 +417,9 @@ component Pricing
     signedIn: bool
     authBusy: bool
   resource billing = loadBilling(signedIn) as shape Billing else empty()
-  mutation billingReply as shape Ok
-  derive canBuy = signedIn and billing.web and not authBusy and not pending(billingReply)
+  mutation billingReply as shape Checkout then finishBilling
+  mutation billingNavigation as shape Ok
+  derive canBuy = signedIn and billing.web and not authBusy and not pending(billingReply) and not pending(billingNavigation)
   action refreshBilling
     refresh billing
   action selectOffer(offer: string)
@@ -424,9 +428,14 @@ component Pricing
   action showBillingPortal
     if canBuy
       send billingReply = startBilling("portal", "")
+  action finishBilling
+    match billingReply
+      case some(result)
+        if signedIn
+          send billingNavigation = openBilling(result.url)
   view
     column gap=16 width="100%" max-width="36rem" margin-left="auto" margin-right="auto"
-      if failed(billingReply)
+      if failed(billingReply) or failed(billingNavigation)
         text t("billing.error") role="alert" testId="billing-error"
       if failed(billing)
         text t("billing.error") role="alert" testId="billing-error"
