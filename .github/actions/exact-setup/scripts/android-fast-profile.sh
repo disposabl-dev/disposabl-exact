@@ -4,6 +4,13 @@ set -euo pipefail
 : "${EXACT:?Set EXACT to the pinned SDK checkout}"
 expected=${SETUP_EXACT_REF:-${EXACT_REF:?Set the Exact revision}}
 [[ $(git -C "$EXACT" rev-parse HEAD) == "$expected" ]] || { echo 'Android SDK checkout differs from its pin' >&2; exit 1; }
+if [[ "$expected" == 08bb92f30d7932dcf25073a1a9dc280a10837168 ]]; then
+  # The layer header gained a word in this revision. Apply the same fix before building or restoring the cache.
+  patch="$(dirname "$(realpath "$0")")/android-layer-header.patch"
+  if ! git -C "$EXACT" apply --reverse --check "$patch" 2>/dev/null; then
+    git -C "$EXACT" apply "$patch"
+  fi
+fi
 python3 - "$EXACT" <<'PY'
 import os, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1])

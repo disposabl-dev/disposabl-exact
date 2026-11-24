@@ -59,6 +59,8 @@ Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UP
 
 ### Run the app locally
 
+Use the Exact revision in [pin.env](.github/actions/exact-setup/pin.env). Android cache builds and restores automatically apply the [layer-header fix](.github/actions/exact-setup/scripts/android-layer-header.patch) for the revision that needs it. Apply the same patch to that revision in a local Android SDK checkout.
+
 Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
