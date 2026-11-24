@@ -134,7 +134,9 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
-        run: &deploy-web bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+        run: &deploy-web |
+          bun run generate:platforms
+          bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
       - name: Publish compatible mobile updates
         id: updates
         if: steps.first.outputs.first != 'true'

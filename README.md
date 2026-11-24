@@ -40,7 +40,7 @@ Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UP
 
 ### Run the app locally
 
-Install dependencies in `packages/backend`, then run `bun run convex dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
+Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
 
@@ -51,6 +51,20 @@ Exact uses Convex Auth `2.1.0` on web, Android, and iOS. Username and password w
 Android and iOS use the system browser for Google. The Convex callback returns through a fixed app URL scheme, and the app must hold the separate Convex state to redeem the one-time ticket. The web session lives in a Secure, HttpOnly cookie. Native sessions live in the Keychain or Android Keystore-backed storage. Sign-out revokes the backing Convex session before the app clears its session. Queries for account data verify the session server-side.
 
 Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend` against an isolated local deployment. Set `EXPECT_GOOGLE=0` or `EXPECT_GOOGLE=1` to assert the expected Google configuration.
+
+### API and MCP
+
+Set `platforms` in [disposabl.json](disposabl.json) to `["api", "mcp"]`, `["api"]`, `["mcp"]`, or `[]`. Import `internalQuery`, `internalMutation`, or `internalAction` from `@disposabl-kit/server` and set `platforms: true` to expose the function through the selected transports. Declare `userId: v.id("users")` in its arguments. The server supplies the authenticated account ID and keeps it out of the external argument schema.
+
+Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
+
+- Queries use GET. Pass named arguments as query parameters, using plain text for string fields and JSON for other values.
+- Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.
+- MCP marks queries read-only and publishes the argument schema for each tool. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
+
+The kit discovers marked functions in the Convex source. `bun run dev` from `packages/backend` updates the registry as you add, change, or remove functions. CI generates it before deploying. A Node-runtime action can be called from an opted-in default-runtime internal action.
+
+When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
 
 ### Translations
 

@@ -20,7 +20,11 @@
     }
   },
   "host": {
-    "web": {},
+    "web": {
+      "head": [
+        { "script": { "src": "/assets/platform-web.js", "defer": true } }
+      ]
+    },
     "android": {
       "id": "dev.disposabl.exact"
     },
