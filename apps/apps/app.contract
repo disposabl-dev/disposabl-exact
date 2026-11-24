@@ -429,10 +429,9 @@ component Pricing
     if canBuy
       send billingReply = startBilling("portal", "")
   action finishBilling
-    match billingReply
-      case some(result)
-        if signedIn
-          send billingNavigation = openBilling(result.url)
+    let url = match billingReply { case some(result) => result.url, case none => "" }
+    if signedIn and url != ""
+      send billingNavigation = openBilling(url)
   view
     column gap=16 width="100%" max-width="36rem" margin-left="auto" margin-right="auto"
       if failed(billingReply) or failed(billingNavigation)
