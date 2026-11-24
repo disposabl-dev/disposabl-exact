@@ -1,0 +1,31 @@
+name: Portable Exact sandbox CI
+on:
+  push:
+    branches: [ci/portable-exact-sandbox-20261124]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXACT_SANDBOX_PROFILE: ci
+      CONVEX_ORIGIN: ws://127.0.0.1:3210
+      CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare Exact and prefetch Rust dependencies
+        run: bash .github/scripts/prepare-exact-sandbox.sh
+      - name: Verify offline Rust dependency cache
+        run: ~/.local/bin/exact-sandbox-run bash -eu -c 'cd "$EXACT"; cargo fetch --offline --locked'
+      - name: Install the app dependencies
+        working-directory: apps/apps
+        run: ~/.local/bin/exact-sandbox-run bun install --frozen-lockfile
+      - name: Build the web app
+        working-directory: apps/apps
+        run: ~/.local/bin/exact-sandbox-run bun exact.mjs web-build --out dist-portable-ci
+      - name: Run Exact web verification
+        working-directory: apps/apps
+        run: ~/.local/bin/exact-sandbox-run bun exact.mjs verify web --json
