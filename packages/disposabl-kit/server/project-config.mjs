@@ -1,4 +1,4 @@
-import config from "../disposabl.json" with { type: "json" };
+import config from "../../../disposabl.json" with { type: "json" };
 
 export const platforms = ["web", "android", "ios", "macos", "api", "mcp"];
 export const features = ["authentication", "payments"];
@@ -23,7 +23,7 @@ export function projectConfig(value) {
   const authentication = enabled.has("authentication");
   const payments = enabled.has("payments");
   if (payments && !authentication) {
-    throw new Error("disposabl.json payments requires authentication");
+    throw new Error('In disposabl.json, payments requires authentication. Add "authentication" to "features" or remove "payments".');
   }
   const web = selected.has("web");
   const mobile = ["android", "ios"].filter(platform => selected.has(platform));
@@ -33,7 +33,6 @@ export function projectConfig(value) {
   return {
     web, mobile, macos, api, mcp, authentication, payments,
     frontend: web || mobile.length > 0 || macos,
-    backend: selected.size > 0,
     native: mobile.length > 0 || macos,
     credentials: web && authentication && (api || mcp),
     consent: web && authentication && mcp,
@@ -41,11 +40,3 @@ export function projectConfig(value) {
 }
 
 export const project = projectConfig(config);
-
-export function releaseMatrices(entries, publicRepo) {
-  const publicAndroid = entry => publicRepo && entry.platform === "android";
-  return {
-    matrix: entries.filter(entry => !publicAndroid(entry)),
-    public_android: entries.filter(publicAndroid),
-  };
-}

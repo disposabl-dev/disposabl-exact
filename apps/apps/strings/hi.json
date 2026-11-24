@@ -79,7 +79,6 @@
   "billing.monthlyCredits": "हर महीने {count} क्रेडिट",
   "billing.topup": "क्रेडिट टॉप-अप",
   "billing.topupCredits": "एक बार के {count} क्रेडिट",
-  "billing.continue": "चेकआउट पर जाएँ",
   "billing.manage": "वेब बिलिंग प्रबंधित करें",
   "billing.managedOnWeb": "बिलिंग वेबसाइट पर प्रबंधित की जाती है।",
   "billing.storeUnavailable": "इस स्टोर में उपलब्ध नहीं है।",

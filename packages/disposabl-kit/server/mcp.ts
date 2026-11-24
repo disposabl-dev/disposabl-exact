@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { McpServer, tool } from "@convex-dev/mcp";
 import type { FunctionReference, FunctionType } from "convex/server";
-import { project } from "../../../scripts/project-config.mjs";
+import { project } from "./project-config.mjs";
 import { components, internal } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "../../backend/convex/authSettings";
 import {

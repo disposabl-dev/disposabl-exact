@@ -16,7 +16,7 @@ shape Languages
 shape Counter
   count: number
 
-shape IncrementReply
+shape Ok
   ok: bool
 
 shape AuthReply
@@ -41,10 +41,8 @@ shape Billing
   topupAmount: number
   topupCredits: number
 
-shape BillingReply
-  url: string
-
 shape Project
+  ready: bool
   authentication: bool
   payments: bool
   credentials: bool
@@ -112,7 +110,7 @@ component Apps
   }
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
-  mutation incremented as shape IncrementReply
+  mutation incremented as shape Ok
   mutation checkedSession as shape AuthReply then sessionChecked
   mutation changedSession as shape AuthReply then sessionChanged
   mutation googleBrowser as shape ActionReply then googleBrowserFinished
@@ -127,11 +125,9 @@ component Apps
   state creating = false
   derive authChanging = pending(changedSession) or pending(googleBrowser)
   derive authBusy = authChanging or pending(checkedSession)
-  resource billing = loadBilling(signedIn) when project.payments and authReady as shape Billing else empty()
-  mutation billingReply as shape BillingReply
-  state previewCredits = 0
-  state previewMonthly = false
-  resource project = loadProject() as shape Project else empty(authentication=false, payments=false, credentials=false, consent=false)
+  resource billing = loadBilling(signedIn) when project.payments and authReady and top(nav).name == "pricing" as shape Billing else empty()
+  mutation billingReply as shape Ok
+  resource project = loadProject(live.rev) as shape Project else empty()
   derive onConsent = project.consent and top(nav).name == "consent"
   derive onCredentials = project.credentials and top(nav).name == "credentials"
   derive consentId = searchParam(top(nav), "request")
@@ -145,16 +141,14 @@ component Apps
   state revealedKey = ""
   task discardKey when revealedKey != "" and (not onCredentials or not signedIn)
     after(1, hideKey)
-  derive checkoutUrl = match billingReply { case some(result) => result.url, case none => "" }
-  derive nativePreview = not billing.web and billing.mode == "test" and not billing.managedOnWeb
-  derive monthlyActive = billing.monthlyActive or (nativePreview and previewMonthly)
-  derive credits = match billing.credits { case some(balance) => balance, case none => 0 }
-  derive canBuy = signedIn and not authBusy and not pending(billingReply) and (billing.web or nativePreview)
+  derive canBuy = signedIn and billing.web and not authBusy and not pending(billingReply)
   state liked = false
   state waited = 0
   state wait = 1
   task restore when project.authentication and not authAttempted
     after(1, checkSession)
+  task disableAuth when project.ready and not project.authentication and authAttempted
+    after(1, resetAuth)
   task renew when project.authentication and authReady and not authChanging
     every(30000, checkSession)
   task reconnect when live.status == "closed"
@@ -167,31 +161,38 @@ component Apps
     if project.authentication and not authBusy
       authAttempted = true
       send checkedSession = restoreSession()
+  action resetAuth
+    authAttempted = false
+    authReady = false
+    signedIn = false
+    password = ""
   action sessionChecked
-    match checkedSession
-      case some(result)
-        if result.error == ""
-          authReady = true
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          authError = ""
-        else if not authReady
-          authError = result.error
-      case none
-        authError = "session-check"
+    if not project.ready or project.authentication
+      match checkedSession
+        case some(result)
+          if result.error == ""
+            authReady = true
+            signedIn = result.signedIn
+            account = result.name
+            googleAvailable = result.google
+            authError = ""
+          else if not authReady
+            authError = result.error
+        case none
+          authError = "session-check"
   action sessionChanged
-    match changedSession
-      case some(result)
-        authError = result.error
-        if result.error == ""
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          username = ""
-          creating = false
-      case none
-        authError = "session-update"
+    if not project.ready or project.authentication
+      match changedSession
+        case some(result)
+          authError = result.error
+          if result.error == ""
+            signedIn = result.signedIn
+            account = result.name
+            googleAvailable = result.google
+            username = ""
+            creating = false
+        case none
+          authError = "session-update"
   action editUsername(value: string)
     username = value
   action editPassword(value: string)
@@ -214,14 +215,15 @@ component Apps
     if pending(googleBrowser)
       send googleBrowser = cancelGoogleSession()
   action googleBrowserFinished
-    match googleBrowser
-      case some(result)
-        if result.error == ""
-          send changedSession = finishGoogleSession()
-        else
-          authError = result.error
-      case none
-        authError = "google-failed"
+    if not project.ready or project.authentication
+      match googleBrowser
+        case some(result)
+          if result.error == ""
+            send changedSession = finishGoogleSession()
+          else
+            authError = result.error
+        case none
+          authError = "google-failed"
   action logout
     if not authBusy and not pending(credentialChange) and not pending(billingReply)
       revealedKey = ""
@@ -232,16 +234,10 @@ component Apps
   action refreshBilling
     refresh billing
   action selectOffer(offer: string)
-    if canBuy and (offer != "monthly" or not monthlyActive)
-      if billing.web
-        send billingReply = startBilling("checkout", offer)
-      else if offer == "monthly"
-        previewMonthly = true
-        previewCredits = previewCredits + billing.monthlyCredits
-      else
-        previewCredits = previewCredits + billing.topupCredits
+    if canBuy and (offer != "monthly" or not billing.monthlyActive)
+      send billingReply = startBilling("checkout", offer)
   action showBillingPortal
-    if canBuy and billing.web
+    if canBuy
       send billingReply = startBilling("portal", "")
   action decideConsent(decision: string)
     if onConsent and signedIn and not authBusy and not pending(consentDecision) and not pending(mcpConsent) and mcpConsent.client != ""
@@ -411,7 +407,7 @@ component Apps
                   if project.credentials
                     link href=path("credentials") testId="credentials-link"
                       text t("keys.title")
-                  if project.payments and billing.mode != "" and billing.mode != "off"
+                  if project.payments
                     link href=path("pricing") testId="pricing-link"
                       text t("billing.title")
                   text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
@@ -447,29 +443,23 @@ component Apps
                     link href=path("home") testId="billing-sign-in"
                       text t("billing.signIn")
                   else
-                    if nativePreview
-                      text t("billing.balance", count=formatNumber(credits + previewCredits, "decimal")) testId="credit-balance"
-                    else
-                      match billing.credits
-                        case some(balance)
-                          text t("billing.balance", count=formatNumber(balance, "decimal")) testId="credit-balance"
-                        case none
-                          text t("billing.loading")
-                    if previewMonthly or match billing.planId { case some(plan) => plan != "", case none => false }
+                    match billing.credits
+                      case some(balance)
+                        text t("billing.balance", count=formatNumber(balance, "decimal")) testId="credit-balance"
+                      case none
+                        text t("billing.loading")
+                    if match billing.planId { case some(plan) => plan != "", case none => false }
                       text t("billing.active") testId="monthly-active"
                     if not billing.web and billing.managedOnWeb
                       text t("billing.managedOnWeb") color="-exact-secondary-label" testId="billing-managed-on-web"
-                  if billing.web or nativePreview
-                    PlanCard(title=t("billing.monthly"), credits=t("billing.monthlyCredits", count=formatNumber(billing.monthlyCredits, "decimal")), price=formatNumber(billing.monthlyAmount, "decimal") + " " + billing.currency, enabled=(canBuy and not monthlyActive), select=selectOffer("monthly"), id="monthly")
+                  if billing.web
+                    PlanCard(title=t("billing.monthly"), credits=t("billing.monthlyCredits", count=formatNumber(billing.monthlyCredits, "decimal")), price=formatNumber(billing.monthlyAmount, "decimal") + " " + billing.currency, enabled=(canBuy and not billing.monthlyActive), select=selectOffer("monthly"), id="monthly")
                     PlanCard(title=t("billing.topup"), credits=t("billing.topupCredits", count=formatNumber(billing.topupCredits, "decimal")), price=formatNumber(billing.topupAmount, "decimal") + " " + billing.currency, enabled=canBuy, select=selectOffer("topup"), id="topup")
                   else if not billing.managedOnWeb
                     text t("billing.storeUnavailable") color="-exact-secondary-label"
                   if signedIn
                     if failed(billingReply)
                       text t("billing.error") role="alert" testId="billing-error"
-                    else if checkoutUrl != "" and not pending(billingReply)
-                      link href=checkoutUrl testId="continue-checkout"
-                        text t("billing.continue")
                     if billing.web
                       button press=showBillingPortal disabled=(not canBuy) testId="manage-billing"
                         text t("billing.manage")

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
-import { project } from "../../../scripts/project-config.mjs";
+import { project } from "@disposabl-kit/server/project-config";
 import { api } from "../convex/_generated/api";
 import { mcp as server } from "@disposabl-kit/server/mcp";
 
@@ -189,7 +189,9 @@ test.skipIf(project.credentials || (!project.api && !project.mcp))(
       if (await command.exited !== 0) throw new Error(`Local operator command failed: ${name}`);
       return json.trim() ? JSON.parse(json) : null;
     }
-    const { id, userId, apiKey } = await run("mcp:createServiceKey", { name: "Headless verification" });
+    const name = "Headless verification";
+    const userId = await run("mcp:createServiceUser", { name });
+    const { id, apiKey } = await run("mcp:createApiKeyForUser", { userId, name, scopes: ["read"] });
     const headers = { Authorization: `Bearer ${apiKey}` };
     const endpoint = `${site}/api/counter/current`;
     try {

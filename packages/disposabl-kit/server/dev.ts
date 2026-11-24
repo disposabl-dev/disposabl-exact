@@ -1,6 +1,13 @@
 import { watch } from "node:fs";
 import { convex, generatePlatforms } from "./generate-platforms";
 
+try {
+  await import("./project-config.mjs");
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+
 let pending = Promise.resolve();
 let timer: ReturnType<typeof setTimeout>;
 const watcher = watch(convex, { recursive: true }, (_event, path) => {

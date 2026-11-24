@@ -7,11 +7,11 @@ import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
-import { project } from "../../../scripts/project-config.mjs";
+import { project } from "@disposabl-kit/server/project-config";
 
 // Config evaluation decides whether to mount the component before Convex can generate typed env.
 // eslint-disable-next-line @convex-dev/no-process-env
-const googleConfigured = project.authentication && project.frontend && Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && process.env.AUTH_GOOGLE_CLIENT_SECRET?.trim());
+const googleConfigured = Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && process.env.AUTH_GOOGLE_CLIENT_SECRET?.trim());
 const googleCredential = googleConfigured ? v.string() : v.optional(v.string());
 const app = defineApp({
   env: {
@@ -28,7 +28,8 @@ app.use(rateLimiter);
 app.use(mcp);
 if (googleConfigured) {
   app.use(google, {
-    httpPrefix: "/oauth/google",
+    // Keep linked Google accounts when authentication is temporarily disabled.
+    httpPrefix: project.authentication && project.frontend ? "/oauth/google" : undefined,
     env: {
       CLIENT_ID: app.env.AUTH_GOOGLE_CLIENT_ID,
       CLIENT_SECRET: app.env.AUTH_GOOGLE_CLIENT_SECRET,

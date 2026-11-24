@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { project } from "@disposabl-kit/server/project-config";
 
 const site = process.env.CONVEX_SITE_URL;
 if (!site || new URL(site).hostname !== "127.0.0.1") {
@@ -23,18 +24,22 @@ const web = "/api/billing/web";
 const status = { operation: "status" };
 const checkout = { operation: "checkout", offer: "topup", requestId: crypto.randomUUID() };
 
-test("billing authorizes web checkout and exposes read-only status to native apps", async () => {
+test("billing endpoints follow enabled features and platforms", async () => {
+  expect((await post(web, status, site)).status).toBe(project.payments && project.web ? 200 : 404);
+  expect((await post(native, status)).status).toBe(project.payments && project.native ? 200 : 404);
+});
+
+test.skipIf(!project.payments || !project.web || !project.native)("billing authorizes web checkout and exposes read-only status to native apps", async () => {
   expect((await post(web, status, "https://other.invalid")).status).toBe(403);
   expect((await post(web, checkout, site)).status).toBe(401);
   expect((await post(native, checkout)).status).toBe(400);
-  expect((await post(native, { operation: "previewPurchase", offer: "topup" })).status).toBe(400);
 
   const response = await post(native, status);
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ credits: null, planId: null, managedOnWeb: false, monthlyActive: false, topupCredits: 500 });
 });
 
-test("billing stops exposing customer balances after sign out", async () => {
+test.skipIf(!project.payments || !project.native)("billing stops exposing customer balances after sign out", async () => {
   const response = await post("/api/auth/native", {
     operation: "password", create: true,
     username: `billing-${crypto.randomUUID().slice(0, 8)}`,

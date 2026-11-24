@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Autumn, type CreatePlanParams, type GetPlanResponse } from "autumn-js";
 import { v, type Infer } from "convex/values";
-import { project } from "../../../../scripts/project-config.mjs";
+import { project } from "@disposabl-kit/server/project-config";
 import { env, internalAction, query } from "../_generated/server";
 
 const feature = { featureId: "disposabl_credits", name: "Credits", type: "metered", consumable: true } as const;

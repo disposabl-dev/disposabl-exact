@@ -11,6 +11,7 @@ const origin = import.meta.env.CONVEX_ORIGIN;
 export const grants = `net.websocket ${origin}\n${authGrants}`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
+const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadProject'>, 'ready'>>('project:features');
 const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
 const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
 
@@ -20,6 +21,11 @@ const sources: Sources = {
   ...billingSources,
   locales: () => ({ choices: languages }),
   live: () => client.live(),
+  loadProject: async ([rev]) => {
+    const flags = await client.query(rev, getFeatures, {});
+    const topLevelWeb = exactHost() === 'web' && globalThis.exactPlatformWeb === true;
+    return { ...flags, ready: true, credentials: topLevelWeb && flags.credentials, consent: topLevelWeb && flags.consent };
+  },
   counter: ([rev]) => client.query(rev, getCounter, {}),
   increment: async () => {
     await client.mutation(incrementCounter, {});

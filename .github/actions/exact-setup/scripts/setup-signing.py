@@ -56,15 +56,24 @@ if args.generate_on_runner:
     generate_for_runner()
     raise SystemExit
 
+platforms = json.loads((Path(__file__).resolve().parents[4] / "disposabl.json").read_text())["platforms"]
+if args.play and "android" not in platforms:
+    parser.error("--play requires android in disposabl.json")
+if not {"android", "ios"}.intersection(platforms):
+    print("No mobile platforms selected in disposabl.json.")
+    raise SystemExit
+wanted = ["EXACT_UPDATE_SEED"]
+if "android" in platforms:
+    wanted.append("ANDROID_APK_SIGNING")
+if args.play:
+    wanted.append("ANDROID_PLAY_UPLOAD_SIGNING")
+
 repo = gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
 ref = "main"
 sha = gh("api", f"repos/{repo}/commits/{ref}", "--jq", ".sha")
 
 path = f"repos/{repo}/environments/{ENVIRONMENT}/secrets"
 existing = gh("api", path, "--paginate", "--jq", ".secrets[].name").splitlines()
-wanted = ["EXACT_UPDATE_SEED", "ANDROID_APK_SIGNING"]
-if args.play:
-    wanted.append("ANDROID_PLAY_UPLOAD_SIGNING")
 missing = [name for name in wanted if name not in existing]
 if not missing:
     print("All requested signing keys are already configured.")

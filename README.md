@@ -15,9 +15,11 @@ Starter kit for building apps and agents with Exact and Convex.
 
 - Choose any combination of `web`, `android`, `ios`, `macos`, `api`, and `mcp`. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
 - Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
-- Commit and deploy a configuration change to enable or disable a selection. The feature code and existing account and billing records are retained. An empty platform list stops client builds and disables previously deployed surfaces when the deployment key is configured.
+- Commit and deploy a configuration change to enable or disable a selection. Connected clients receive the updated feature settings. Deploy App always requires the Convex deployment key. With an empty platform list, it deploys the backend to turn off the previously published endpoints and skips every client build. Existing accounts, billing records, API keys, and installers are retained.
 
-Run `bun test packages/backend/tests/project-config.test.ts` to check all platform and feature selections.
+When upgrading a draft configuration that listed only `api` and `mcp`, add the client platforms you were shipping and list your enabled features explicitly. An app already using Autumn should include both `authentication` and `payments`.
+
+`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. CI uses the same validator. Run `bun test packages/backend/tests/project-config.test.ts` to check all platform and feature selections.
 
 ## First deployment from a new repository
 
@@ -83,13 +85,14 @@ The kit discovers marked functions in the Convex source. `bun run dev` from `pac
 
 When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
 
-With web and authentication enabled, Exact web serves `/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a read-only key from `packages/backend` and store the returned key securely.
+With web and authentication enabled, Exact web serves `/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
 
 ```sh
-bun run convex run mcp:createServiceKey '{"name":"My integration"}'
+bun run convex run mcp:createServiceUser '{"name":"My integration"}'
+bun run convex run mcp:createApiKeyForUser '{"userId":"<service user ID>","scopes":["read"]}'
 ```
 
-Pass `"readOnly":false` to grant write access. Revoke the key with `mcp:revokeServiceKey`, passing the `id` and `userId` returned on creation. Use `--prod` for the production deployment.
+Use `["read","write"]` for an integration that needs write access. Revoke the key with `mcp:revokeServiceKey`, passing the `id` and `userId` returned on creation. Use `--prod` for the production deployment.
 
 ### Translations
 
@@ -112,7 +115,9 @@ bun exact.mjs test web
 
 ## Optional billing
 
-Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. With a test key, web checkout uses Stripe Sandbox and Android and iOS show a purchase simulation. The simulation resets when the app closes or the account changes. With a live key, web checkout is live. The mobile app displays the Autumn plan and balance and tells web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
+Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. Web checkout uses Stripe Sandbox with a test key and Stripe live with a live key. Native apps show the Autumn plan and balance and tell web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
+
+Removing `payments` hides pricing and disables the app’s billing endpoints. Existing subscriptions continue in the billing provider. Manage renewals and cancellations there before removing the app’s customer portal.
 
 [The catalog and Convex billing functions](packages/backend/convex/billing/index.ts) live in one file. Autumn stores customer balances and Stripe checkout state. Convex verifies the Exact session before calling Autumn.
 

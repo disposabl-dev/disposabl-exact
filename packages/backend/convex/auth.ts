@@ -4,7 +4,7 @@ import { getAuthUserId, setupConvexAuth } from "@convex-dev/auth/server";
 import { MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { RegisteredMutation } from "convex/server";
 import { v } from "convex/values";
-import { project } from "../../../scripts/project-config.mjs";
+import { project } from "@disposabl-kit/server/project-config";
 import { components, internal } from "./_generated/api";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import {

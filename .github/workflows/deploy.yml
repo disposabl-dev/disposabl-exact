@@ -35,13 +35,14 @@ jobs:
     outputs:
       web: ${{ steps.plan.outputs.web }}
       frontend: ${{ steps.plan.outputs.frontend }}
-      backend: ${{ steps.plan.outputs.backend }}
       mobile: ${{ steps.plan.outputs.mobile }}
       mobile-platforms: ${{ steps.plan.outputs.mobile-platforms }}
       macos: ${{ steps.plan.outputs.macos }}
       matrix: ${{ steps.plan.outputs.matrix }}
       public_android: ${{ steps.plan.outputs.public_android }}
+      exact-ref: ${{ steps.pin.outputs.exact-ref }}
       bun-version: ${{ steps.pin.outputs.bun-version }}
+      bundle-version: ${{ steps.pin.outputs.bundle-version }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -63,22 +64,16 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2604
     # A cache build may take the publisher's full 120-minute job budget.
     timeout-minutes: 145
-    outputs:
-      exact-ref: ${{ steps.pin.outputs.exact-ref }}
-      bun-version: ${{ steps.pin.outputs.bun-version }}
-      bundle-version: ${{ steps.pin.outputs.bundle-version }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
       - name: Wait for the matching setup and compiler caches
         env:
           GH_TOKEN: ${{ github.token }}
-          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
-          BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
-          BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
+          EXACT_REF: ${{ needs.config.outputs.exact-ref }}
+          BUN_VERSION: ${{ needs.config.outputs.bun-version }}
+          BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
           WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 8400 || 0 }}
         run: |
           python3 .github/actions/exact-setup/scripts/release-manifest.py \
@@ -96,37 +91,26 @@ jobs:
       name: android-production
       deployment: false
     env:
-      EXACT_REF: ${{ needs.tools.outputs.exact-ref }}
+      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
       BUN_VERSION: ${{ needs.config.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.tools.outputs.bundle-version }}
+      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
     outputs:
       convex_origin: ${{ steps.origin.outputs.convex_origin }}
       convex_site_origin: ${{ steps.origin.outputs.convex_site_origin }}
       public_android: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.public_android || steps.updates.outputs.public_android || '[]' }}
       native_matrix: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.matrix || steps.updates.outputs.matrix || '[]' }}
     steps:
-      - name: Check whether a backend needs deployment
-        id: backend
+      - name: Check the Convex deployment key
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          BACKEND_REQUIRED: ${{ needs.config.outputs.backend }}
-        run: |
-          if [ "$BACKEND_REQUIRED" = true ]; then
-            : "${CONVEX_DEPLOY_KEY:?Set the production CONVEX_DEPLOY_KEY Actions secret}"
-          fi
-          if [ -n "$CONVEX_DEPLOY_KEY" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: ': "${CONVEX_DEPLOY_KEY:?Set CONVEX_DEPLOY_KEY to deploy platform selections, including an empty list.}"'
       - uses: actions/checkout@v7.0.1
-        if: steps.backend.outputs.deploy == 'true'
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
-        if: steps.backend.outputs.deploy == 'true'
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Install backend dependencies
-        if: steps.backend.outputs.deploy == 'true'
         working-directory: packages/backend
         run: bun install --frozen-lockfile
       - name: Resolve production backend
@@ -188,7 +172,7 @@ jobs:
           bun run generate:platforms
           bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
       - name: Deploy backend without web
-        if: steps.backend.outputs.deploy == 'true' && needs.config.outputs.web != 'true'
+        if: needs.config.outputs.web != 'true'
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -207,7 +191,7 @@ jobs:
 
   native:
     name: Build ${{ matrix.platform }} production
-    needs: [tools, deploy]
+    needs: [config, tools, deploy]
     if: >-
       !cancelled() && needs.tools.result == 'success' &&
       needs.deploy.result == 'success' && needs.deploy.outputs.native_matrix != '[]'
@@ -224,9 +208,9 @@ jobs:
       run:
         shell: bash
     env: &native-env
-      EXACT_REF: ${{ needs.tools.outputs.exact-ref }}
-      BUN_VERSION: ${{ needs.tools.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.tools.outputs.bundle-version }}
+      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
+      BUN_VERSION: ${{ needs.config.outputs.bun-version }}
+      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
       CONVEX_SITE_ORIGIN: ${{ needs.deploy.outputs.convex_site_origin }}
       EXACT_MOBILE_CHANNEL: ${{ matrix.channel }}
@@ -324,7 +308,7 @@ jobs:
 
   public-android:
     name: Build Android production
-    needs: [tools, deploy]
+    needs: [config, tools, deploy]
     if: >-
       !cancelled() && needs.tools.result == 'success' &&
       needs.deploy.result == 'success' && needs.deploy.outputs.public_android != '[]'
@@ -362,9 +346,9 @@ jobs:
       - uses: ./.github/actions/exact-setup
         with:
           platform: macos
-          exact-ref: ${{ needs.tools.outputs.exact-ref }}
-          bun-version: ${{ needs.tools.outputs.bun-version }}
-          bundle-version: ${{ needs.tools.outputs.bundle-version }}
+          exact-ref: ${{ needs.config.outputs.exact-ref }}
+          bun-version: ${{ needs.config.outputs.bun-version }}
+          bundle-version: ${{ needs.config.outputs.bundle-version }}
       - name: Build and verify macOS preview
         working-directory: ${{ env.NATIVE_APP_DIR }}
         run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/macos-preview.sh"

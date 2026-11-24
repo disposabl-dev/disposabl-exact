@@ -1,5 +1,13 @@
 import { appendFileSync } from "node:fs";
-import { project, releaseMatrices } from "./project-config.mjs";
+import { project } from "../packages/disposabl-kit/server/project-config.mjs";
+
+export function releaseMatrices(entries, publicRepo) {
+  const publicAndroid = entry => publicRepo && entry.platform === "android";
+  return {
+    matrix: entries.filter(entry => !publicAndroid(entry)),
+    public_android: entries.filter(publicAndroid),
+  };
+}
 
 export function deploymentPlan(config, publicRepo) {
   const first = [
@@ -9,7 +17,6 @@ export function deploymentPlan(config, publicRepo) {
   return {
     web: config.web,
     frontend: config.frontend,
-    backend: config.backend,
     mobile: config.mobile.length > 0,
     "mobile-platforms": config.mobile,
     macos: config.macos,

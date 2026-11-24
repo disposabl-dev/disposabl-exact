@@ -6,7 +6,8 @@
     ".": "./server/functions.ts",
     "./api": "./server/api.ts",
     "./mcp": "./server/mcp.ts",
-    "./http": "./server/http.ts"
+    "./http": "./server/http.ts",
+    "./project-config": "./server/project-config.mjs"
   },
   "peerDependencies": {
     "@convex-dev/auth": "2.1.0",
