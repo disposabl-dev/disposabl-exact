@@ -169,7 +169,6 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
         run: &deploy-web |
-          bun run generate:platforms
           bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
       - name: Deploy backend without web
         if: needs.config.outputs.web != 'true'
@@ -177,7 +176,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
-          bun run generate:platforms
           bun run convex deploy
       - name: Publish compatible mobile updates
         id: updates

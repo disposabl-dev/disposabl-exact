@@ -3,6 +3,7 @@ import { authGrants, authSources } from './auth';
 import { billingSources } from './billing';
 import { platformSources } from './platform';
 import { languages } from './locales.generated';
+import { platform } from '@disposabl-kit/server/platforms.ts';
 import { convex } from '@exact/convex';
 import { getFunctionName, makeFunctionReference } from 'convex/server';
 import { convexToJson, jsonToConvex } from 'convex/values';
@@ -11,7 +12,7 @@ const origin = import.meta.env.CONVEX_ORIGIN;
 export const grants = `net.websocket ${origin}\n${authGrants}`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
-const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadProject'>, 'ready'>>('project:features');
+const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>(platform.featuresQuery);
 const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
 const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
 
@@ -21,7 +22,7 @@ const sources: Sources = {
   ...billingSources,
   locales: () => ({ choices: languages }),
   live: () => client.live(),
-  loadProject: async ([rev]) => {
+  loadAppFeatures: async ([rev]) => {
     const flags = await client.query(rev, getFeatures, {});
     const topLevelWeb = exactHost() === 'web' && globalThis.exactPlatformWeb === true;
     return { ...flags, ready: true, credentials: topLevelWeb && flags.credentials, consent: topLevelWeb && flags.consent };

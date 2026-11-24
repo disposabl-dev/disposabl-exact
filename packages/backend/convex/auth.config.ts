@@ -1,5 +1,5 @@
 import { convexAuthProvider } from "@convex-dev/auth/server";
 import type { AuthConfig } from "convex/server";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../app-platform";
 
-export default { providers: project.authentication ? [convexAuthProvider()] : [] } satisfies AuthConfig;
+export default { providers: platform.authentication ? [convexAuthProvider()] : [] } satisfies AuthConfig;

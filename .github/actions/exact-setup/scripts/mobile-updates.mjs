@@ -4,7 +4,7 @@ import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign } from 'n
 import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { project } from '../../../../packages/disposabl-kit/server/project-config.mjs';
+import { appPlatform as platform } from '../../../../packages/backend/app-platform.ts';
 import { releaseMatrices } from '../../../../scripts/deploy-plan.mjs';
 
 const [command, platform] = process.argv.slice(2);
@@ -18,14 +18,14 @@ if (command === 'plan' && !platform) {
   const appDir = resolve(worktree, 'apps/apps');
   let added = false;
   try {
-    if (project.mobile.length > 1) {
+    if (platform.mobile.length > 1) {
       execFileSync('git', ['worktree', 'add', '--quiet', '--detach', worktree, 'HEAD'], { env: cleanEnv, stdio: 'inherit' });
       added = true;
       mkdirSync(resolve(appDir, '.exact'), { recursive: true });
       symlinkSync(EXACT, resolve(appDir, '.exact/checkout'));
       execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: appDir, env: cleanEnv, stdio: 'inherit' });
     }
-    const platforms = project.mobile.map(name => [
+    const platforms = platform.mobile.map(name => [
       name, name === 'ios' && added ? appDir : process.cwd(),
     ]);
     const results = await Promise.allSettled(platforms.map(([name, cwd]) => new Promise((resolveChild, reject) => {
@@ -60,7 +60,7 @@ if (command === 'plan' && !platform) {
 const probing = command === 'first' && !platform;
 if (!probing && (!['configure', 'deliver', 'seed'].includes(command) || !['ios', 'android'].includes(platform)))
   throw Error('expected first, plan or configure|deliver|seed ios|android');
-if (platform && !project.mobile.includes(platform)) throw Error(`${platform} is not selected in disposabl.json`);
+if (platform && !platform.mobile.includes(platform)) throw Error(`${platform} is not selected in disposabl.json`);
 
 const env = process.env;
 const { EXACT, EXACT_REF, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;
@@ -108,7 +108,7 @@ function updateKey(platform) {
 if (probing) {
   // This read-only hint starts the three first builds in parallel. All other
   // replies go through Exact's full compatibility and signature checks.
-  const empty = await Promise.all(project.mobile.map(async target => {
+  const empty = await Promise.all(platform.mobile.map(async target => {
     const { publicKey } = updateKey(target);
     const keyId = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex').slice(0, 32);
     try {

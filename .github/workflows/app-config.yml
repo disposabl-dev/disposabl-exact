@@ -1,4 +1,4 @@
-name: Check project configuration
+name: Check app configuration
 
 on:
   pull_request:
@@ -21,6 +21,5 @@ jobs:
         with:
           bun-version: ${{ steps.pin.outputs.bun-version }}
       - run: bun install --cwd packages --frozen-lockfile
-      - run: bun run --cwd packages/backend generate:platforms
       - run: bun run --cwd packages/backend lint
-      - run: bun test packages/backend/tests/project-config.test.ts
+      - run: bun test packages/backend/tests/platforms.test.ts

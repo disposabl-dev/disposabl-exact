@@ -3,8 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "bun ../disposabl-kit/server/dev.ts",
-    "generate:platforms": "bun ../disposabl-kit/server/generate-platforms.ts",
+    "dev": "bun app-platform.ts && convex dev",
     "logs": "convex logs",
     "typecheck": "tsc -p convex",
     "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"

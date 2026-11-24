@@ -3,12 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deploymentPlan, releaseMatrices } from "../../../scripts/deploy-plan.mjs";
-import { features, platforms, projectConfig } from "@disposabl-kit/server/project-config";
+import { platform } from "@disposabl-kit/server/platforms.ts";
+const { features, platforms, read: readPlatform } = platform;
 
 process.env.CONVEX_SITE_URL = "http://127.0.0.1:3211";
-const { createHttp } = await import("@disposabl-kit/server/http");
+const { createHttp } = await import("../convex/http");
 
-function combinations(values: string[]) {
+function combinations(values: readonly string[]) {
   return Array.from({ length: 2 ** values.length }, (_, mask) =>
     values.filter((_, index) => mask & (1 << index)));
 }
@@ -20,10 +21,10 @@ describe("disposabl.json", () => {
         const authentication = enabled.includes("authentication");
         const payments = enabled.includes("payments");
         if (payments && !authentication) {
-          expect(() => projectConfig({ platforms: selected, features: enabled })).toThrow("payments requires authentication");
+          expect(() => readPlatform({ platforms: selected, features: enabled })).toThrow("payments requires authentication");
           return;
         }
-        const config = projectConfig({ platforms: selected, features: enabled });
+        const config = readPlatform({ platforms: selected, features: enabled });
         const web = selected.includes("web");
         const mobile = ["android", "ios"].filter(platform => selected.includes(platform));
         const macos = selected.includes("macos");
@@ -91,30 +92,29 @@ describe("disposabl.json", () => {
       { platforms: ["web", "web"], features: [] },
       { platforms: [], features: ["billing"] },
       { platforms: [], features: ["authentication", "authentication"] },
-    ]) expect(() => projectConfig(input)).toThrow("disposabl.json");
+    ]) expect(() => readPlatform(input)).toThrow("disposabl.json");
   });
 });
 
 test("dev stops before starting Convex when payments needs authentication", async () => {
-  const checkout = await mkdtemp(join(tmpdir(), "exact-config-"));
+  const appDir = await mkdtemp(join(tmpdir(), "exact-app-config-"));
   try {
     for (const file of [
       "packages/backend/package.json",
-      "packages/disposabl-kit/server/dev.ts",
-      "packages/disposabl-kit/server/generate-platforms.ts",
-      "packages/disposabl-kit/server/project-config.mjs",
+      "packages/backend/app-platform.ts",
+      "packages/disposabl-kit/server/platforms.ts",
     ]) {
-      await Bun.write(join(checkout, file), Bun.file(new URL(`../../../${file}`, import.meta.url)));
+      await Bun.write(join(appDir, file), Bun.file(new URL(`../../../${file}`, import.meta.url)));
     }
-    await Bun.write(join(checkout, "disposabl.json"), JSON.stringify({
+    await Bun.write(join(appDir, "disposabl.json"), JSON.stringify({
       platforms: ["web"], features: ["payments"],
     }));
     const dev = Bun.spawnSync([process.execPath, "run", "dev"], {
-      cwd: join(checkout, "packages/backend"),
+      cwd: join(appDir, "packages/backend"),
     });
     expect(dev.exitCode).toBe(1);
     expect(dev.stderr.toString()).toContain('Add "authentication" to "features" or remove "payments".');
   } finally {
-    await rm(checkout, { recursive: true, force: true });
+    await rm(appDir, { recursive: true, force: true });
   }
 });

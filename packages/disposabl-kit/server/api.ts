@@ -1,10 +1,8 @@
-import { checkValue } from "@convex-dev/mcp";
+import { checkValue, type McpServer } from "@convex-dev/mcp";
 import { httpActionGeneric, type HttpRouter } from "convex/server";
 import { convexToJson, v } from "convex/values";
 import {
-  platformScope,
   runPlatformOperation,
-  type AuthenticatePlatform,
   type PlatformOperation,
 } from "./functions";
 import { isTextParameter } from "./openapi";
@@ -23,7 +21,7 @@ function queryArgs(request: Request, operation: PlatformOperation) {
 export function registerApi(
   router: HttpRouter,
   operations: readonly PlatformOperation[],
-  authenticate: AuthenticatePlatform,
+  authenticate: McpServer["authenticate"],
 ) {
   for (const operation of operations) {
     const method = operation.kind === "query" ? "GET" : "POST";
@@ -35,7 +33,7 @@ export function registerApi(
           { error: "unauthorized" },
           { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
         );
-      if (!user.scopes.includes(platformScope(operation)))
+      if (!user.scopes.includes(operation.scope))
         return Response.json({ error: "insufficient_scope" }, { status: 403 });
 
       if (request.method !== method)

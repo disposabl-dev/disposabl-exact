@@ -6,8 +6,10 @@
     ".": "./server/functions.ts",
     "./api": "./server/api.ts",
     "./mcp": "./server/mcp.ts",
-    "./http": "./server/http.ts",
-    "./project-config": "./server/project-config.mjs"
+    "./platforms.ts": {
+      "types": "./server/platform-types.d.ts",
+      "default": "./server/platforms.ts"
+    }
   },
   "peerDependencies": {
     "@convex-dev/auth": "2.1.0",

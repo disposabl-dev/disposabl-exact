@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../app-platform";
 
 const site = process.env.CONVEX_SITE_URL;
 if (!site || new URL(site).hostname !== "127.0.0.1") {
@@ -25,11 +25,11 @@ const status = { operation: "status" };
 const checkout = { operation: "checkout", offer: "topup", requestId: crypto.randomUUID() };
 
 test("billing endpoints follow enabled features and platforms", async () => {
-  expect((await post(web, status, site)).status).toBe(project.payments && project.web ? 200 : 404);
-  expect((await post(native, status)).status).toBe(project.payments && project.native ? 200 : 404);
+  expect((await post(web, status, site)).status).toBe(platform.payments && platform.web ? 200 : 404);
+  expect((await post(native, status)).status).toBe(platform.payments && platform.native ? 200 : 404);
 });
 
-test.skipIf(!project.payments || !project.web || !project.native)("billing authorizes web checkout and exposes read-only status to native apps", async () => {
+test.skipIf(!platform.payments || !platform.web || !platform.native)("billing authorizes web checkout and exposes read-only status to native apps", async () => {
   expect((await post(web, status, "https://other.invalid")).status).toBe(403);
   expect((await post(web, checkout, site)).status).toBe(401);
   expect((await post(native, checkout)).status).toBe(400);
@@ -39,7 +39,7 @@ test.skipIf(!project.payments || !project.web || !project.native)("billing autho
   expect(await response.json()).toMatchObject({ credits: null, planId: null, managedOnWeb: false, monthlyActive: false, topupCredits: 500 });
 });
 
-test.skipIf(!project.payments || !project.native)("billing stops exposing customer balances after sign out", async () => {
+test.skipIf(!platform.payments || !platform.native)("billing stops exposing customer balances after sign out", async () => {
   const response = await post("/api/auth/native", {
     operation: "password", create: true,
     username: `billing-${crypto.randomUUID().slice(0, 8)}`,

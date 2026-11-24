@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Autumn, type CreatePlanParams, type GetPlanResponse } from "autumn-js";
 import { v, type Infer } from "convex/values";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../../app-platform";
 import { env, internalAction, query } from "../_generated/server";
 
 const feature = { featureId: "disposabl_credits", name: "Credits", type: "metered", consumable: true } as const;
@@ -44,7 +44,7 @@ export const viewerId = query({
   args: {},
   returns: v.union(v.id("users"), v.null()),
   handler: async (ctx) => {
-    if (!project.payments) return null;
+    if (!platform.payments) return null;
     const userId = await getAuthUserId(ctx);
     return userId && await ctx.db.get("users", userId) ? userId : null;
   },
@@ -72,7 +72,7 @@ export const request = internalAction({
   args: { userId: v.union(v.id("users"), v.null()), operation, offer: v.optional(offer), requestId: v.optional(v.string()) },
   returns: result,
   handler: async (_ctx, { userId, operation, offer, requestId }): Promise<Infer<typeof result>> => {
-    if (!project.payments) throw new Error("Enable payments in disposabl.json");
+    if (!platform.payments) throw new Error("Enable payments in disposabl.json");
     const secretKey = env.AUTUMN_SECRET_KEY?.trim();
     const mode = secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
     const client = mode === "off" ? null : new Autumn({ secretKey });
@@ -123,7 +123,7 @@ export const syncCatalog = internalAction({
   args: { apply: v.boolean() },
   returns: v.array(v.string()),
   handler: async (_ctx, { apply }) => {
-    if (!project.payments) throw new Error("Enable payments in disposabl.json");
+    if (!platform.payments) throw new Error("Enable payments in disposabl.json");
     const secretKey = env.AUTUMN_SECRET_KEY?.trim();
     if (!secretKey) throw new Error("Set AUTUMN_SECRET_KEY first");
     const client = new Autumn({ secretKey });

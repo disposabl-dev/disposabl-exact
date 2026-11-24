@@ -6,6 +6,7 @@
     "start": "bun exact.mjs serve dist"
   },
   "dependencies": {
+    "@disposabl-kit/server": "link:../../packages/disposabl-kit",
     "@exact/convex": "file:.exact/checkout/packages/convex",
     "convex": "1.51.0"
   }

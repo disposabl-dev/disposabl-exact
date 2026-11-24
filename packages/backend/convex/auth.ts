@@ -4,7 +4,7 @@ import { getAuthUserId, setupConvexAuth } from "@convex-dev/auth/server";
 import { MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { RegisteredMutation } from "convex/server";
 import { v } from "convex/values";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../app-platform";
 import { components, internal } from "./_generated/api";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import {
@@ -29,14 +29,14 @@ export const refreshSession = mutation({
     }),
   ),
   handler: (ctx, args) => {
-    if (!project.authentication) return { kind: "noSession" } as const;
+    if (!platform.authentication) return { kind: "noSession" } as const;
     return runAuthMethod(auth.refreshSession, ctx, args);
   },
 });
 export const signOut = mutation({
   args: sessionArgs,
   returns: v.null(),
-  handler: (ctx, args) => project.authentication ? runAuthMethod(auth.signOut, ctx, args) : null,
+  handler: (ctx, args) => platform.authentication ? runAuthMethod(auth.signOut, ctx, args) : null,
 });
 
 const password = setupUsernamePassword(auth, {
@@ -72,7 +72,7 @@ export const viewer = query({
   args: {},
   returns: v.union(v.null(), v.object({ name: v.string() })),
   handler: async (ctx) => {
-    if (!project.authentication) return null;
+    if (!platform.authentication) return null;
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
     const user = await ctx.db.get("users", userId);
@@ -108,7 +108,7 @@ export const passwordSession = internalMutation({
   args: { create: v.boolean(), username: v.string(), password: v.string() },
   returns: authResult,
   handler: async (ctx, { create, username, password: secret }) => {
-    if (!project.authentication) return { error: "AUTH_DISABLED" };
+    if (!platform.authentication) return { error: "AUTH_DISABLED" };
     const credentials = { username: username.trim(), password: secret };
     if (create) {
       if ([...secret].length < 15) return { error: "PASSWORD_TOO_SHORT" };

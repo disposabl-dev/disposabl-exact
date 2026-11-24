@@ -1,10 +1,4 @@
-import {
-  getFunctionName,
-  type FunctionReference,
-  type FunctionType,
-  type GenericActionCtx,
-  type GenericDataModel,
-} from "convex/server";
+import { makeFunctionReference, type FunctionType, type GenericActionCtx, type GenericDataModel } from "convex/server";
 import type { GenericValidator, PropertyValidators, Value } from "convex/values";
 import {
   internalAction as action,
@@ -12,111 +6,63 @@ import {
   internalQuery as query,
 } from "../../backend/convex/_generated/server";
 
-function withPlatforms<Definition, Registered extends object>(
-  builder: (definition: Definition) => Registered,
-) {
-  return (
-    definition: Definition & {
-      args: PropertyValidators;
-      returns: GenericValidator;
-      platforms?: true;
-      description?: string;
-    },
-  ): Registered =>
-    Object.assign(builder(definition), {
-      platforms: definition.platforms,
-      platformArgs: definition.args,
-      platformReturns: definition.returns,
-      platformDescription: definition.description,
-    });
+type Exposure = { args: PropertyValidators; returns: GenericValidator; description?: string };
+
+function withPlatforms<Definition, Registered extends object>(builder: (definition: Definition) => Registered) {
+  return (definition: Definition & Exposure & { platforms?: true }): Registered =>
+    Object.assign(builder(definition), { exposure: definition.platforms ? definition : undefined });
 }
 
 export const internalQuery = withPlatforms(query);
 export const internalMutation = withPlatforms(mutation);
 export const internalAction = withPlatforms(action);
 
-type PlatformValidators = {
-  args: PropertyValidators;
-  returns: GenericValidator;
-  description?: string;
-};
-
-export function getPlatformValidators(
-  fn: unknown,
-  id: string,
-): PlatformValidators {
-  const definition = fn as {
-    platforms?: true;
-    platformArgs?: PropertyValidators;
-    platformReturns?: GenericValidator;
-    platformDescription?: string;
-  };
-  if (
-    definition.platforms !== true ||
-    !definition.platformArgs ||
-    !definition.platformReturns
-  )
-    throw new Error(
-      `${id}: use an internal builder from @disposabl-kit/server with platforms: true`,
-    );
-  const { userId, ...args } = definition.platformArgs;
-  if (
-    userId?.kind !== "id" ||
-    userId.tableName !== "users" ||
-    userId.isOptional !== "required"
-  )
-    throw new Error(`${id}: platform functions require userId: v.id("users")`);
-  return { args, returns: definition.platformReturns, description: definition.platformDescription };
-}
-
-export type PlatformDefinition = PlatformValidators &
-  {
-    [Kind in FunctionType]: {
-      kind: Kind;
-      reference: FunctionReference<Kind, "internal">;
-    };
-  }[FunctionType];
-
-export type PlatformOperation = PlatformDefinition & {
+export type PlatformOperation = Omit<Exposure, "description"> & {
+  id: string;
+  kind: FunctionType;
   name: string;
-  description: string;
   path: `/api/${string}`;
+  description: string;
+  scope: "read" | "write";
 };
 
-type PlatformCaller = {
-  userId: string;
-  scopes: readonly string[];
-  clientId?: string;
-};
-
-export type AuthenticatePlatform = (
-  ctx: GenericActionCtx<GenericDataModel>,
-  request: Request,
-) => Promise<PlatformCaller | null>;
-
-export function platformScope(operation: PlatformOperation) {
-  return operation.kind === "query" ? "read" : "write";
-}
-
-export function createPlatformOperations(
-  definitions: readonly PlatformDefinition[],
-): PlatformOperation[] {
+export function createOperations(modules: Record<string, Record<string, unknown>>) {
+  const operations: PlatformOperation[] = [];
   const names = new Set<string>();
   const paths = new Set<string>();
-  return definitions.map((definition) => {
-    const id = getFunctionName(definition.reference);
-    const name = id.replace(/[^A-Za-z0-9_.-]/g, "_");
-    const path = `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}` as const;
-    if (names.has(name) || paths.has(path)) {
-      throw new Error(`${id}: duplicate platform tool name or API path`);
+  for (const [module, exports] of Object.entries(modules)) {
+    for (const [name, value] of Object.entries(exports)) {
+      const fn = value as {
+        exposure?: Exposure;
+        isInternal?: boolean;
+        isQuery?: boolean;
+        isMutation?: boolean;
+        isAction?: boolean;
+      } | null;
+      if (!fn?.exposure) continue;
+      const id = `${module}:${name}`;
+      const kind = fn.isQuery ? "query" : fn.isMutation ? "mutation" : fn.isAction ? "action" : null;
+      if (!fn.isInternal || !kind) throw new Error(`${id}: expose an internal Convex function`);
+      const { userId, ...args } = fn.exposure.args;
+      if (userId?.kind !== "id" || userId.tableName !== "users" || userId.isOptional !== "required") {
+        throw new Error(`${id}: platform functions require userId: v.id("users")`);
+      }
+      const toolName = id.replace(/[^A-Za-z0-9_.-]/g, "_");
+      const path = `/api/${id.replace(/\/internal:/, "/").replace(":", "/")}` as const;
+      if (names.has(toolName) || paths.has(path)) throw new Error(`${id}: duplicate platform tool name or API path`);
+      names.add(toolName);
+      paths.add(path);
+      operations.push({
+        id, kind, name: toolName, path, args, returns: fn.exposure.returns,
+        scope: kind === "query" ? "read" : "write",
+        description: fn.exposure.description ?? `Call ${id}.`,
+      });
     }
-    names.add(name);
-    paths.add(path);
-    return { ...definition, name, path, description: definition.description ?? `Call ${id}.` };
-  });
+  }
+  return operations;
 }
 
-export async function runPlatformOperation(
+export function runPlatformOperation(
   ctx: GenericActionCtx<GenericDataModel>,
   operation: PlatformOperation,
   args: Record<string, unknown>,
@@ -124,11 +70,8 @@ export async function runPlatformOperation(
 ): Promise<Value> {
   const input = { ...args, userId };
   switch (operation.kind) {
-    case "query":
-      return ctx.runQuery(operation.reference, input);
-    case "mutation":
-      return ctx.runMutation(operation.reference, input);
-    case "action":
-      return ctx.runAction(operation.reference, input);
+    case "query": return ctx.runQuery(makeFunctionReference<"query">(operation.id), input);
+    case "mutation": return ctx.runMutation(makeFunctionReference<"mutation">(operation.id), input);
+    case "action": return ctx.runAction(makeFunctionReference<"action">(operation.id), input);
   }
 }

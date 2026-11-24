@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { project } from "../packages/disposabl-kit/server/project-config.mjs";
+import { appPlatform as platform } from "../packages/backend/app-platform.ts";
 
 export function releaseMatrices(entries, publicRepo) {
   const publicAndroid = entry => publicRepo && entry.platform === "android";
@@ -25,7 +25,7 @@ export function deploymentPlan(config, publicRepo) {
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const outputs = deploymentPlan(project, process.env.PUBLIC_REPO === "true");
+  const outputs = deploymentPlan(platform, process.env.PUBLIC_REPO === "true");
   appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(outputs)
     .map(([name, value]) => `${name}=${JSON.stringify(value)}\n`).join(""));
 }

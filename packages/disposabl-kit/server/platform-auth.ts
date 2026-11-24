@@ -2,7 +2,7 @@ import type { HttpRouter } from "convex/server";
 import { api, components } from "../../backend/convex/_generated/api";
 import { httpAction } from "../../backend/convex/_generated/server";
 import { siteOrigin } from "../../backend/convex/authSettings";
-import { platformSession, privateHeaders, readBody, readRequestText, reply } from "./auth";
+import { platformSession, privateHeaders, readBody, readRequestText, reply } from "./requests";
 
 const requestId = /^[a-zA-Z0-9_-]{1,128}$/;
 const credentialsPath = "/api/platform/credentials";

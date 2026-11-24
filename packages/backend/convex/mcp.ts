@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../app-platform";
 import { mcp } from "@disposabl-kit/server/mcp";
 import { internalMutation } from "./_generated/server";
 import { components } from "./_generated/api";
@@ -11,7 +11,7 @@ export const createServiceUser = internalMutation({
   args: { name: v.string() },
   returns: v.id("users"),
   handler: (ctx, { name }) => {
-    if (!project.api && !project.mcp) throw new Error("Enable api or mcp in disposabl.json");
+    if (!platform.api && !platform.mcp) throw new Error("Enable api or mcp in disposabl.json");
     const label = name.trim();
     if (!label || label.length > 120) throw new Error("Use a service name between 1 and 120 characters");
     return ctx.db.insert("users", { name: label });

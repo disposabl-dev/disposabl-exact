@@ -19,11 +19,11 @@ Starter kit for building apps and agents with Exact and Convex.
 
 When upgrading a draft configuration that listed only `api` and `mcp`, add the client platforms you were shipping and list your enabled features explicitly. An app already using Autumn should include both `authentication` and `payments`.
 
-`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. CI uses the same validator. Run `bun test packages/backend/tests/project-config.test.ts` to check all platform and feature selections.
+`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. CI uses the same validator. Use `import { platform } from "@disposabl-kit/server/platforms.ts"` to share platform names, feature names, and the live feature query. Run `bun test packages/backend/tests/platforms.test.ts` to check all platform and feature selections.
 
 ## First deployment from a new repository
 
-Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex project. Enable Static Hosting if you select web. Configure the following GitHub Actions secrets before the push that starts your first deployment.
+Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex deployment. Enable Static Hosting if you select web. Configure the following GitHub Actions secrets before the push that starts your first deployment.
 
 | Scope | Name | Value |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconn
 - Mutations and actions use POST with `Content-Type: application/json`. Put the named arguments directly in the body, such as `{"amount": 2}`. Send `{}` for an operation with no arguments.
 - MCP marks queries read-only and publishes the argument schema for each tool. The shared demo counter is available at `GET /api/counter/current` and as `counter_current` at `/mcp`.
 
-The kit discovers marked functions in the Convex source. `bun run dev` from `packages/backend` updates the registry as you add, change, or remove functions. CI generates it before deploying. A Node-runtime action can be called from an opted-in default-runtime internal action.
+Add the function's module to [operations.ts](packages/disposabl-kit/server/operations.ts). REST and MCP both use that list. A Node-runtime action can be called from a default-runtime internal action on the list.
 
 When REST is enabled, `/openapi.json` describes the available operations, their arguments and results, and their key scopes. REST and MCP use the same registry. Add a `description` to the function declaration to explain what the operation does.
 

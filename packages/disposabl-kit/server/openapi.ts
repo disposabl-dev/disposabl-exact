@@ -1,6 +1,6 @@
 import { toJsonSchema, type JSONSchema } from "@convex-dev/mcp";
 import { convexToJson, v, type GenericValidator } from "convex/values";
-import { platformScope, type PlatformOperation } from "./functions";
+import type { PlatformOperation } from "./functions";
 
 export function isTextParameter(validator: GenericValidator | undefined) {
   return validator?.kind === "string" || validator?.kind === "id" ||
@@ -66,7 +66,7 @@ export function createOpenApi(
         [query ? "get" : "post"]: {
           operationId: operation.name,
           description: operation.description,
-          "x-required-scope": platformScope(operation),
+          "x-required-scope": operation.scope,
           ...(query ? {
             parameters: Object.entries(operation.args).map(([name, field]) => {
               const schema = toJsonSchema(field);

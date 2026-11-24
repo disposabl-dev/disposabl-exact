@@ -1,13 +1,13 @@
 import type { setupGoogle } from "@convex-dev/auth/methods/google/server";
 import { componentsGeneric, createFunctionHandle } from "convex/server";
-import { project } from "@disposabl-kit/server/project-config";
+import { appPlatform as platform } from "../app-platform";
 import { env } from "./_generated/server";
 
 export const GOOGLE_WEB_RETURN = "/.exact/auth/callback";
 export const GOOGLE_NATIVE_RETURN = "/api/auth/native-return";
 export const GOOGLE_NATIVE_CALLBACK = "dev.disposabl.exact:/oauth/google";
 export const siteOrigin = () => new URL(env.CONVEX_SITE_URL).origin;
-export const googleEnabled = () => project.authentication && project.frontend && Boolean(
+export const googleEnabled = () => platform.authentication && platform.frontend && Boolean(
   env.AUTH_GOOGLE_CLIENT_ID?.trim() && env.AUTH_GOOGLE_CLIENT_SECRET?.trim(),
 );
 
