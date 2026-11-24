@@ -22,7 +22,9 @@ jobs:
         run: ~/.local/bin/exact-sandbox-run bash -eu -c 'cd "$EXACT"; cargo fetch --offline --locked'
       - name: Install the app dependencies
         working-directory: apps/apps
-        run: ~/.local/bin/exact-sandbox-run bun install --frozen-lockfile
+        run: |
+          ~/.local/bin/exact-sandbox-run bun exact.mjs --help >/dev/null
+          ~/.local/bin/exact-sandbox-run bun install --frozen-lockfile
       - name: Build the web app
         working-directory: apps/apps
         run: ~/.local/bin/exact-sandbox-run bun exact.mjs web-build --out dist-portable-ci
