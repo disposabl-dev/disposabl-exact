@@ -57,7 +57,10 @@ if args.generate_on_runner:
     raise SystemExit
 
 app = Path(__file__).resolve().parents[4]
-platforms = json.loads(subprocess.check_output(["bun", str(app / "packages/backend/app-platform.ts"), "--mobile"]))
+platforms = json.loads(subprocess.check_output([
+    "bun", "--print",
+    'JSON.stringify((await import("./packages/backend/app-platform.ts")).appPlatform.mobile)',
+], cwd=app))
 if args.play and "android" not in platforms:
     parser.error("--play requires android in disposabl.json")
 if not {"android", "ios"}.intersection(platforms):

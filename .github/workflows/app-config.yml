@@ -23,3 +23,6 @@ jobs:
       - run: bun install --cwd packages --frozen-lockfile
       - run: bun run --cwd packages/backend lint
       - run: bun test packages/backend/tests/platforms.test.ts
+      - run: bun run --cwd packages/backend dev --once
+        env:
+          CONVEX_AGENT_MODE: anonymous
