@@ -92,27 +92,16 @@ Use `["read","write"]` for an integration that needs write access. Revoke the ke
 
 ### CLI and TypeScript SDK
 
-Choose `cli` or `typescript-sdk` to build and pack that client in GitHub Actions.
-The workflow tests tarballs on pull requests and uploads them as artifacts. It
-generates the SDK from the checkout's OpenAPI contract on an isolated local
-Convex deployment. See the [CLI](packages/cli/README.md) and
-[SDK](packages/sdk/README.md) for usage.
+Choose `cli` or `typescript-sdk` to build and test that package in GitHub Actions.
+The workflow uploads npm tarballs for the configured app. It generates the SDK
+from the app's OpenAPI contract on an isolated Convex deployment.
 
-To publish app clients, set the package name and version in each selected
-`package.json`. For each npm package, configure a GitHub Trusted Publisher for
-your app repository and `clients.yml`. Then set the repository variable
-`NPM_PUBLISH_APP_CLIENTS` to `true`. Main builds publish new versions. For an
-unpublished package, use npm's first-publication setup before enabling the
-workflow. Bump the package version to publish changed API types.
+Both clients use a scoped API key. Sign in on the web app to issue a personal
+key, or have a deployment operator issue a service key for a headless app.
+When payments are enabled, clients can read their account's plan and credits.
+Checkout and billing management are available on the web app.
 
-The official `@disposabl/cli` and `@disposabl/sdk` serve the Disposabl
-management API. Maintain their npm Trusted Publisher settings for
-`disposabl-dev/disposabl-exact`, workflow `disposabl-clients.yml`. Run that
-workflow from Exact's main branch with a full source SHA from
-`create-disposabl-app` main and a new npm version. Leave **Publish to npm**
-off to qualify a tarball before releasing. For the official CLI, set the
-public ingestion variables `DISPOSABL_CLI_POSTHOG_PROJECT_TOKEN` and
-`DISPOSABL_CLI_POSTHOG_HOST` in Exact as well.
+See the [CLI](packages/cli/README.md) and [SDK](packages/sdk/README.md) for usage.
 
 ### Translations
 

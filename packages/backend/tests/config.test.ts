@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { deploymentOutputs, platform } from "@disposabl-kit/server/platforms.ts";
 
 test("payments requires authentication", () => {
-  expect(() => platform.read({ platforms: ["web"], features: ["payments"] }))
-    .toThrow('Add "authentication" to "features" or remove "payments".');
+  for (const platforms of [["web"], ["cli"], ["typescript-sdk"], ["cli", "typescript-sdk"]]) {
+    expect(() => platform.read({ platforms, features: ["payments"] }))
+      .toThrow('Add "authentication" to "features" or remove "payments".');
+  }
 });
 
 test("deploy only builds selected clients", () => {

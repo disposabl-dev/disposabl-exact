@@ -13,7 +13,7 @@ const tools = Object.fromEntries(operations.map(operation => [
   operation.name,
   tool({
     args: operation.args, returns: operation.returns, description: operation.description,
-    scope: operation.scope, annotations: { readOnlyHint: operation.kind === "query" },
+    scope: operation.scope, annotations: { readOnlyHint: operation.scope === "read" },
     handler: (ctx, args, user) => invoke(ctx, operation, args as Record<string, Value>, user.userId),
   }),
 ]));

@@ -12,3 +12,6 @@ const client = createClient({
 });
 const { data } = await counterCurrent({ client, throwOnError: true });
 ```
+
+When payments are enabled at build time, `billingIndexStatus({ client })`
+reads billing status for the account that owns the API key.

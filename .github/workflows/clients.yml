@@ -4,102 +4,39 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  select:
+  clients:
+    name: Clients / ${{ matrix.profile }}
     runs-on: ubuntu-latest
-    outputs:
-      packages: ${{ steps.config.outputs.packages }}
-      bun-version: ${{ steps.pin.outputs.bun-version }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [configured, auth-off, auth-on, payments]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - id: pin
         run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: ${{ steps.pin.outputs.bun-version }}
-      - id: config
-        run: |
-          bun -e 'import { platform } from "./packages/disposabl-kit/server/platform.ts"; console.log("packages=" + JSON.stringify(platform.packages))' >> "$GITHUB_OUTPUT"
-
-  pack:
-    name: Pack / ${{ matrix.package }}
-    needs: select
-    if: needs.select.outputs.packages != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.select.outputs.packages || '[]') }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          package-manager-cache: false
-      - uses: oven-sh/setup-bun@v2.2.0
-        if: matrix.package == 'sdk'
-        with:
-          bun-version: ${{ needs.select.outputs.bun-version }}
-      - name: Set package provenance metadata
+      - name: Test selected clients
         env:
-          PACKAGE: ${{ matrix.package }}
-        run: |
-          npm pkg set "repository.type=git" "repository.url=git+https://github.com/${GITHUB_REPOSITORY}.git" "repository.directory=packages/$PACKAGE" --prefix "packages/$PACKAGE"
-      - name: Pack CLI
-        if: matrix.package == 'cli'
-        run: bash .github/scripts/pack-client.sh cli "$RUNNER_TEMP/client"
-      - name: Generate SDK from an isolated backend and pack it
-        if: matrix.package == 'sdk'
-        env:
-          CONVEX_AGENT_MODE: anonymous
-        run: |
-          bun install --cwd packages/backend --frozen-lockfile
-          bun install --cwd packages/sdk --frozen-lockfile
-          bun run --cwd packages/backend dev --once --start 'bash ../../.github/scripts/pack-client.sh sdk "$RUNNER_TEMP/client"'
+          PROFILE: ${{ matrix.profile }}
+        run: bun packages/backend/tests/clients-ci.ts "$PROFILE" "$RUNNER_TEMP/clients"
       - uses: actions/upload-artifact@v7
+        if: matrix.profile == 'configured'
         with:
-          name: npm-${{ matrix.package }}
-          path: ${{ runner.temp }}/client
-          if-no-files-found: error
-
-  publish:
-    name: Publish / ${{ matrix.package }}
-    needs: [select, pack]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.NPM_PUBLISH_APP_CLIENTS == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.select.outputs.packages || '[]') }}
-    concurrency:
-      group: npm-app-${{ matrix.package }}
-      cancel-in-progress: false
-      queue: max
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-      - uses: actions/download-artifact@v7
-        with:
-          name: npm-${{ matrix.package }}
-          path: ${{ runner.temp }}/client
-      - run: bash .github/scripts/publish-client.sh "$RUNNER_TEMP/client" skip-existing
+          name: npm-clients
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/clients/*.tgz

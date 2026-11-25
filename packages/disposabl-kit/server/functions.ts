@@ -13,11 +13,13 @@ function expose<Definition, Registered>(
     returns: unknown;
     description?: string;
     platforms?: true;
+    feature?: "authentication" | "payments";
+    readOnly?: true;
   }): Registered => {
     const registered = builder(definition);
     if (definition.platforms) {
-      const { args, returns, description } = definition;
-      Object.assign(registered as object, { platform: { args, returns, description, kind } });
+      const { args, returns, description, feature, readOnly } = definition;
+      Object.assign(registered as object, { platform: { args, returns, description, kind, feature, readOnly } });
     }
     return registered;
   };
