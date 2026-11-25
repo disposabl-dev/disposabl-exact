@@ -23,7 +23,7 @@ jobs:
       - run: bun install --cwd packages/backend --frozen-lockfile
       - run: bun run --cwd packages/backend lint
       - run: node --check .github/actions/exact-setup/scripts/mobile-updates.mjs
-      - run: bun test packages/backend/tests/platforms.test.ts
-      - run: bun run --cwd packages/backend dev --once --run app:features
+      - run: bun test packages/backend/tests/config.test.ts
+      - run: bun run --cwd packages/backend dev --once --start 'bun --env-file=.env.local test ./tests/access.e2e.ts'
         env:
           CONVEX_AGENT_MODE: anonymous

@@ -19,7 +19,7 @@ Starter kit for building apps and agents with Exact and Convex.
 
 When upgrading a draft configuration that listed only `api` and `mcp`, add the client platforms you were shipping and list your enabled features explicitly. An app already using Autumn should include both `authentication` and `payments`.
 
-`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. The backend and CI share the validator in [platform.ts](packages/disposabl-kit/server/platform.ts). App clients subscribe to `app:features` for the active settings. Run `bun test packages/backend/tests/platforms.test.ts` to check all platform and feature selections.
+`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. The backend and CI share the validator in [platform.ts](packages/disposabl-kit/server/platform.ts). App clients subscribe to `app:features` for the active settings.
 
 ## First deployment from a new repository
 
@@ -71,8 +71,6 @@ Exact uses Convex Auth `2.1.0` on web, Android, and iOS. Username and password w
 
 Android and iOS use the system browser for Google. The Convex callback returns through a fixed app URL scheme, and the app must hold the separate Convex state to redeem the one-time ticket. The web session lives in a Secure, HttpOnly cookie. Native sessions live in the Keychain or Android Keystore-backed storage. Sign-out revokes the backing Convex session before the app clears its session. Queries for account data verify the session server-side.
 
-Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend` against an isolated local deployment. Set `EXPECT_GOOGLE=0` or `EXPECT_GOOGLE=1` to assert the expected Google configuration.
-
 ### API and MCP
 
 Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json). Import `internalQuery`, `internalMutation` or `internalAction` from `@disposabl-kit/server`, then add `platforms: true` to an exported function. See [counter.ts](packages/backend/convex/counter.ts). Add `userId: v.id("users")` if the function uses account data. The server supplies the verified user ID.
@@ -100,11 +98,18 @@ Put app-authored copy in `apps/apps/strings/<locale>.json` and render it with `t
 
 To add a language, add `strings/<locale>.json` with the same keys and placeholders as the base catalog. Exact defaults to English. The build checks coverage and populates the dropdown from the catalog filenames. Single-language apps hide the dropdown. Switching works offline. The installed app name comes from `app.json` and uses the same name across locales at this Exact version.
 
-Exact validates translation calls and catalog syntax when it compiles the app. From `apps/apps`, run the Contract tests to check language switching, persistence, and fallback.
+Exact validates translation calls and catalog syntax when it compiles the app.
+
+## Tests
+
+Run from the repository root in a clean checkout. The access tests use a local Convex deployment without provider secrets.
 
 ```sh
-bun exact.mjs test web
+bun test packages/backend/tests/config.test.ts
+CONVEX_AGENT_MODE=anonymous bun run --cwd packages/backend dev --once --start 'bun --env-file=.env.local test ./tests/access.e2e.ts'
 ```
+
+With a local backend running, use `bun exact.mjs test web` from `apps/apps` to verify that the web app renders live Convex data.
 
 ## Monorepo layout
 
