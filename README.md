@@ -8,12 +8,12 @@ Starter kit for building apps and agents with Exact and Convex.
 
 ```json
 {
-  "platforms": ["web", "android", "ios", "macos", "api", "mcp"],
+  "platforms": ["web", "android", "ios", "macos", "api", "mcp", "cli", "typescript-sdk"],
   "features": ["authentication"]
 }
 ```
 
-- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, and `mcp`. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
+- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
 - Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
 - Commit and deploy a configuration change to enable or disable a selection. Connected clients receive the updated feature settings. Deploy App always requires the Convex deployment key. With an empty platform list, it deploys the backend to turn off the previously published endpoints and skips every client build. Existing accounts, billing records, API keys, and installers are retained.
 
@@ -89,6 +89,30 @@ bun run convex run mcp:createApiKeyForUser '{"userId":"<service user ID>","scope
 ```
 
 Use `["read","write"]` for an integration that needs write access. Revoke the key with `mcp:revokeServiceKey`, passing the `id` and `userId` returned on creation. Use `--prod` for the production deployment.
+
+### CLI and TypeScript SDK
+
+Choose `cli` or `typescript-sdk` to build and pack that client in GitHub Actions.
+The workflow tests tarballs on pull requests and uploads them as artifacts. It
+generates the SDK from the checkout's OpenAPI contract on an isolated local
+Convex deployment. See the [CLI](packages/cli/README.md) and
+[SDK](packages/sdk/README.md) for usage.
+
+To publish app clients, set the package name and version in each selected
+`package.json`. For each npm package, configure a GitHub Trusted Publisher for
+your app repository and `clients.yml`. Then set the repository variable
+`NPM_PUBLISH_APP_CLIENTS` to `true`. Main builds publish new versions. For an
+unpublished package, use npm's first-publication setup before enabling the
+workflow. Bump the package version to publish changed API types.
+
+The official `@disposabl/cli` and `@disposabl/sdk` serve the Disposabl
+management API. Maintain their npm Trusted Publisher settings for
+`disposabl-dev/disposabl-exact`, workflow `disposabl-clients.yml`. Run that
+workflow from Exact's main branch with a full source SHA from
+`create-disposabl-app` main and a new npm version. Leave **Publish to npm**
+off to qualify a tarball before releasing. For the official CLI, set the
+public ingestion variables `DISPOSABL_CLI_POSTHOG_PROJECT_TOKEN` and
+`DISPOSABL_CLI_POSTHOG_HOST` in Exact as well.
 
 ### Translations
 

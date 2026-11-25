@@ -29,3 +29,19 @@ test("deploy only builds selected clients", () => {
     public_android: [],
   });
 });
+
+test("CLI and TypeScript SDK enable only their packages and the API", () => {
+  for (const [platforms, packages] of [
+    [["cli"], ["cli"]],
+    [["typescript-sdk"], ["sdk"]],
+    [["cli", "typescript-sdk"], ["cli", "sdk"]],
+    [["api"], []],
+  ] as const) {
+    const selection = platform.read({ platforms, features: [] });
+    expect(selection.packages).toEqual([...packages]);
+    expect(selection.api).toBe(true);
+    expect(selection.mcp).toBe(false);
+    expect(selection.frontend).toBe(false);
+    expect(deploymentOutputs(selection, false).matrix).toEqual([]);
+  }
+});

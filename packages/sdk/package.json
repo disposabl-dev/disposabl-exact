@@ -1,0 +1,25 @@
+{
+  "name": "@disposabl/exact-sdk",
+  "version": "0.1.0",
+  "description": "Generated TypeScript client for an Exact app's API",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun prepare-spec.ts && openapi-ts && tsc"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "typescript": "~6.0.3"
+  }
+}
