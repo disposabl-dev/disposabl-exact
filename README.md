@@ -77,7 +77,7 @@ Run `bun --env-file=.env.local test ./tests/auth.e2e.ts` from `packages/backend`
 
 Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json). Import `internalQuery`, `internalMutation` or `internalAction` from `@disposabl-kit/server`, then add `platforms: true` to an exported function. See [counter.ts](packages/backend/convex/counter.ts). Add `userId: v.id("users")` if the function uses account data. The server supplies the verified user ID.
 
-`bun run dev` and deployment discover marked functions automatically. For a Node-only action, expose a default-runtime internal action that calls it. In any Exact app data source, call the same function with `callPlatform("counter:current", {}, store)` from [platform.ts](apps/apps/platform.ts). The call uses the signed-in app session on web, Android, iOS and macOS.
+`bun run dev` and deployment discover marked functions automatically. For a Node-only action, expose a default-runtime internal action that calls it. In any Exact app data source, call the same function with `callPlatform("counter:current", {}, store)` from [auth.ts](apps/apps/auth.ts). The call uses the signed-in app session on web, Android, iOS and macOS.
 
 Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 

@@ -1,4 +1,5 @@
 import type { Result, Sources, Store } from './app.contract.d.ts';
+import { jsonToConvex, type JSONValue, type Value } from 'convex/values';
 
 const site = import.meta.env.CONVEX_SITE_ORIGIN ?? 'http://127.0.0.1:3211';
 const nativeCallback = 'dev.disposabl.exact:/oauth/google';
@@ -34,6 +35,11 @@ export async function appRequest<T>(body: object, store: Store, signal?: AbortSi
     throw new Error(typeof result.error === 'string' ? result.error : 'UNAVAILABLE');
   }
   return response.json();
+}
+
+export async function callPlatform<T extends Value>(operation: string, args: object, store: Store): Promise<T> {
+  const result = await appRequest<JSONValue>({ operation, args }, store, undefined, 'platform');
+  return jsonToConvex(result) as T;
 }
 
 function acceptSession(response: AuthResponse, store: Store): AuthReply {
