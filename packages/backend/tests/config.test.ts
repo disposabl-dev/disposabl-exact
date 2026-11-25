@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { deploymentOutputs, platform } from "@disposabl-kit/server/platforms.ts";
 
 test("payments requires authentication", () => {
-  expect(() => platform.read({ platforms: ["web"], features: ["payments"] }))
-    .toThrow('Add "authentication" to "features" or remove "payments".');
+  for (const platforms of [["web"], ["cli"], ["typescript-sdk"], ["cli", "typescript-sdk"]]) {
+    expect(() => platform.read({ platforms, features: ["payments"] }))
+      .toThrow('Add "authentication" to "features" or remove "payments".');
+  }
 });
 
 test("deploy only builds selected clients", () => {
@@ -28,4 +30,20 @@ test("deploy only builds selected clients", () => {
     matrix: [],
     public_android: [],
   });
+});
+
+test("CLI and TypeScript SDK enable only their packages and the API", () => {
+  for (const [platforms, packages] of [
+    [["cli"], ["cli"]],
+    [["typescript-sdk"], ["sdk"]],
+    [["cli", "typescript-sdk"], ["cli", "sdk"]],
+    [["api"], []],
+  ] as const) {
+    const selection = platform.read({ platforms, features: [] });
+    expect(selection.packages).toEqual([...packages]);
+    expect(selection.api).toBe(true);
+    expect(selection.mcp).toBe(false);
+    expect(selection.frontend).toBe(false);
+    expect(deploymentOutputs(selection, false).matrix).toEqual([]);
+  }
 });

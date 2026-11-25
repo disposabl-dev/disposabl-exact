@@ -1,0 +1,4 @@
+/.openapi.json
+/dist/
+/src/generated/
+/src/query-parameters.generated.ts

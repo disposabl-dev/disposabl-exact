@@ -8,12 +8,12 @@ Starter kit for building apps and agents with Exact and Convex.
 
 ```json
 {
-  "platforms": ["web", "android", "ios", "macos", "api", "mcp"],
+  "platforms": ["web", "android", "ios", "macos", "api", "mcp", "cli", "typescript-sdk"],
   "features": ["authentication"]
 }
 ```
 
-- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, and `mcp`. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
+- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
 - Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
 - Commit and deploy a configuration change to enable or disable a selection. Connected clients receive the updated feature settings. Deploy App always requires the Convex deployment key. With an empty platform list, it deploys the backend to turn off the previously published endpoints and skips every client build. Existing accounts, billing records, API keys, and installers are retained.
 
@@ -77,9 +77,9 @@ Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json
 
 `bun run dev` and deployment discover marked functions automatically. For a Node-only action, expose a default-runtime internal action that calls it. In any Exact app data source, call the same function with `callPlatform("counter:current", {}, store)` from [auth.ts](apps/apps/auth.ts). The call uses the signed-in app session on web, Android, iOS and macOS.
 
-Sign in on the Exact web app at `/dashboard/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
+Sign in on the Exact web app at `/dashboard/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries and explicitly read-only actions. Write access allows mutations and other actions.
 
-The demo is `GET /api/counter/current` and MCP tool `counter_current`. REST queries use URL parameters. Mutations and actions take a JSON body with POST. `/openapi.json` describes the available operations and their scopes.
+The demo is `GET /api/counter/current` and MCP tool `counter_current`. REST read operations use GET with URL parameters. Write operations take a JSON body with POST. `/openapi.json` describes the available operations and their scopes.
 
 With web and authentication enabled, Exact web serves `/dashboard/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
 
@@ -89,6 +89,19 @@ bun run convex run mcp:createApiKeyForUser '{"userId":"<service user ID>","scope
 ```
 
 Use `["read","write"]` for an integration that needs write access. Revoke the key with `mcp:revokeServiceKey`, passing the `id` and `userId` returned on creation. Use `--prod` for the production deployment.
+
+### CLI and TypeScript SDK
+
+Choose `cli` or `typescript-sdk` to build and test that package in GitHub Actions.
+The workflow uploads npm tarballs for the configured app. It generates the SDK
+from the app's OpenAPI contract on an isolated Convex deployment.
+
+Both clients use a scoped API key. Sign in on the web app to issue a personal
+key, or have a deployment operator issue a service key for a headless app.
+When payments are enabled, clients can read their account's plan and credits.
+Checkout and billing management are available on the web app.
+
+See the [CLI](packages/cli/README.md) and [SDK](packages/sdk/README.md) for usage.
 
 ### Translations
 

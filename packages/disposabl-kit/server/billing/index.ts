@@ -1,6 +1,7 @@
-import { Autumn, type GetPlanResponse } from "autumn-js";
+import { Autumn, AutumnError, type GetCustomerResponse, type GetPlanResponse } from "autumn-js";
 import { v, type Infer } from "convex/values";
 import { platform } from "../platform";
+import type { Id } from "../../../backend/convex/_generated/dataModel";
 import { env, internalAction } from "../../../backend/convex/_generated/server";
 
 const credits = "disposabl_credits";
@@ -21,50 +22,65 @@ function matchesPlan(plan: GetPlanResponse) {
 
 const operation = v.union(v.literal("status"), v.literal("checkout"), v.literal("portal"));
 const offer = v.union(v.literal("monthly"), v.literal("topup"));
-const result = v.union(
-  v.object({
-    mode: v.union(v.literal("off"), v.literal("test"), v.literal("live")),
-    credits: v.union(v.number(), v.null()),
-    monthlyActive: v.boolean(),
-    planId: v.union(v.string(), v.null()),
-    managedOnWeb: v.boolean(),
-    currency: v.string(),
-    monthlyAmount: v.number(),
-    monthlyCredits: v.number(),
-    topupAmount: v.number(),
-    topupCredits: v.number(),
-  }),
-  v.object({ url: v.string() }),
-);
+export const statusResult = v.object({
+  mode: v.union(v.literal("off"), v.literal("test"), v.literal("live")),
+  credits: v.union(v.number(), v.null()),
+  monthlyActive: v.boolean(),
+  planId: v.union(v.string(), v.null()),
+  managedOnWeb: v.boolean(),
+  currency: v.string(),
+  monthlyAmount: v.number(),
+  monthlyCredits: v.number(),
+  topupAmount: v.number(),
+  topupCredits: v.number(),
+});
+const result = v.union(statusResult, v.object({ url: v.string() }));
+
+function billingProvider() {
+  if (!platform.payments) throw new Error("Enable payments in disposabl.json");
+  const secretKey = env.AUTUMN_SECRET_KEY?.trim();
+  const mode = secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
+  return { mode, client: mode === "off" ? null : new Autumn({ secretKey }) } as const;
+}
+
+function accountStatus(mode: Infer<typeof statusResult>["mode"], customer: Pick<GetCustomerResponse, "subscriptions" | "invoices" | "balances"> | null) {
+  const subscriptions = customer?.subscriptions.filter(plan => plan.planId === plans.monthly) ?? [];
+  const active = subscriptions.find(plan => plan.status === "active");
+  const latestInvoice = active && customer?.invoices
+    ?.filter(invoice => invoice.planIds.includes(active.planId) && invoice.createdAt >= active.startedAt)
+    .sort((left, right) => right.createdAt - left.createdAt)[0];
+  return {
+    ...offers, mode,
+    monthlyActive: subscriptions.length > 0,
+    planId: active?.planId ?? null,
+    managedOnWeb: latestInvoice?.processorType === "stripe",
+    credits: customer ? customer.balances[credits]?.remaining ?? 0 : null,
+  };
+}
+
+export async function readBillingStatus(userId: Id<"users">) {
+  const { client, mode } = billingProvider();
+  if (!client) return accountStatus(mode, null);
+  const customer = await client.customers.get({ customerId: `exact-${userId}`, expand: ["invoices"] })
+    .catch(error => {
+      if (error instanceof AutumnError && error.statusCode === 404) return null;
+      throw new Error("Billing unavailable");
+    });
+  return accountStatus(mode, customer);
+}
 
 export const request = internalAction({
   args: { userId: v.union(v.id("users"), v.null()), operation, offer: v.optional(offer), requestId: v.optional(v.string()) },
   returns: result,
   handler: async (_ctx, { userId, operation, offer, requestId }): Promise<Infer<typeof result>> => {
-    if (!platform.payments) throw new Error("Enable payments in disposabl.json");
-    const secretKey = env.AUTUMN_SECRET_KEY?.trim();
-    const mode = secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
-    const client = mode === "off" ? null : new Autumn({ secretKey });
+    const { client, mode } = billingProvider();
     const customerId = userId ? `exact-${userId}` : null;
     const customer = client && customerId ? await client.customers.getOrCreate({
       customerId,
       ...(operation === "status" ? { expand: ["invoices"] } : {}),
     }) : null;
-    const subscriptions = customer?.subscriptions.filter(plan => plan.planId === plans.monthly) ?? [];
-    const active = subscriptions.find(plan => plan.status === "active");
-    const monthlyActive = subscriptions.length > 0;
-
-    if (operation === "status") {
-      const latestInvoice = active && customer?.invoices
-        ?.filter(invoice => invoice.planIds.includes(active.planId) && invoice.createdAt >= active.startedAt)
-        .sort((left, right) => right.createdAt - left.createdAt)[0];
-      return {
-        ...offers, mode, monthlyActive,
-        planId: active?.planId ?? null,
-        managedOnWeb: latestInvoice?.processorType === "stripe",
-        credits: customer ? customer.balances[credits]?.remaining ?? 0 : null,
-      };
-    }
+    if (operation === "status") return accountStatus(mode, customer);
+    const monthlyActive = customer?.subscriptions.some(plan => plan.planId === plans.monthly) ?? false;
     if (!client || !customerId) throw new Error("Billing unavailable");
     const returnUrl = new URL("/dashboard/billing", env.CONVEX_SITE_URL).href;
 

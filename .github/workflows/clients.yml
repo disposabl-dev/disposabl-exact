@@ -1,0 +1,42 @@
+name: App CLI and TypeScript SDK
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  clients:
+    name: Clients / ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [configured, auth-off, auth-on, payments]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+      - name: Test selected clients
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: bun packages/backend/tests/clients-ci.ts "$PROFILE" "$RUNNER_TEMP/clients"
+      - uses: actions/upload-artifact@v7
+        if: matrix.profile == 'configured'
+        with:
+          name: npm-clients
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/clients/*.tgz

@@ -1,6 +1,6 @@
 import config from "../../../disposabl.json" with { type: "json" };
 
-const platforms: readonly string[] = ["web", "android", "ios", "macos", "api", "mcp"];
+const platforms: readonly string[] = ["web", "android", "ios", "macos", "api", "mcp", "cli", "typescript-sdk"];
 const features: readonly string[] = ["authentication", "payments"];
 
 function selection(value: unknown, allowed: readonly string[], key: string) {
@@ -29,11 +29,15 @@ function readPlatform(value: unknown) {
   const web = selected.has("web");
   const mobile: readonly ("android" | "ios")[] = (["android", "ios"] as const).filter(name => selected.has(name));
   const macos = selected.has("macos");
-  const api = selected.has("api");
+  const packages = [
+    ...(selected.has("cli") ? ["cli"] : []),
+    ...(selected.has("typescript-sdk") ? ["sdk"] : []),
+  ];
+  const api = selected.has("api") || packages.length > 0;
   const mcp = selected.has("mcp");
   const native = mobile.length > 0 || macos;
   return {
-    web, mobile, macos, api, mcp, authentication, payments,
+    web, mobile, macos, api, mcp, authentication, payments, packages,
     frontend: web || native,
     native,
     credentials: web && authentication && (api || mcp),
