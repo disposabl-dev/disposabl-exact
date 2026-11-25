@@ -1,7 +1,7 @@
 import { checkValue } from "@convex-dev/mcp";
 import { makeFunctionReference, type FunctionType, type GenericActionCtx, type GenericDataModel } from "convex/server";
 import { asObjectValidator, v, type GenericValidator, type PropertyValidators, type Value } from "convex/values";
-import definitions from "../platforms.generated";
+import definitions from "../../backend/platforms.generated";
 
 type PlatformFunction = {
   args: PropertyValidators | GenericValidator;

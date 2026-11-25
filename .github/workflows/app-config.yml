@@ -24,6 +24,6 @@ jobs:
       - run: bun run --cwd packages/backend lint
       - run: node --check .github/actions/exact-setup/scripts/mobile-updates.mjs
       - run: bun test packages/backend/tests/platforms.test.ts
-      - run: bun run --cwd packages/backend dev --once
+      - run: bun run --cwd packages/backend dev --once --run app:features
         env:
           CONVEX_AGENT_MODE: anonymous

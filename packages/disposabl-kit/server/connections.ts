@@ -1,14 +1,15 @@
 import type { HttpRouter } from "convex/server";
-import { api, components } from "./_generated/api";
-import { httpAction, type ActionCtx } from "./_generated/server";
+import { api, components } from "../../backend/convex/_generated/api";
+import { httpAction, type ActionCtx } from "../../backend/convex/_generated/server";
 import { siteOrigin } from "./authSettings";
-import { platformSession, privateHeaders, readBody, readRequestText, reply } from "./requests";
+import { privateHeaders, readBody, readRequestText, reply, requestClient } from "./requests";
+import type { PlatformSelection } from "./platform-types.d.ts";
 
 const consentPath = "/api/mcp/consent";
 const credentialsPath = "/api/platform/credentials";
 const requestId = /^[a-zA-Z0-9_-]{1,128}$/;
 
-type SessionClient = NonNullable<Awaited<ReturnType<typeof platformSession>>>;
+type SessionClient = NonNullable<Awaited<ReturnType<typeof requestClient>>>;
 function signedIn(
   handler: (ctx: ActionCtx, request: Request, client: SessionClient) => Promise<Response>,
   form = false,
@@ -20,8 +21,11 @@ function signedIn(
       ? request.headers.get("Content-Type")?.split(";")[0] === "application/x-www-form-urlencoded"
       : request.headers.get("X-Exact-Auth") === "1";
     if (!trustedOrigin || !trustedRequest) return reply({ error: "FORBIDDEN" }, 403);
-    const client = await platformSession(request);
-    return client ? handler(ctx, request, client) : reply({ error: "UNAUTHORIZED" }, 401);
+    const client = await requestClient(request, true);
+    if (!client || !await client.query(api.auth.viewer, {}).catch(() => null)) {
+      return reply({ error: "UNAUTHORIZED" }, 401);
+    }
+    return handler(ctx, request, client);
   });
 }
 
@@ -74,12 +78,13 @@ const change = signedIn(async (_ctx, request, client) => {
   return reply({ error: "INVALID_REQUEST" }, 400);
 });
 
-export function registerConsent(http: HttpRouter) {
-  http.route({ path: consentPath, method: "GET", handler: consent });
-  http.route({ path: consentPath, method: "POST", handler: decide });
-}
-
-export function registerCredentials(http: HttpRouter) {
-  http.route({ path: credentialsPath, method: "GET", handler: list });
-  http.route({ path: credentialsPath, method: "POST", handler: change });
+export function registerConnections(http: HttpRouter, config: Pick<PlatformSelection, "consent" | "credentials">) {
+  if (config.consent) {
+    http.route({ path: consentPath, method: "GET", handler: consent });
+    http.route({ path: consentPath, method: "POST", handler: decide });
+  }
+  if (config.credentials) {
+    http.route({ path: credentialsPath, method: "GET", handler: list });
+    http.route({ path: credentialsPath, method: "POST", handler: change });
+  }
 }

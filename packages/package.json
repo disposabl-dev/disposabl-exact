@@ -1,0 +1,8 @@
+{
+  "name": "disposabl",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "disposabl-kit"
+  ]
+}

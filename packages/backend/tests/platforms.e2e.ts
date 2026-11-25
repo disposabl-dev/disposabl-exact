@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
-import { mcp as server } from "../convex/mcp";
-import { appPlatform as platform } from "../app-platform";
+import { mcp as server } from "@disposabl-kit/server/mcp.ts";
+import { appPlatform as platform } from "@disposabl-kit/server/app-platform.ts";
 import { api } from "../convex/_generated/api";
 
 const site = process.env.CONVEX_SITE_URL;
@@ -55,6 +55,8 @@ async function signIn() {
 test("only the selected transports expose the internal counter", async () => {
   expect(server.lint()).toEqual([]);
   const client = new ConvexHttpClient(cloud);
+  const { authentication, payments, consent } = platform;
+  expect(await client.query(api.app.features, {})).toEqual({ authentication, payments, consent, credentials: platform.credentials });
   const expected = await client.query(api.counter.get, {});
   await expect(client.query(makeFunctionReference<"query">("counter:current"), {}))
     .rejects.toThrow("Could not find public function");

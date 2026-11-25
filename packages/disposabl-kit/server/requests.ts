@@ -1,7 +1,6 @@
 import { httpCookies, type HttpCookies } from "@convex-dev/auth/ssr";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "./_generated/api";
-import { env } from "./_generated/server";
+import { env } from "../../backend/convex/_generated/server";
 import { siteOrigin } from "./authSettings";
 
 export const cookieName = "__Host-exact-session";
@@ -64,13 +63,6 @@ export const authClient = (accessToken: string) =>
 export async function requestClient(request: Request, web: boolean) {
   const active = readSession(web ? await httpCookies(request).get(cookieName) : request.headers.get(sessionHeader));
   return active && authClient(active.accessToken);
-}
-
-export async function platformSession(request: Request) {
-  const client = await requestClient(request, true);
-  if (!client) return null;
-  const account = await client.query(api.auth.viewer, {}).catch(() => null);
-  return account ? client : null;
 }
 
 export function isAppRequest(request: Request, web: boolean) {

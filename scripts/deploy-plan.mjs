@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { appPlatform as platform } from "../packages/backend/app-platform.ts";
+import { appPlatform as platform } from "../packages/disposabl-kit/server/app-platform.ts";
 
 export function releaseMatrices(entries, publicRepo) {
   const publicAndroid = entry => publicRepo && entry.platform === "android";

@@ -1,8 +1,8 @@
 import { toJsonSchema, type JSONSchema } from "@convex-dev/mcp";
 import type { HttpRouter } from "convex/server";
 import { convexToJson, v, type GenericValidator, type Value } from "convex/values";
-import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { httpAction } from "../../backend/convex/_generated/server";
+import { api } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "./authSettings";
 import { mcp, service } from "./mcp";
 import { invoke, operations, validate, type Operation } from "./operations";

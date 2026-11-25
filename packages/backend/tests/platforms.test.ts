@@ -7,7 +7,7 @@ import { platform } from "@disposabl-kit/server/platforms.ts";
 const { features, platforms, read: readPlatform } = platform;
 
 process.env.CONVEX_SITE_URL = "http://127.0.0.1:3211";
-const { createHttp } = await import("../convex/http");
+const { createHttp } = await import("@disposabl-kit/server/http.ts");
 
 function combinations(values: readonly string[]) {
   return Array.from({ length: 2 ** values.length }, (_, mask) =>
@@ -106,8 +106,9 @@ test("dev stops before starting Convex when payments needs authentication", asyn
   try {
     for (const file of [
       "packages/backend/package.json",
-      "packages/backend/app-platform.ts",
-      "packages/disposabl-kit/server/platforms.ts",
+      "packages/disposabl-kit/server/app-platform.ts",
+      "packages/disposabl-kit/server/platforms-build.ts",
+      "packages/disposabl-kit/server/platform.ts",
     ]) {
       await Bun.write(join(appDir, file), Bun.file(new URL(`../../../${file}`, import.meta.url)));
     }

@@ -1,6 +1,6 @@
 import type { HttpRouter } from "convex/server";
-import { api, internal } from "../_generated/api";
-import { httpAction } from "../_generated/server";
+import { api, internal } from "../../../backend/convex/_generated/api";
+import { httpAction } from "../../../backend/convex/_generated/server";
 import { isAppRequest, readBody, reply, requestClient, statePattern } from "../requests";
 
 const billing = httpAction(async (ctx, request) => {

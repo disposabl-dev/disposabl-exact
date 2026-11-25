@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { appPlatform as platform } from "../app-platform";
-import { query } from "./_generated/server";
+import { appPlatform } from "./app-platform";
+import { query } from "../../backend/convex/_generated/server";
 
 export const features = query({
   args: {},
@@ -11,7 +11,7 @@ export const features = query({
     consent: v.boolean(),
   }),
   handler: () => {
-    const { authentication, payments, credentials, consent } = platform;
+    const { authentication, payments, credentials, consent } = appPlatform;
     return { authentication, payments, credentials, consent };
   },
 });

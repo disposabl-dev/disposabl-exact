@@ -3,20 +3,19 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "bun app-platform.ts && bun platforms-build.ts dev",
-    "generate:platforms": "bun platforms-build.ts",
+    "dev": "bun ../disposabl-kit/server/platforms-build.ts dev",
+    "generate:platforms": "bun ../disposabl-kit/server/platforms-build.ts",
     "deploy": "bun run generate:platforms && convex deploy",
     "logs": "convex logs",
     "typecheck": "bun run generate:platforms && tsc -p convex",
-    "lint": "npm run typecheck && eslint . --report-unused-disable-directives --max-warnings 0"
+    "lint": "bun run typecheck && cd .. && eslint --config backend/eslint.config.mjs backend/convex disposabl-kit/server --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@convex-dev/auth": "2.1.0",
     "@convex-dev/mcp": "0.1.0-alpha.7",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
-    "@disposabl-kit/server": "link:../disposabl-kit",
-    "autumn-js": "1.6.37",
+    "@disposabl-kit/server": "workspace:*",
     "convex": "^1.51.0"
   },
   "devDependencies": {
