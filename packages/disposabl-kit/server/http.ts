@@ -1,8 +1,7 @@
 import { httpCookies, isTokenExpiring, type TokenBundle } from "@convex-dev/auth/ssr";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { httpRouter } from "convex/server";
-import type { PlatformSelection } from "./platform-types.d.ts";
-import { appPlatform as platform } from "./app-platform";
+import { platform, type PlatformSelection } from "./platform";
 import { registerConnections } from "./connections";
 import { registerBilling } from "./billing/http";
 import { authClient, cookieName, isAppRequest, privateHeaders, readBody, readSession, reply, sessionHeader, statePattern, tokenPattern } from "./requests";

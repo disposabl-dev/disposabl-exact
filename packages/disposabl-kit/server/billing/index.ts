@@ -1,6 +1,6 @@
 import { Autumn, type GetPlanResponse } from "autumn-js";
 import { v, type Infer } from "convex/values";
-import { appPlatform as platform } from "../app-platform";
+import { platform } from "../platform";
 import { env, internalAction } from "../../../backend/convex/_generated/server";
 
 const credits = "disposabl_credits";

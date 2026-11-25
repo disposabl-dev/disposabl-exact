@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { mcp as server } from "@disposabl-kit/server/mcp.ts";
-import { appPlatform as platform } from "@disposabl-kit/server/app-platform.ts";
+import { platform } from "@disposabl-kit/server/platforms.ts";
 import { api } from "../convex/_generated/api";
 
 const site = process.env.CONVEX_SITE_URL;

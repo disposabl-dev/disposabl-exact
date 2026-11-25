@@ -4,7 +4,7 @@ import { getAuthUserId, setupConvexAuth } from "@convex-dev/auth/server";
 import { MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { RegisteredMutation } from "convex/server";
 import { v } from "convex/values";
-import { appPlatform as platform } from "./app-platform";
+import { platform } from "./platform";
 import { components, internal } from "../../backend/convex/_generated/api";
 import { internalMutation, mutation, query, type MutationCtx } from "../../backend/convex/_generated/server";
 import {

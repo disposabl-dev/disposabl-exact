@@ -2,7 +2,6 @@ import type { Answer, Result, Sources } from './app.contract.d.ts';
 import { authGrants, authSources } from './auth';
 import { billingSources } from './billing';
 import { languages } from './locales.generated';
-import { platform } from '@disposabl-kit/server/platforms.ts';
 import { convex } from '@exact/convex';
 import { getFunctionName, makeFunctionReference } from 'convex/server';
 import { convexToJson, jsonToConvex } from 'convex/values';
@@ -16,7 +15,7 @@ const origin = import.meta.env.CONVEX_ORIGIN;
 export const grants = `net.websocket ${origin}\n${authGrants}`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
-const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>(platform.featuresQuery);
+const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>('app:features');
 const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
 const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
 const credentials = '/api/platform/credentials';

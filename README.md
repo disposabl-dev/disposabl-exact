@@ -19,7 +19,7 @@ Starter kit for building apps and agents with Exact and Convex.
 
 When upgrading a draft configuration that listed only `api` and `mcp`, add the client platforms you were shipping and list your enabled features explicitly. An app already using Autumn should include both `authentication` and `payments`.
 
-`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. The shared validator is in `packages/disposabl-kit/server/platform.ts`, and CI uses it too. Use `import { platform } from "@disposabl-kit/server/platforms.ts"` to share platform names, feature names, and the live feature query. Run `bun test packages/backend/tests/platforms.test.ts` to check all platform and feature selections.
+`bun run dev` in `packages/backend` validates `disposabl.json` before starting Convex. The backend and CI share the validator in [platform.ts](packages/disposabl-kit/server/platform.ts). App clients subscribe to `app:features` for the active settings. Run `bun test packages/backend/tests/platforms.test.ts` to check all platform and feature selections.
 
 ## First deployment from a new repository
 

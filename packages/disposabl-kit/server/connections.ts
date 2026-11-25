@@ -3,7 +3,7 @@ import { api, components } from "../../backend/convex/_generated/api";
 import { httpAction, type ActionCtx } from "../../backend/convex/_generated/server";
 import { siteOrigin } from "./authSettings";
 import { privateHeaders, readBody, readRequestText, reply, requestClient } from "./requests";
-import type { PlatformSelection } from "./platform-types.d.ts";
+import type { PlatformSelection } from "./platform";
 
 const consentPath = "/api/mcp/consent";
 const credentialsPath = "/api/platform/credentials";

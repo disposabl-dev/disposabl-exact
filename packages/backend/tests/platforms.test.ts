@@ -106,7 +106,6 @@ test("dev stops before starting Convex when payments needs authentication", asyn
   try {
     for (const file of [
       "packages/backend/package.json",
-      "packages/disposabl-kit/server/app-platform.ts",
       "packages/disposabl-kit/server/platforms-build.ts",
       "packages/disposabl-kit/server/platform.ts",
     ]) {

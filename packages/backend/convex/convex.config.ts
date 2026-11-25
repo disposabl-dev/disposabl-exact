@@ -5,7 +5,7 @@ import username from "@convex-dev/auth/components/username/convex.config.js";
 import mcp from "@convex-dev/mcp/convex.config.js";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
-import { appPlatform as platform } from "@disposabl-kit/server/app-platform.ts";
+import { platform } from "@disposabl-kit/server/platforms.ts";
 import { app, googleConfigured } from "@disposabl-kit/server/components.ts";
 
 app.use(staticHosting);

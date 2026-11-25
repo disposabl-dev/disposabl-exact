@@ -1,6 +1,6 @@
 import type { setupGoogle } from "@convex-dev/auth/methods/google/server";
 import { componentsGeneric, createFunctionHandle } from "convex/server";
-import { appPlatform as platform } from "./app-platform";
+import { platform } from "./platform";
 import { env } from "../../backend/convex/_generated/server";
 
 export const GOOGLE_WEB_RETURN = "/.exact/auth/callback";

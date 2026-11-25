@@ -2,7 +2,7 @@ import { existsSync, watch } from "node:fs";
 import { rename } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./app-platform";
+import "./platform";
 
 const backendDir = fileURLToPath(new URL("../../backend/", import.meta.url));
 const sourceDir = resolve(backendDir, "convex");
@@ -35,7 +35,7 @@ async function writeGenerated(path: string, source: string) {
 }
 
 async function generate() {
-  await writeGenerated(resolve(sourceDir, "app.ts"), `${generated}\nexport { features } from "@disposabl-kit/server/features.ts";\n`);
+  await writeGenerated(resolve(sourceDir, "app.ts"), `${generated}\nexport { features } from "@disposabl-kit/server";\n`);
   const imports: string[] = [];
   const entries: string[] = [];
   for (const name of [...glob.scanSync(sourceDir)].sort()) {

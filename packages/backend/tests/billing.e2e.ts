@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appPlatform as platform } from "@disposabl-kit/server/app-platform.ts";
+import { platform } from "@disposabl-kit/server/platforms.ts";
 
 const site = process.env.CONVEX_SITE_URL;
 if (!site || new URL(site).hostname !== "127.0.0.1") {

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { McpServer, tool, type ToolCtx } from "@convex-dev/mcp";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { appPlatform as platform } from "./app-platform";
+import { platform } from "./platform";
 import { internalMutation } from "../../backend/convex/_generated/server";
 import { components } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "./authSettings";
