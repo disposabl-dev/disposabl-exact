@@ -4,8 +4,7 @@ import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign } from 'n
 import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { platform as selectedPlatforms } from '../../../../packages/disposabl-kit/server/platform.ts';
-import { releaseMatrices } from '../../../../scripts/deploy-plan.mjs';
+import { platform as selectedPlatforms, releaseMatrices } from '../../../../packages/disposabl-kit/server/platform.ts';
 
 const [command, platform] = process.argv.slice(2);
 if (command === 'plan' && !platform) {

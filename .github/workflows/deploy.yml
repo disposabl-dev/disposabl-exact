@@ -55,7 +55,12 @@ jobs:
       - id: plan
         env:
           PUBLIC_REPO: ${{ github.event.repository.visibility == 'public' }}
-        run: bun scripts/deploy-plan.mjs
+        run: |
+          bun run - <<'TS' >> "$GITHUB_OUTPUT"
+          import { deploymentOutputs, platform } from "./packages/disposabl-kit/server/platform.ts";
+          const outputs = deploymentOutputs(platform, process.env.PUBLIC_REPO === "true");
+          for (const [name, value] of Object.entries(outputs)) console.log(`${name}=${JSON.stringify(value)}`);
+          TS
 
   tools:
     name: Verify the pinned Exact release

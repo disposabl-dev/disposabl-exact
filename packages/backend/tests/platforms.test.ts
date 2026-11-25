@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deploymentPlan, releaseMatrices } from "../../../scripts/deploy-plan.mjs";
-import { platform } from "@disposabl-kit/server/platforms.ts";
+import { deploymentOutputs, platform, releaseMatrices } from "@disposabl-kit/server/platforms.ts";
 const { features, platforms, read: readPlatform } = platform;
 
 process.env.CONVEX_SITE_URL = "http://127.0.0.1:3211";
@@ -36,7 +35,7 @@ describe("disposabl.json", () => {
         for (const isPublic of [false, true]) {
           const expectedJobs = (web ? ["web"] : []).concat(mobile);
           const publicAndroid = isPublic && mobile.includes("android");
-          const plan = deploymentPlan(config, isPublic);
+          const plan = deploymentOutputs(config, isPublic);
           expect(plan.frontend).toBe(web || mobile.length > 0 || macos);
           expect(plan.macos).toBe(macos);
           expect(plan.web).toBe(web);

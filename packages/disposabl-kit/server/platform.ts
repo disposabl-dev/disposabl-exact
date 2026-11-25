@@ -49,3 +49,26 @@ export const platform = {
   features,
   read: readPlatform,
 } as const;
+
+export function releaseMatrices<Entry extends { platform: string }>(entries: readonly Entry[], publicRepo: boolean) {
+  const publicAndroid = (entry: Entry) => publicRepo && entry.platform === "android";
+  return {
+    matrix: entries.filter(entry => !publicAndroid(entry)),
+    public_android: entries.filter(publicAndroid),
+  };
+}
+
+export function deploymentOutputs(config: PlatformSelection, publicRepo: boolean) {
+  const builds = [
+    ...(config.web ? [{ platform: "web" }] : []),
+    ...config.mobile.map(platform => ({ platform, channel: "base-1" })),
+  ];
+  return {
+    web: config.web,
+    frontend: config.frontend,
+    mobile: config.mobile.length > 0,
+    "mobile-platforms": config.mobile,
+    macos: config.macos,
+    ...releaseMatrices(builds, publicRepo),
+  };
+}
