@@ -1,0 +1,26 @@
+{
+  "name": "@disposabl-kit/server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./server/functions.ts",
+    "./platforms.ts": "./server/platform.ts",
+    "./auth.ts": "./server/auth.ts",
+    "./auth-config.ts": "./server/auth-config.ts",
+    "./http.ts": "./server/http.ts",
+    "./mcp.ts": "./server/mcp.ts",
+    "./billing/index.ts": "./server/billing/index.ts",
+    "./components.ts": "./server/components.ts"
+  },
+  "dependencies": {
+    "@convex-dev/auth": "2.1.0",
+    "@convex-dev/mcp": "0.1.0-alpha.7",
+    "@convex-dev/rate-limiter": "0.3.2",
+    "@convex-dev/static-hosting": "0.2.2",
+    "autumn-js": "1.6.37",
+    "convex": "^1.51.0"
+  },
+  "devDependencies": {
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

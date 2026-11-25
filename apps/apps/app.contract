@@ -16,7 +16,7 @@ shape Languages
 shape Counter
   count: number
 
-shape IncrementReply
+shape Ok
   ok: bool
 
 shape AuthReply
@@ -25,11 +25,55 @@ shape AuthReply
   google: bool
   error: string
 
-shape GoogleReply
+shape ActionReply
   error: string
+
+shape Billing
+  mode: string
+  web: bool
+  monthlyActive: bool
+  planId: option<string>
+  managedOnWeb: bool
+  credits: option<number>
+  monthlyAmount: number
+  monthlyCredits: number
+  topupAmount: number
+  topupCredits: number
+
+shape Checkout
+  url: string
+
+shape AppFeatures
+  ready: bool
+  authentication: bool
+  payments: bool
+  credentials: bool
+  consent: bool
+
+shape Consent
+  client: string
+  destination: string
+  scopes: string[]
+shape Connection
+  id: string
+  name: string
+  scopes: string[]
+
+shape Credentials
+  connections: Connection[]
+
+shape CredentialReply
+  key: string
+
+fn scopeLabel(scope: string): string = (
+  scope == "read" ? t("mcp.read") : scope == "write" ? t("mcp.write") : scope
+)
 
 routes nav
   home "/"
+    pricing "/dashboard/billing"
+  consent "/consent"
+  credentials "/dashboard/api-keys"
 
 style LanguagePanel
   padding=12 gap=4 border-radius=14
@@ -66,10 +110,10 @@ component Apps
   }
   resource live = live() as shape ConvexLive else empty(status="connecting")
   resource counter = counter(live.rev) as shape Counter else empty(count=-1)
-  mutation incremented as shape IncrementReply
+  mutation incremented as shape Ok
   mutation checkedSession as shape AuthReply then sessionChecked
   mutation changedSession as shape AuthReply then sessionChanged
-  mutation googleBrowser as shape GoogleReply then googleBrowserFinished
+  mutation googleBrowser as shape ActionReply then googleBrowserFinished
   state authReady = false
   state authAttempted = false
   state signedIn = false
@@ -81,12 +125,15 @@ component Apps
   state creating = false
   derive authChanging = pending(changedSession) or pending(googleBrowser)
   derive authBusy = authChanging or pending(checkedSession)
+  resource appFeatures = loadAppFeatures(live.rev) as shape AppFeatures else empty()
   state liked = false
   state waited = 0
   state wait = 1
-  task restore when not authAttempted
+  task restore when appFeatures.authentication and not authAttempted
     after(1, checkSession)
-  task renew when authReady and not authChanging
+  task disableAuth when appFeatures.ready and not appFeatures.authentication and authAttempted
+    after(1, resetAuth)
+  task renew when appFeatures.authentication and authReady and not authChanging
     every(30000, checkSession)
   task reconnect when live.status == "closed"
     every(1000, retry)
@@ -95,34 +142,41 @@ component Apps
   action chooseLanguage(locale: string)
     setLocale(locale)
   action checkSession
-    if not authBusy
+    if appFeatures.authentication and not authBusy
       authAttempted = true
       send checkedSession = restoreSession()
+  action resetAuth
+    authAttempted = false
+    authReady = false
+    signedIn = false
+    password = ""
   action sessionChecked
-    match checkedSession
-      case some(result)
-        if result.error == ""
-          authReady = true
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          authError = ""
-        else if not authReady
-          authError = result.error
-      case none
-        authError = "session-check"
+    if not appFeatures.ready or appFeatures.authentication
+      match checkedSession
+        case some(result)
+          if result.error == ""
+            authReady = true
+            signedIn = result.signedIn
+            account = result.name
+            googleAvailable = result.google
+            authError = ""
+          else if not authReady
+            authError = result.error
+        case none
+          authError = "session-check"
   action sessionChanged
-    match changedSession
-      case some(result)
-        authError = result.error
-        if result.error == ""
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          username = ""
-          creating = false
-      case none
-        authError = "session-update"
+    if not appFeatures.ready or appFeatures.authentication
+      match changedSession
+        case some(result)
+          authError = result.error
+          if result.error == ""
+            signedIn = result.signedIn
+            account = result.name
+            googleAvailable = result.google
+            username = ""
+            creating = false
+        case none
+          authError = "session-update"
   action editUsername(value: string)
     username = value
   action editPassword(value: string)
@@ -145,18 +199,21 @@ component Apps
     if pending(googleBrowser)
       send googleBrowser = cancelGoogleSession()
   action googleBrowserFinished
-    match googleBrowser
-      case some(result)
-        if result.error == ""
-          send changedSession = finishGoogleSession()
-        else
-          authError = result.error
-      case none
-        authError = "google-failed"
+    if not appFeatures.ready or appFeatures.authentication
+      match googleBrowser
+        case some(result)
+          if result.error == ""
+            send changedSession = finishGoogleSession()
+          else
+            authError = result.error
+        case none
+          authError = "google-failed"
   action logout
     if not authBusy
       authError = ""
       send changedSession = signOut()
+  action follow(url: string)
+    nav = go(nav, url)
   action like
     liked = not liked
   action increment
@@ -176,61 +233,240 @@ component Apps
     refresh live
     refresh counter
   view
-    main testId="root" navigationKey=`${top(nav).id}` width="100%" height="100%"
+    main testId="root" navigationKey=`${top(nav).id}` navigate=follow width="100%" height="100%"
       for e in stack(nav) key=e.id
         // Keep the cover display's physical side controls clear in either direction.
         column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column" padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
           header display="flex" align-items="center"
-            text t("app.title") role="heading" aria-level=1 flex=1
-            button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
-              image (liked ? "symbol:heart-fill" : "symbol:heart")
+            text (e.name == "pricing" ? t("billing.title") : appFeatures.consent and e.name == "consent" ? t("mcp.title") : appFeatures.credentials and e.name == "credentials" ? t("keys.title") : t("app.title")) role="heading" aria-level=1 flex=1
+            if e.name == "home"
+              button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
+                image (liked ? "symbol:heart-fill" : "symbol:heart")
           scroll id="content" flex=1 min-height=0 padding=16
             column gap=12 align-items="flex-start"
-              text t("app.greeting", name=t("app.name")) testId="greeting"
-              if languages.length > 1
+              if e.name == "home"
+                text t("app.greeting", name=t("app.name")) testId="greeting"
+              if e.name != "pricing" and languages.length > 1
                 column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
                   select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
                     for choice in languages key=choice.tag
                       option choice.label value=choice.tag
                   button press=chooseLanguage("") testId="language-system"
                     text t("language.system")
-              column gap=10 width="100%" max-width="26.25rem"
-                text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
-                if authReady and signedIn
-                  text account testId="account-name"
-                  button press=logout disabled=authBusy testId="logout"
-                    text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
-                else if authReady
-                  input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
-                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
-                  if creating
-                    text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
-                  button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
-                    text (creating ? t("auth.create") : t("auth.signIn"))
-                  button press=toggleCreate disabled=authChanging testId="toggle-create"
-                    text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
-                  if googleAvailable
-                    if pending(googleBrowser)
-                      button press=cancelGoogle testId="cancel-google"
-                        text t("auth.cancelGoogle")
-                    else
-                      button press=submitGoogle disabled=authBusy testId="google-sign-in"
-                        text t("auth.google")
-                else if authError == ""
-                  text t("auth.checking") color="-exact-secondary-label"
-                else
-                  button press=checkSession disabled=authBusy testId="retry-auth"
-                    text t("app.tryAgain")
-                if authError != ""
-                  text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
-              text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
-              text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
-              if counter.count >= 0
-                text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
-              button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
-                text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
-              if failed(incremented)
-                text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
-              if live.status == "failed" or failed(counter)
-                button press=reconnectNow
-                  text t("counter.retry")
+              if e.name != "pricing" and appFeatures.authentication
+                column gap=10 width="100%" max-width="26.25rem"
+                  text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
+                  if authReady and signedIn
+                    text account testId="account-name"
+                    button press=logout disabled=authBusy testId="logout"
+                      text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
+                  else if authReady
+                    input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
+                    input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
+                    if creating
+                      text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
+                    button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
+                      text (creating ? t("auth.create") : t("auth.signIn"))
+                    button press=toggleCreate disabled=authChanging testId="toggle-create"
+                      text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
+                    if googleAvailable
+                      if pending(googleBrowser)
+                        button press=cancelGoogle testId="cancel-google"
+                          text t("auth.cancelGoogle")
+                      else
+                        button press=submitGoogle disabled=authBusy testId="google-sign-in"
+                          text t("auth.google")
+                  else if authError == ""
+                    text t("auth.checking") color="-exact-secondary-label"
+                  else
+                    button press=checkSession disabled=authBusy testId="retry-auth"
+                      text t("app.tryAgain")
+                  if authError != ""
+                    text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
+              if e.name == "consent"
+                if appFeatures.consent and e.id == top(nav).id
+                  if searchParam(e, "request") == "" or searchParam(e, "error") == "1"
+                    text t("mcp.expired") role="alert"
+                  else if signedIn
+                    ConsentForm(requestId=searchParam(e, "request"), authBusy=authBusy)
+              else if e.name == "credentials"
+                if appFeatures.credentials and signedIn and e.id == top(nav).id
+                  ApiKeys(authBusy=authBusy)
+              else if e.name == "pricing"
+                if not appFeatures.payments and appFeatures.ready
+                  text t("billing.disabled") testId="billing-disabled"
+                else if e.id == top(nav).id
+                  if appFeatures.payments and authReady
+                    Pricing(signedIn=signedIn, authBusy=authBusy)
+                  else
+                    text t("app.loading") testId="billing-loading"
+              else
+                if appFeatures.credentials
+                  link href=path("credentials") testId="credentials-link"
+                    text t("keys.title")
+                if appFeatures.payments
+                  link href=path("pricing") testId="pricing-link"
+                    text t("billing.title")
+                text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
+                text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
+                if counter.count >= 0
+                  text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
+                button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
+                  text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
+                if failed(incremented)
+                  text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
+                if live.status == "failed" or failed(counter)
+                  button press=reconnectNow
+                    text t("counter.retry")
+
+component ConsentForm
+  props
+    requestId: string
+    authBusy: bool
+  resource mcpConsent = loadMcpConsent(requestId) as shape Consent
+  mutation consentDecision as shape Ok
+  derive busy = authBusy or pending(consentDecision)
+  action decideConsent(decision: string)
+    if not busy and not pending(mcpConsent) and mcpConsent.client != ""
+      send consentDecision = decideMcpConsent(requestId, decision)
+  view
+    if pending(mcpConsent)
+      text t("app.loading")
+    else if failed(mcpConsent) or failed(consentDecision)
+      text t("mcp.failed") role="alert"
+    else
+      column gap=10 width="100%" max-width="26.25rem"
+        text t("mcp.client", client=mcpConsent.client) testId="mcp-client"
+        list
+          for scope in mcpConsent.scopes key=scope
+            text scopeLabel(scope)
+        text t("mcp.destination", url=mcpConsent.destination)
+        row gap=8
+          button press=decideConsent("deny") disabled=(busy) testId="mcp-deny"
+            text t("mcp.deny")
+          button press=decideConsent("approve") disabled=(busy) buttonStyle="filled" testId="mcp-approve"
+            text t("mcp.allow")
+
+component ApiKeys
+  props
+    authBusy: bool
+  resource credentials = listCredentials() as shape Credentials
+  mutation credentialChange as shape CredentialReply then credentialsChanged
+  derive busy = authBusy or pending(credentialChange)
+  state keyName = ""
+  state writeAccess = false
+  state revealedKey = ""
+  action editKeyName(value: string)
+    keyName = value
+  action setWriteAccess(value: bool)
+    writeAccess = value
+  action hideKey
+    revealedKey = ""
+  action copyKey
+    copyText(revealedKey)
+  action issueKey
+    if not busy and keyName.trim() != ""
+      revealedKey = ""
+      send credentialChange = createKey(keyName, writeAccess)
+  action revokeKey(id: string)
+    if not busy
+      revealedKey = ""
+      send credentialChange = revokeConnection(id)
+  action credentialsChanged
+    match credentialChange
+      case some(result)
+        revealedKey = result.key
+        if result.key != ""
+          keyName = ""
+          writeAccess = false
+        refresh credentials
+      case none
+        revealedKey = ""
+  view
+    column gap=10 width="100%" max-width="26.25rem"
+      input id="key-name" value=keyName input=editKeyName submit=issueKey maxlength=100 placeholder=t("keys.name") aria-label=t("keys.name") testId="key-name"
+      row gap=8 align-items="center"
+        input type="checkbox" checked=writeAccess change=setWriteAccess aria-label=t("keys.write") testId="key-write"
+        text t("keys.write")
+      button press=issueKey disabled=(busy or keyName.trim() == "") buttonStyle="filled" testId="key-create"
+        text t("keys.create")
+      if failed(credentialChange) or failed(credentials)
+        text t("keys.failed") role="alert"
+      if revealedKey != ""
+        text t("keys.copyNow")
+        text revealedKey testId="new-api-key"
+        row gap=8
+          button press=copyKey
+            text t("keys.copy")
+          button press=hideKey
+            text t("keys.hide")
+      if pending(credentials)
+        text t("app.loading")
+      else
+        list
+          for connection in credentials.connections key=connection.id
+            column gap=4
+              text connection.name
+              for scope in connection.scopes key=scope
+                text scopeLabel(scope)
+              button press=revokeKey(connection.id) disabled=(busy) aria-label=t("keys.revokeNamed", name=connection.name)
+                text t("keys.revoke")
+
+component Pricing
+  props
+    signedIn: bool
+    authBusy: bool
+  resource billing = loadBilling(signedIn) as shape Billing else empty()
+  mutation billingReply as shape Checkout then finishBilling
+  mutation billingNavigation as shape Ok
+  derive canBuy = signedIn and billing.web and not authBusy and not pending(billingReply) and not pending(billingNavigation)
+  action refreshBilling
+    refresh billing
+  action selectOffer(offer: string)
+    if canBuy and (offer != "monthly" or not billing.monthlyActive)
+      send billingReply = startBilling("checkout", offer)
+  action showBillingPortal
+    if canBuy
+      send billingReply = startBilling("portal", "")
+  action finishBilling
+    let url = match billingReply { case some(result) => result.url, case none => "" }
+    if signedIn and url != ""
+      send billingNavigation = openBilling(url)
+  view
+    column gap=16 width="100%" max-width="36rem" margin-left="auto" margin-right="auto"
+      if failed(billingReply) or failed(billingNavigation)
+        text t("billing.error") role="alert" testId="billing-error"
+      if failed(billing)
+        text t("billing.error") role="alert" testId="billing-error"
+        button press=refreshBilling
+          text t("app.tryAgain")
+      else if billing.mode == "off"
+        text t("billing.disabled") testId="billing-disabled"
+      else if billing.mode == ""
+        text t("app.loading") testId="billing-loading"
+      else
+        if billing.mode == "test"
+          text t("billing.preview") color="-exact-secondary-label" testId="billing-preview"
+        if not signedIn
+          link href=path("home") testId="billing-sign-in"
+            text t("billing.signIn")
+        else
+          match billing.credits
+            case some(balance)
+              text t("billing.balance", count=formatNumber(balance, "decimal")) testId="credit-balance"
+            case none
+              text t("app.loading")
+          if match billing.planId { case some(plan) => plan != "", case none => false }
+            text t("billing.active") testId="monthly-active"
+          if not billing.web and billing.managedOnWeb
+            text t("billing.managedOnWeb") color="-exact-secondary-label" testId="billing-managed-on-web"
+        if billing.web
+          button press=selectOffer("monthly") disabled=(not canBuy or billing.monthlyActive) testId="monthly"
+            text t("billing.monthlyOffer", count=formatNumber(billing.monthlyCredits, "decimal"), price=formatNumber(billing.monthlyAmount, "currency", "USD"))
+          button press=selectOffer("topup") disabled=(not canBuy) testId="topup"
+            text t("billing.topupOffer", count=formatNumber(billing.topupCredits, "decimal"), price=formatNumber(billing.topupAmount, "currency", "USD"))
+          if signedIn
+            button press=showBillingPortal disabled=(not canBuy) testId="manage-billing"
+              text t("billing.manage")
+        else if not billing.managedOnWeb
+          text t("billing.storeUnavailable") color="-exact-secondary-label"

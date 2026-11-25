@@ -1,4 +1,5 @@
 import type { Result, Sources, Store } from './app.contract.d.ts';
+import { jsonToConvex, type JSONValue, type Value } from 'convex/values';
 
 const site = import.meta.env.CONVEX_SITE_ORIGIN ?? 'http://127.0.0.1:3211';
 const nativeCallback = 'dev.disposabl.exact:/oauth/google';
@@ -20,9 +21,9 @@ declare global {
 type AuthReply = Result<'restoreSession'>;
 type AuthResponse = { viewer: { name: string } | null; google: boolean; session?: string };
 
-async function authRequest<T>(body: object, store: Store, signal?: AbortSignal): Promise<T> {
+export async function appRequest<T>(body: object, store: Store, signal?: AbortSignal, route = "auth"): Promise<T> {
   const web = exactHost() === 'web';
-  const url = web ? new URL('/api/auth/web', authCallback()).href : `${site}/api/auth/native`;
+  const url = web ? new URL(`/api/${route}/web`, authCallback()).href : `${site}/api/${route}/native`;
   const headers = new Headers({ 'Content-Type': 'application/json', 'X-Exact-Auth': '1' });
   const session = web ? null : store.get(sessionKey);
   if (session) headers.set('X-Exact-Session', session);
@@ -34,6 +35,11 @@ async function authRequest<T>(body: object, store: Store, signal?: AbortSignal):
     throw new Error(typeof result.error === 'string' ? result.error : 'UNAVAILABLE');
   }
   return response.json();
+}
+
+export async function callPlatform<T extends Value>(operation: string, args: object, store: Store): Promise<T> {
+  const result = await appRequest<JSONValue>({ operation, args }, store, undefined, 'platform');
+  return jsonToConvex(result) as T;
 }
 
 function acceptSession(response: AuthResponse, store: Store): AuthReply {
@@ -81,7 +87,7 @@ async function openGoogleSession(store: Store): Promise<Result<'openGoogleSessio
     if (exactHost() === 'web' && typeof prepareAuthSession === 'function') prepared = prepareAuthSession();
     const callback = authCallback();
     const state = crypto.randomUUID();
-    const started = await authRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store, attempt.signal);
+    const started = await appRequest<{ redirect: string; state: string }>({ operation: 'googleStart', callbackState: state }, store, attempt.signal);
     if (attempt.signal.aborted) return { error: 'google-cancelled' };
     const options = { callback, state, prepared: prepared ?? undefined };
     const returned = new URL(await openAuthSession(started.redirect, options));
@@ -104,14 +110,14 @@ async function openGoogleSession(store: Store): Promise<Result<'openGoogleSessio
 export const authSources = {
   restoreSession: async (_args, store) => {
     try {
-      return acceptSession(await authRequest<AuthResponse>({ operation: 'status' }, store), store);
+      return acceptSession(await appRequest<AuthResponse>({ operation: 'status' }, store), store);
     } catch {
       return authFailure('session-check');
     }
   },
   passwordSession: async ([username, password, create], store) => {
     try {
-      const response = await authRequest<AuthResponse>({ operation: 'password', username, password, create }, store);
+      const response = await appRequest<AuthResponse>({ operation: 'password', username, password, create }, store);
       return acceptSession(response, store);
     } catch (error) {
       return authFailure(passwordError(error, create));
@@ -130,7 +136,7 @@ export const authSources = {
     googleTicket = undefined;
     if (!ticket) return authFailure(googleError);
     try {
-      const response = await authRequest<AuthResponse>({ operation: 'googleComplete', ...ticket }, store);
+      const response = await appRequest<AuthResponse>({ operation: 'googleComplete', ...ticket }, store);
       return acceptSession(response, store);
     } catch {
       return authFailure(googleError);
@@ -138,7 +144,7 @@ export const authSources = {
   },
   signOut: async (_args, store) => {
     try {
-      return acceptSession(await authRequest<AuthResponse>({ operation: 'signOut' }, store), store);
+      return acceptSession(await appRequest<AuthResponse>({ operation: 'signOut' }, store), store);
     } catch {
       return authFailure('sign-out');
     }

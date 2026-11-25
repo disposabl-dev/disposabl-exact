@@ -17,9 +17,11 @@ const compat = new FlatCompat({
   allConfig: js.configs.all,
 });
 
+const files = ["backend/convex/**/*.ts", "disposabl-kit/server/**/*.ts"];
+
 export default defineConfig([
   {
-    files: ["convex/**/*.ts"],
+    files,
     languageOptions: {
       globals: {
         ...globals.browser,
@@ -57,6 +59,6 @@ export default defineConfig([
       "@typescript-eslint/require-await": "off",
     },
   },
-  globalIgnores(["convex/_generated"]),
-  ...convexPlugin.configs.recommended,
+  globalIgnores(["backend/convex/_generated", "disposabl-kit/server/platforms-build.ts"]),
+  ...convexPlugin.configs.recommended.map((config) => ({ ...config, files })),
 ]);

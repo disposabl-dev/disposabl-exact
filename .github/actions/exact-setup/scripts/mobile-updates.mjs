@@ -4,6 +4,7 @@ import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign } from 'n
 import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { platform as selectedPlatforms, releaseMatrices } from '../../../../packages/disposabl-kit/server/platform.ts';
 
 const [command, platform] = process.argv.slice(2);
 if (command === 'plan' && !platform) {
@@ -16,12 +17,16 @@ if (command === 'plan' && !platform) {
   const appDir = resolve(worktree, 'apps/apps');
   let added = false;
   try {
-    execFileSync('git', ['worktree', 'add', '--quiet', '--detach', worktree, 'HEAD'], { env: cleanEnv, stdio: 'inherit' });
-    added = true;
-    mkdirSync(resolve(appDir, '.exact'), { recursive: true });
-    symlinkSync(EXACT, resolve(appDir, '.exact/checkout'));
-    execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: appDir, env: cleanEnv, stdio: 'inherit' });
-    const platforms = [['android', process.cwd()], ['ios', appDir]];
+    if (selectedPlatforms.mobile.length > 1) {
+      execFileSync('git', ['worktree', 'add', '--quiet', '--detach', worktree, 'HEAD'], { env: cleanEnv, stdio: 'inherit' });
+      added = true;
+      mkdirSync(resolve(appDir, '.exact'), { recursive: true });
+      symlinkSync(EXACT, resolve(appDir, '.exact/checkout'));
+      execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: appDir, env: cleanEnv, stdio: 'inherit' });
+    }
+    const platforms = selectedPlatforms.mobile.map(name => [
+      name, name === 'ios' && added ? appDir : process.cwd(),
+    ]);
     const results = await Promise.allSettled(platforms.map(([name, cwd]) => new Promise((resolveChild, reject) => {
       const output = resolve(tmp, `${name}.output`);
       writeFileSync(output, '');
@@ -42,8 +47,9 @@ if (command === 'plan' && !platform) {
     const failed = results.filter(result => result.status === 'rejected');
     if (failed.length) throw new AggregateError(failed.map(result => result.reason), 'Mobile update delivery failed');
     const native = results.map(result => result.value).filter(Boolean);
-    const isPublicAndroid = item => process.env.PUBLIC_REPO === 'true' && item.platform === 'android';
-    appendFileSync(GITHUB_OUTPUT, `matrix=${JSON.stringify(native.filter(item => !isPublicAndroid(item)))}\npublic_android=${JSON.stringify(native.filter(isPublicAndroid))}\n`);
+    const matrices = releaseMatrices(native, process.env.PUBLIC_REPO === 'true');
+    appendFileSync(GITHUB_OUTPUT, Object.entries(matrices)
+      .map(([name, matrix]) => `${name}=${JSON.stringify(matrix)}\n`).join(''));
   } finally {
     if (added) execFileSync('git', ['worktree', 'remove', '--force', worktree], { env: cleanEnv, stdio: 'inherit' });
     rmSync(tmp, { recursive: true, force: true });
@@ -53,6 +59,7 @@ if (command === 'plan' && !platform) {
 const probing = command === 'first' && !platform;
 if (!probing && (!['configure', 'deliver', 'seed'].includes(command) || !['ios', 'android'].includes(platform)))
   throw Error('expected first, plan or configure|deliver|seed ios|android');
+if (command === 'deliver' && !selectedPlatforms.mobile.includes(platform)) throw Error(`${platform} is not selected in disposabl.json`);
 
 const env = process.env;
 const { EXACT, EXACT_REF, GITHUB_REPOSITORY, GITHUB_SHA, CONVEX_ORIGIN } = env;
@@ -100,7 +107,7 @@ function updateKey(platform) {
 if (probing) {
   // This read-only hint starts the three first builds in parallel. All other
   // replies go through Exact's full compatibility and signature checks.
-  const empty = await Promise.all(['android', 'ios'].map(async target => {
+  const empty = await Promise.all(selectedPlatforms.mobile.map(async target => {
     const { publicKey } = updateKey(target);
     const keyId = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex').slice(0, 32);
     try {
@@ -113,7 +120,7 @@ if (probing) {
     } catch { return false; }
   }));
   secret.fill(0);
-  appendFileSync(env.GITHUB_OUTPUT, `first=${empty.every(Boolean)}\n`);
+  appendFileSync(env.GITHUB_OUTPUT, `first=${empty.length > 0 && empty.every(Boolean)}\n`);
   process.exit(0);
 }
 const { privateKey, publicKey } = updateKey(platform);

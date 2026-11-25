@@ -1,4 +1,1 @@
-import { convexAuthProvider } from "@convex-dev/auth/server";
-import type { AuthConfig } from "convex/server";
-
-export default { providers: [convexAuthProvider()] } satisfies AuthConfig;
+export { default } from "@disposabl-kit/server/auth-config.ts";

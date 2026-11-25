@@ -28,13 +28,18 @@ env:
     rm -f dist/convex/.exact-build.json
 
 jobs:
-  tools:
-    name: Verify the pinned Exact release
+  config:
+    name: Select app platforms
     if: github.event_name == 'push'
-    runs-on: blacksmith-2vcpu-ubuntu-2604
-    # A cache build may take the publisher's full 120-minute job budget.
-    timeout-minutes: 145
+    runs-on: ubuntu-latest
     outputs:
+      web: ${{ steps.plan.outputs.web }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      mobile: ${{ steps.plan.outputs.mobile }}
+      mobile-platforms: ${{ steps.plan.outputs.mobile-platforms }}
+      macos: ${{ steps.plan.outputs.macos }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      public_android: ${{ steps.plan.outputs.public_android }}
       exact-ref: ${{ steps.pin.outputs.exact-ref }}
       bun-version: ${{ steps.pin.outputs.bun-version }}
       bundle-version: ${{ steps.pin.outputs.bundle-version }}
@@ -44,12 +49,36 @@ jobs:
           persist-credentials: false
       - id: pin
         run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+      - id: plan
+        env:
+          PUBLIC_REPO: ${{ github.event.repository.visibility == 'public' }}
+        run: |
+          bun run - <<'TS' >> "$GITHUB_OUTPUT"
+          import { deploymentOutputs, platform } from "./packages/disposabl-kit/server/platform.ts";
+          const outputs = deploymentOutputs(platform, process.env.PUBLIC_REPO === "true");
+          for (const [name, value] of Object.entries(outputs)) console.log(`${name}=${JSON.stringify(value)}`);
+          TS
+
+  tools:
+    name: Verify the pinned Exact release
+    needs: config
+    if: needs.config.outputs.frontend == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2604
+    # A cache build may take the publisher's full 120-minute job budget.
+    timeout-minutes: 145
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - name: Wait for the matching setup and compiler caches
         env:
           GH_TOKEN: ${{ github.token }}
-          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
-          BUN_VERSION: ${{ steps.pin.outputs.bun-version }}
-          BUNDLE_VERSION: ${{ steps.pin.outputs.bundle-version }}
+          EXACT_REF: ${{ needs.config.outputs.exact-ref }}
+          BUN_VERSION: ${{ needs.config.outputs.bun-version }}
+          BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
           WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 8400 || 0 }}
         run: |
           python3 .github/actions/exact-setup/scripts/release-manifest.py \
@@ -57,23 +86,29 @@ jobs:
             --wait "$WAIT_SECONDS" --producer-sha "$GITHUB_SHA"
 
   deploy:
-    needs: tools
-    if: github.event_name == 'push' && !(github.event.created && github.run_number == 1)
-    runs-on: blacksmith-8vcpu-ubuntu-2604
+    needs: [config, tools]
+    if: >-
+      !cancelled() && needs.config.result == 'success' &&
+      (needs.tools.result == 'success' || needs.tools.result == 'skipped')
+    runs-on: ${{ needs.config.outputs.frontend == 'true' && 'blacksmith-8vcpu-ubuntu-2604' || 'ubuntu-latest' }}
     timeout-minutes: 45
     environment:
       name: android-production
       deployment: false
     env:
-      EXACT_REF: ${{ needs.tools.outputs.exact-ref }}
-      BUN_VERSION: ${{ needs.tools.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.tools.outputs.bundle-version }}
+      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
+      BUN_VERSION: ${{ needs.config.outputs.bun-version }}
+      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
     outputs:
       convex_origin: ${{ steps.origin.outputs.convex_origin }}
       convex_site_origin: ${{ steps.origin.outputs.convex_site_origin }}
-      public_android: ${{ steps.first.outputs.first == 'true' && '[{"platform":"android","channel":"base-1"}]' || steps.updates.outputs.public_android }}
-      native_matrix: ${{ github.event.repository.visibility == 'public' && steps.first.outputs.first == 'true' && '[{"platform":"web"},{"platform":"ios","channel":"base-1"}]' || steps.first.outputs.first == 'true' && '[{"platform":"web"},{"platform":"android","channel":"base-1"},{"platform":"ios","channel":"base-1"}]' || steps.updates.outputs.matrix }}
+      public_android: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.public_android || steps.updates.outputs.public_android || '[]' }}
+      native_matrix: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.matrix || steps.updates.outputs.matrix || '[]' }}
     steps:
+      - name: Check the Convex deployment key
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: ': "${CONVEX_DEPLOY_KEY:?Set CONVEX_DEPLOY_KEY to deploy platform selections, including an empty list.}"'
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -82,13 +117,14 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Install backend dependencies
         working-directory: packages/backend
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile && bun run generate:platforms
       - name: Resolve production backend
+        if: needs.config.outputs.frontend == 'true'
         id: origin
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: &resolve-origin |
+        run: |
           : "${CONVEX_DEPLOY_KEY:?Set the production CONVEX_DEPLOY_KEY Actions secret}"
           url=$(bun run convex env get CONVEX_CLOUD_URL --prod)
           site=$(bun run convex env get CONVEX_SITE_URL --prod)
@@ -98,15 +134,18 @@ jobs:
           echo "convex_origin=wss://${url#https://}" >> "$GITHUB_OUTPUT"
           echo "CONVEX_ORIGIN=wss://${url#https://}" >> "$GITHUB_ENV"
       - name: Read existing installer links
+        if: needs.config.outputs.mobile == 'true'
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          MOBILE_PLATFORMS: ${{ needs.config.outputs.mobile-platforms }}
         run: |
-          for platform in android ios; do
+          for platform in $(jq -r '.[]' <<< "$MOBILE_PLATFORMS"); do
             (bun run convex env get "EXACT_INSTALL_${platform^^}" --prod > "$RUNNER_TEMP/installer-$platform.json" 2>/dev/null || true) &
           done
           wait
       - name: Check for first mobile installs
+        if: needs.config.outputs.mobile == 'true'
         id: first
         working-directory: apps/apps
         env:
@@ -114,7 +153,7 @@ jobs:
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
         run: bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" first
       - uses: ./.github/actions/exact-setup
-        if: steps.first.outputs.first != 'true'
+        if: steps.first.outputs.first != 'true' && (needs.config.outputs.web == 'true' || needs.config.outputs.mobile == 'true')
         with:
           platform: web
           bun-ready: 'true'
@@ -122,22 +161,30 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           bundle-version: ${{ env.BUNDLE_VERSION }}
       - name: Install app dependencies
-        if: steps.first.outputs.first != 'true'
+        if: steps.first.outputs.first != 'true' && (needs.config.outputs.web == 'true' || needs.config.outputs.mobile == 'true')
         working-directory: apps/apps
         run: &install-app |
           mkdir -p .exact
           ln -s "$EXACT" .exact/checkout
           bun install --frozen-lockfile
       - name: Deploy web
-        if: steps.first.outputs.first != 'true'
+        if: needs.config.outputs.web == 'true' && steps.first.outputs.first != 'true'
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
-        run: &deploy-web bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+        run: &deploy-web |
+          bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
+      - name: Deploy backend without web
+        if: needs.config.outputs.web != 'true'
+        working-directory: packages/backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          bun run deploy
       - name: Publish compatible mobile updates
         id: updates
-        if: steps.first.outputs.first != 'true'
+        if: needs.config.outputs.mobile == 'true' && steps.first.outputs.first != 'true'
         env:
           CONVEX_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
@@ -147,14 +194,14 @@ jobs:
 
   native:
     name: Build ${{ matrix.platform }} production
-    needs: [tools, deploy]
+    needs: [config, tools, deploy]
     if: >-
-      !cancelled() && github.event_name == 'push' && needs.tools.result == 'success' &&
-      (needs.deploy.result == 'skipped' || (needs.deploy.result == 'success' && needs.deploy.outputs.native_matrix != '[]'))
+      !cancelled() && needs.tools.result == 'success' &&
+      needs.deploy.result == 'success' && needs.deploy.outputs.native_matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.deploy.outputs.native_matrix || github.event.repository.visibility == 'public' && '[{"platform":"web"},{"platform":"ios","channel":"base-1"}]' || '[{"platform":"web"},{"platform":"android","channel":"base-1"},{"platform":"ios","channel":"base-1"}]') }}
+        include: ${{ fromJSON(needs.deploy.outputs.native_matrix || '[]') }}
     runs-on: ${{ matrix.platform == 'ios' && 'blacksmith-6vcpu-macos-27' || matrix.platform == 'android' && 'blacksmith-16vcpu-ubuntu-2604' || 'blacksmith-8vcpu-ubuntu-2604' }}
     timeout-minutes: 90
     environment: &native-environment
@@ -164,9 +211,9 @@ jobs:
       run:
         shell: bash
     env: &native-env
-      EXACT_REF: ${{ needs.tools.outputs.exact-ref }}
-      BUN_VERSION: ${{ needs.tools.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.tools.outputs.bundle-version }}
+      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
+      BUN_VERSION: ${{ needs.config.outputs.bun-version }}
+      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
       CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
       CONVEX_SITE_ORIGIN: ${{ needs.deploy.outputs.convex_site_origin }}
       EXACT_MOBILE_CHANNEL: ${{ matrix.channel }}
@@ -193,13 +240,7 @@ jobs:
           bundle-version: ${{ env.BUNDLE_VERSION }}
       - name: Install backend dependencies
         working-directory: packages/backend
-        run: bun install --frozen-lockfile
-      - name: Resolve mobile backend on first push
-        if: needs.deploy.result == 'skipped'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: *resolve-origin
+        run: bun install --frozen-lockfile && bun run generate:platforms
       - name: Install app dependencies
         if: matrix.platform == 'web'
         working-directory: apps/apps
@@ -270,13 +311,13 @@ jobs:
 
   public-android:
     name: Build Android production
-    needs: [tools, deploy]
+    needs: [config, tools, deploy]
     if: >-
-      !cancelled() && github.event_name == 'push' && github.event.repository.visibility == 'public' && needs.tools.result == 'success' &&
-      (needs.deploy.result == 'skipped' || (needs.deploy.result == 'success' && needs.deploy.outputs.public_android != '[]'))
+      !cancelled() && needs.tools.result == 'success' &&
+      needs.deploy.result == 'success' && needs.deploy.outputs.public_android != '[]'
     strategy:
       matrix:
-        include: ${{ fromJSON(needs.deploy.outputs.public_android || '[{"platform":"android","channel":"base-1"}]') }}
+        include: ${{ fromJSON(needs.deploy.outputs.public_android || '[]') }}
     runs-on: blacksmith-16vcpu-ubuntu-2604
     permissions:
       contents: write
@@ -288,10 +329,10 @@ jobs:
 
   macos-preview:
     name: Build macOS preview
-    needs: [tools, deploy]
+    needs: [config, tools, deploy]
     if: >-
-      !cancelled() && github.event_name == 'push' && needs.tools.result == 'success' &&
-      (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
+      !cancelled() && needs.config.outputs.macos == 'true' &&
+      needs.tools.result == 'success' && needs.deploy.result == 'success'
     runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 25
     environment: *native-environment
@@ -308,19 +349,9 @@ jobs:
       - uses: ./.github/actions/exact-setup
         with:
           platform: macos
-          exact-ref: ${{ needs.tools.outputs.exact-ref }}
-          bun-version: ${{ needs.tools.outputs.bun-version }}
-          bundle-version: ${{ needs.tools.outputs.bundle-version }}
-      - name: Install backend dependencies on first push
-        if: needs.deploy.result == 'skipped'
-        working-directory: packages/backend
-        run: bun install --frozen-lockfile
-      - name: Resolve the backend on first push
-        if: needs.deploy.result == 'skipped'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: *resolve-origin
+          exact-ref: ${{ needs.config.outputs.exact-ref }}
+          bun-version: ${{ needs.config.outputs.bun-version }}
+          bundle-version: ${{ needs.config.outputs.bundle-version }}
       - name: Build and verify macOS preview
         working-directory: ${{ env.NATIVE_APP_DIR }}
         run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/macos-preview.sh"

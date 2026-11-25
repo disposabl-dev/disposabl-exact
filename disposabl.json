@@ -1,0 +1,4 @@
+{
+  "platforms": ["web", "android", "ios", "macos", "api", "mcp"],
+  "features": ["authentication"]
+}
