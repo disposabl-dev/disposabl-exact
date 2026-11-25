@@ -5,9 +5,9 @@
    if (platform === 'web') return 'wasm32-unknown-unknown';
    if (platform === 'ios') return 'aarch64-apple-ios';
 +  if (platform === 'macos' && process.platform === 'linux') return 'aarch64-apple-darwin';
-   // The Linux host is also a supported headless executable on macOS. This
-   // is the actual target Cargo will build here, never a guessed architecture.
-   // The pinned toolchain's rustc, as the build's: rustup may have no default, and an app's directory names none.
+   // Ask the pinned toolchain's rustc for the host triple, which names the build's output folder (the Linux host builds on macOS too); the pinned rustc answers even when rustup has no default.
+   const result = spawnSync('rustc', ['-vV'], { cwd: ROOT, env: PINNED_RUST ? { ...process.env, RUSTUP_TOOLCHAIN: PINNED_RUST } : process.env, encoding: 'utf8' });
+   const host = /^host: (.+)$/m.exec(result.stdout ?? '')?.[1];
 --- a/host/apple/build.mjs
 +++ b/host/apple/build.mjs
 @@ -160,7 +160,8 @@
