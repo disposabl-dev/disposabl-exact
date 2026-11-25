@@ -18,7 +18,7 @@ const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
 const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>('app:features');
 const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
 const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
-const credentials = '/api/platform/credentials';
+const credentials = '/api/dashboard/api-keys';
 
 function webRequest(path: string, body?: object) {
   if (exactHost() !== 'web') throw new Error('Requires the web app');

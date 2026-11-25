@@ -6,7 +6,7 @@ import { privateHeaders, readBody, readRequestText, reply, requestClient } from 
 import type { PlatformSelection } from "./platform";
 
 const consentPath = "/api/mcp/consent";
-const credentialsPath = "/api/platform/credentials";
+const credentialsPath = "/api/dashboard/api-keys";
 const requestId = /^[a-zA-Z0-9_-]{1,128}$/;
 
 type SessionClient = NonNullable<Awaited<ReturnType<typeof requestClient>>>;

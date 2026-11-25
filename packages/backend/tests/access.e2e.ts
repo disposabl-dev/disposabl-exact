@@ -11,7 +11,7 @@ if (!site || !cloud || [site, cloud].some(url => new URL(url).hostname !== "127.
 
 const client = new ConvexHttpClient(cloud, { logger: false });
 const auth = "/api/auth/web";
-const credentials = "/api/platform/credentials";
+const credentials = "/api/dashboard/api-keys";
 const counter = "/api/counter/current";
 const bearer = (key: string) => ({ Authorization: `Bearer ${key}` });
 
@@ -31,12 +31,14 @@ function mcp(key?: string) {
 }
 
 test("the deployed configuration controls feature flags and route access", async () => {
-  const { authentication, payments, consent, credentials } = platform;
-  expect(await client.query(api.app.features, {})).toEqual({ authentication, payments, consent, credentials });
+  const { authentication, payments, consent } = platform;
+  expect(await client.query(api.app.features, {})).toEqual({ authentication, payments, consent, credentials: platform.credentials });
   expect((await fetch(new URL(counter, site))).status).toBe(platform.api ? 401 : 404);
   expect((await mcp()).status).toBe(platform.mcp ? 401 : 404);
 
   const headers = { Origin: site, "X-Exact-Auth": "1" };
+  const keys = await fetch(new URL(credentials, site), { headers });
+  expect(keys.status).toBe(platform.credentials ? 401 : 404);
   const session = await post(auth, { operation: "status" }, headers);
   expect(session.status).toBe(platform.web && authentication ? 200 : 404);
   const billing = await post("/api/billing/web", { operation: "status" }, headers);

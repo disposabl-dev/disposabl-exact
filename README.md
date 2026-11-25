@@ -77,11 +77,11 @@ Select `api` for REST, `mcp` for MCP, or both in [disposabl.json](disposabl.json
 
 `bun run dev` and deployment discover marked functions automatically. For a Node-only action, expose a default-runtime internal action that calls it. In any Exact app data source, call the same function with `callPlatform("counter:current", {}, store)` from [auth.ts](apps/apps/auth.ts). The call uses the signed-in app session on web, Android, iOS and macOS.
 
-Sign in on the Exact web app at `/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
+Sign in on the Exact web app at `/dashboard/api-keys` to create or revoke a key or disconnect an MCP client. Send it as `Authorization: Bearer <key>` to REST or MCP. An OAuth-capable MCP client can connect to `/mcp`, send you to the consent page, and receive a token for that MCP server after you approve. Read access allows queries. Write access allows mutations and actions.
 
 The demo is `GET /api/counter/current` and MCP tool `counter_current`. REST queries use URL parameters. Mutations and actions take a JSON body with POST. `/openapi.json` describes the available operations and their scopes.
 
-With web and authentication enabled, Exact web serves `/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
+With web and authentication enabled, Exact web serves `/dashboard/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
 
 ```sh
 bun run convex run mcp:createServiceUser '{"name":"My integration"}'
@@ -118,7 +118,7 @@ With a local backend running, use `bun exact.mjs test web` from `apps/apps` to v
 
 ## Optional billing
 
-Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRET_KEY` in Convex to show `/pricing`. Web checkout uses Stripe Sandbox with a test key and Stripe live with a live key. Native apps show the Autumn plan and balance and tell web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
+Enable `payments` and `authentication` in `disposabl.json` and set `AUTUMN_SECRET_KEY` in Convex to show `/dashboard/billing`. Web checkout uses Stripe Sandbox with a test key and Stripe live with a live key. Native apps show the Autumn plan and balance and tell web subscribers their billing is managed on the website. Native store purchases and restore require a store integration that syncs into Autumn.
 
 Removing `payments` hides pricing and disables the app’s billing endpoints. Existing subscriptions continue in the billing provider. Manage renewals and cancellations there before removing the app’s customer portal.
 

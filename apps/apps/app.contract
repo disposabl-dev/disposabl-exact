@@ -71,9 +71,9 @@ fn scopeLabel(scope: string): string = (
 
 routes nav
   home "/"
-    pricing "/pricing"
+    pricing "/dashboard/billing"
   consent "/consent"
-  credentials "/api-keys"
+  credentials "/dashboard/api-keys"
 
 style LanguagePanel
   padding=12 gap=4 border-radius=14

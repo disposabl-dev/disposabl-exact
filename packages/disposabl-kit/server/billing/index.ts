@@ -66,7 +66,7 @@ export const request = internalAction({
       };
     }
     if (!client || !customerId) throw new Error("Billing unavailable");
-    const returnUrl = new URL("/pricing", env.CONVEX_SITE_URL).href;
+    const returnUrl = new URL("/dashboard/billing", env.CONVEX_SITE_URL).href;
 
     if (operation === "portal") {
       return { url: (await client.billing.openCustomerPortal({ customerId, returnUrl })).url };

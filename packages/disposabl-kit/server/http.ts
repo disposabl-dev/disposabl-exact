@@ -176,11 +176,20 @@ export function createHttp(config: PlatformSelection = platform) {
   registerConnections(http, config);
 
   if (!config.consent) http.route({ path: "/consent", method: "GET", handler: notFound });
-  if (!config.credentials) http.route({ path: "/api-keys", method: "GET", handler: notFound });
   // Disabled endpoints must not resolve to the static host's SPA fallback.
   http.route({ pathPrefix: "/api/", method: "GET", handler: notFound });
   http.route({ pathPrefix: "/mcp/", method: "GET", handler: notFound });
-  if (!config.payments) http.route({ path: "/pricing", method: "GET", handler: notFound });
+  for (const [previous, path, enabled] of [
+    ["/api-keys", "/dashboard/api-keys", config.credentials],
+    ["/pricing", "/dashboard/billing", config.web && config.payments],
+  ] as const) {
+    const handler = enabled ? httpAction(async (_ctx, request) => new Response(null, {
+      status: 302,
+      headers: { ...privateHeaders, Location: path + new URL(request.url).search },
+    })) : notFound;
+    http.route({ path: previous, method: "GET", handler });
+    if (!enabled) http.route({ path, method: "GET", handler: notFound });
+  }
   if (!config.authentication || !config.frontend) {
     http.route({ pathPrefix: "/oauth/google/", method: "GET", handler: notFound });
   }
