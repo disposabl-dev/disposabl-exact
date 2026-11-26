@@ -45,6 +45,22 @@ Push or merge to `main` to deploy. The first deployment starts the selected plat
 
 Blacksmith macOS 27 with Xcode builds the first IPA and any replacement native binary. Blacksmith Ubuntu 26.04 handles web, Android, and compatible iOS updates. The shared iOS setup bundle contains Rust and Hermes tools. Xcode and the Apple SDK come from the hosted runner.
 
+### Build a device IPA or signed APK on Linux
+
+[mobile-build.sh](scripts/boat/mobile-build.sh) runs on x86-64 Linux with Docker, Git, rsync, jq and zstd. It uses the same SDK pin on Boat and GitHub Actions. The build commands assume the app's production OTA configuration is prepared.
+
+```bash
+ref=$(sed -n 's/^exact-ref=//p' .github/actions/exact-setup/pin.env)
+bash scripts/boat/mobile-build.sh prepare ios
+EXACT_MOBILE_IOS_FAST_PROFILE=1 bash scripts/boat/mobile-build.sh ios "$ref" apps/apps "$PWD/apps.ipa"
+bash scripts/boat/mobile-build.sh prepare android
+bash scripts/boat/mobile-build.sh android "$ref" apps/apps "$PWD/apps.apk"
+```
+
+Android reads the existing `ANDROID_APK_SIGNING` environment variable. iOS produces an ad-hoc-signed device IPA with the production OTA receipt. Provision and re-sign it before installing on a physical iPhone. The optional iOS profile changes the optimization level of the generated app crate. Swift and shared Rust libraries retain their production profiles.
+
+Run `mobile-build.sh save-image ios "$ref"` on a Boat snapshot producer before saving its disk. A fork can then load the matching Docker image from the restored cache directory. Use `export ios "$ref" exact-ios.tar.zst` and `restore exact-ios.tar.zst` to move the image and compiler files together to another Linux machine. Keep exported caches in private storage.
+
 ## Subsequent deployments
 
 Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the production build receipt to initialize each stream. For a new phone, use the existing install link. Compatible deployments keep that link in the Actions summary. CI saves it in the Convex environment as `EXACT_INSTALL_ANDROID` or `EXACT_INSTALL_IOS` after a successful native build.
