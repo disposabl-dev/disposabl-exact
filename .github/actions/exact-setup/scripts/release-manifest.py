@@ -16,6 +16,31 @@ REPOSITORY = "disposabl-dev/disposabl-exact"
 MAX_MANIFEST_SIZE = 1024 * 1024
 
 
+def require_assets(manifest, ref, bun):
+    required = {"sdk.tar.zst", "cargo-android.zst", "cargo-gradle.zst", "cargo-ios.zst",
+                "ios-baker.json", "ios-source-times.json"}
+    required.update(f"exact-{ref}-{platform}-bun-{bun}.tar.zst"
+                    for platform in ("web-Linux-X64", "android-Linux-X64", "ios-macOS-ARM64"))
+    link_kits = json.loads((Path(__file__).resolve().parent.parent / "ios-link-hooks.json").read_text())
+    if ref in link_kits or "ios-host-catalog.zst" in manifest:
+        required.update(("ios-link-kit.zst", "ios-host-catalog.zst"))
+    if missing := sorted(required.difference(manifest)):
+        raise ValueError("Release manifest is missing " + ", ".join(missing))
+
+
+def manifest_from_assets(directory, ref, bun):
+    manifest = {}
+    for checksum in sorted(directory.glob("*.sha256")):
+        asset = checksum.with_suffix("")
+        digest = checksum.read_text().split(maxsplit=1)[0]
+        size = asset.stat().st_size
+        if not re.fullmatch(r"[a-f0-9]{64}", digest) or not 0 < size < 2_000_000_000:
+            raise ValueError(f"Invalid asset for the release manifest: {asset.name}")
+        manifest[asset.name] = {"size": size, "sha256": digest}
+    require_assets(manifest, ref, bun)
+    return (json.dumps(manifest, sort_keys=True) + "\n").encode()
+
+
 def read_manifest(tag, ref, bun):
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "disposabl-exact-setup"}
     if token := os.environ.get("GH_TOKEN"):
@@ -42,15 +67,7 @@ def read_manifest(tag, ref, bun):
     if len(data) != index["size"] or index.get("digest") != "sha256:" + hashlib.sha256(data).hexdigest():
         raise ValueError("Release manifest differs from the GitHub asset digest")
     manifest = json.loads(data)
-    required = {"sdk.tar.zst", "cargo-android.zst", "cargo-gradle.zst", "cargo-ios.zst",
-                "ios-baker.json", "ios-source-times.json"}
-    required.update(f"exact-{ref}-{platform}-bun-{bun}.tar.zst"
-                    for platform in ("web-Linux-X64", "android-Linux-X64", "ios-macOS-ARM64"))
-    link_kits = json.loads((Path(__file__).resolve().parent.parent / "ios-link-hooks.json").read_text())
-    if ref in link_kits or "ios-host-catalog.zst" in manifest:
-        required.update(("ios-link-kit.zst", "ios-host-catalog.zst"))
-    if missing := sorted(required.difference(manifest)):
-        raise ValueError("Release manifest is missing " + ", ".join(missing))
+    require_assets(manifest, ref, bun)
     for name, recorded in manifest.items():
         asset = assets.get(name)
         if not asset or not asset.get("digest"):
@@ -64,17 +81,6 @@ def read_manifest(tag, ref, bun):
     return data
 
 
-def check_publisher(sha):
-    url = f"https://api.github.com/repos/{REPOSITORY}/actions/workflows/publish.yml/runs?head_sha={sha}&event=push&per_page=1"
-    try:
-        with urlopen(Request(url, headers={"User-Agent": "disposabl-exact-setup"}), timeout=15) as response:
-            runs = json.load(response)["workflow_runs"]
-    except OSError:
-        return
-    if runs and runs[0]["conclusion"] in ("failure", "cancelled", "timed_out", "startup_failure", "action_required"):
-        raise ValueError(f"Exact cache publication failed: {runs[0]['html_url']}")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
@@ -82,24 +88,22 @@ def main():
     parser.add_argument("bun")
     parser.add_argument("output", type=Path)
     parser.add_argument("--wait", type=int, default=0)
-    parser.add_argument("--producer-sha", default="")
+    parser.add_argument("--assets", type=Path, help="Write a manifest from locally verified checksums")
     args = parser.parse_args()
     if (not re.fullmatch(r"[1-9][0-9]*", args.version) or not re.fullmatch(r"[a-f0-9]{40}", args.ref)
-            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.bun) or args.wait < 0
-            or (args.producer_sha and not re.fullmatch(r"[a-f0-9]{40}", args.producer_sha))):
+            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.bun) or args.wait < 0):
         parser.error("Expected a bundle format version, full Exact SHA, and Bun version")
+    if args.assets is not None:
+        args.output.write_bytes(manifest_from_assets(args.assets, args.ref, args.bun))
+        return
     tag = f"v{args.version}-exact-{args.ref}-bun-{args.bun}"
     deadline = time.monotonic() + args.wait
-    next_publisher_check = 0
     while (data := read_manifest(tag, args.ref, args.bun)) is None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ValueError(f"Exact compiler caches have not been published for {tag}")
-        if args.producer_sha and time.monotonic() >= next_publisher_check:
-            check_publisher(args.producer_sha)
-            next_publisher_check = time.monotonic() + 180
-        print(f"Waiting for the Exact cache publisher to release {tag}", flush=True)
-        time.sleep(min(30, remaining))
+        print(f"Waiting for published Exact cache assets to be visible for {tag}", flush=True)
+        time.sleep(min(5, remaining))
     args.output.write_bytes(data)
     print(f"Verified Exact setup and compiler cache metadata for {tag}")
 
@@ -107,5 +111,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
         sys.exit(str(error))

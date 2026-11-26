@@ -3,7 +3,6 @@ name: Deploy app
 on:
   push:
     branches: [main]
-    paths-ignore: [.github/workflows/publish.yml]
   workflow_dispatch:
     inputs:
       recipients:
@@ -62,34 +61,46 @@ jobs:
           for (const [name, value] of Object.entries(outputs)) console.log(`${name}=${JSON.stringify(value)}`);
           TS
 
+  publish:
+    name: Publish shared Exact tools
+    needs: config
+    if: github.repository == 'disposabl-dev/disposabl-exact'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+
   tools:
     name: Verify the pinned Exact release
-    needs: config
-    if: needs.config.outputs.frontend == 'true'
+    needs: [config, publish]
+    if: >-
+      !cancelled() && needs.config.result == 'success' &&
+      ((github.repository == 'disposabl-dev/disposabl-exact' && needs.publish.result == 'success') ||
+       (github.repository != 'disposabl-dev/disposabl-exact' && needs.config.outputs.frontend == 'true'))
     runs-on: blacksmith-2vcpu-ubuntu-2604
-    # A cache build may take the publisher's full 120-minute job budget.
-    timeout-minutes: 145
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Wait for the matching setup and compiler caches
+      - name: Verify the matching setup and compiler caches
         env:
           GH_TOKEN: ${{ github.token }}
           EXACT_REF: ${{ needs.config.outputs.exact-ref }}
           BUN_VERSION: ${{ needs.config.outputs.bun-version }}
           BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
-          WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 8400 || 0 }}
+          # Allow the release API to expose asset digests after the publisher succeeds.
+          WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 60 || 0 }}
         run: |
           python3 .github/actions/exact-setup/scripts/release-manifest.py \
             "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" \
-            --wait "$WAIT_SECONDS" --producer-sha "$GITHUB_SHA"
+            --wait "$WAIT_SECONDS"
 
   deploy:
     needs: [config, tools]
     if: >-
       !cancelled() && needs.config.result == 'success' &&
-      (needs.tools.result == 'success' || needs.tools.result == 'skipped')
+      (needs.tools.result == 'success' ||
+       (github.repository != 'disposabl-dev/disposabl-exact' && needs.config.outputs.frontend != 'true' &&
+        needs.tools.result == 'skipped'))
     runs-on: ${{ needs.config.outputs.frontend == 'true' && 'blacksmith-8vcpu-ubuntu-2604' || 'ubuntu-latest' }}
     timeout-minutes: 45
     environment:
