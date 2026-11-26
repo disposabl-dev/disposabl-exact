@@ -16,5 +16,10 @@
     "original": "30f1e090234e4d922ee9460a0f2c68d154d2412f5b75decebc66117d39eda122",
     "patched": "486591e8f7fb53098d5287137089651d3090ce0133ae305a9bec8bebac2a905a",
     "previous": []
+  },
+  "4922e24e26bef70b2d2fcb5f0f28fa622321b175": {
+    "original": "b7136f2f61dbe747adcd0c2dea5a2970cf7ac54c32271f8dafb1b80002031f82",
+    "patched": "f20e2120f25353aa812b2221be52e16e9905d2bf2ebbcf55ed7d5b3d1f09b88b",
+    "previous": []
   }
 }
