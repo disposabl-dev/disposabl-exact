@@ -207,7 +207,31 @@ seed_ios() {
     bun exact.mjs ios --device --release --unsigned --archive "$RUNNER_TEMP/public.ipa" --json
     jq -e '.trust == "production" and .compat.inputs.store.L == "A"' \
         "$EXACT_BAKE_OUTPUT/ios-aarch64-apple-ios.build.json" >/dev/null
+    if [[ "$ref" == 4922e24e26bef70b2d2fcb5f0f28fa622321b175 ]]; then
+        warm_ios_swift
+    fi
 }
+
+warm_ios_swift() (
+    # Compile only SDK targets. The release still links the app's own Swift
+    # capability selection and its newly built Rust archive.
+    export EXACT_APPLE_LINK=all EXACT_APP_COMPOSITION=updating EXACT_UPDATE_TRUST=production
+    export EXACT_APPLE_INTENT_FILES=0 EXACT_WATCH_SYNC=0 EXACT_WIDGET_GALLERY=0 EXACT_ATTACH=0
+    export IPHONEOS_DEPLOYMENT_TARGET=17.0 EXACT_IOS_DEPLOYMENT=17.0
+    bun -e '
+const { crossSdk, spawnSync } = await import(process.env.EXACT + "/host/apple/toolchain.mjs");
+const { sdk } = crossSdk("iphoneos");
+const args = [
+    "build", "-c", "release", "--scratch-path", process.env.CARGO_TARGET_DIR + "/apple-swift/ios-17.0-balanced",
+    "--triple", "arm64-apple-ios17.0", "--sdk", sdk,
+    "-Xcc", "-isysroot", "-Xcc", sdk, "-Xlinker", "-syslibroot", "-Xlinker", sdk,
+    "-Xswiftc", "-Xclang-linker", "-Xswiftc", "-isysroot", "-Xswiftc", "-Xclang-linker", "-Xswiftc", sdk,
+    "--target", "ExactComposition",
+];
+const build = spawnSync("swift", args, { cwd: process.env.EXACT + "/host/apple", stdio: "inherit" });
+if (build.status !== 0) throw build.error ?? new Error("Could not precompile the shared iOS Swift targets");
+'
+)
 
 android_sdk_ready() {
     local sdk=$1 package
@@ -360,7 +384,7 @@ build_mobile() {
         -e HOME=/home/runner -e EXACT=/home/runner/work/_temp/exact-sdk -e EXACT_REF="$ref" \
         -e EXACT_UPDATE_TRUST=production -e EXACT_UPDATE_GENESIS -e EXACT_MOBILE_CHANNEL \
         -e EXACT_BUILD_NUMBER -e EXACT_VERSION -e EXACT_FEEDBACK=0 \
-        -e CONVEX_ORIGIN -e CONVEX_SITE_ORIGIN -e CARGO_LOG \
+        -e CONVEX_ORIGIN -e CONVEX_SITE_ORIGIN -e CARGO_LOG -e EXACT_MOBILE_IOS_FAST_PROFILE \
         -e CARGO_TARGET_DIR=/home/runner/.cache/exact-native/cargo \
         -e CARGO_PROFILE_RELEASE_LTO=off -e CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
         -e CARGO_PROFILE_BALANCED_LTO=off -e CARGO_PROFILE_SIZE_LTO=off \
@@ -443,6 +467,9 @@ execute_build() {
         export EXACT_IOS_BAKER_PATH="$HOME/.cache/exact/publisher/$EXACT_REF/exact-js-bake"
         export EXACT_IOS_BAKER_SHA256="$(sha256sum "$EXACT_IOS_BAKER_PATH" | cut -d ' ' -f1)"
         export EXACT_BAKE_OUTPUT=/output/bake
+        if [[ "${EXACT_MOBILE_IOS_FAST_PROFILE:-}" == 1 ]]; then
+            tune_generated_ios_crate
+        fi
         /usr/bin/time -f 'native_wall_s=%e' \
             bun exact.mjs ios --device --release --unsigned --archive /output/app.ipa --json >&2
         receipt=/output/app.receipt.json
@@ -464,6 +491,22 @@ execute_build() {
         mv /output/android-artifacts/android-production.apk /output/app.apk
         mv "$receipt" /output/app.receipt.json
     fi
+}
+
+tune_generated_ios_crate() {
+    [[ "$EXACT_REF" == 4922e24e26bef70b2d2fcb5f0f28fa622321b175 ]] || return 0
+    [[ ! -e Cargo.toml && ! -e apple/Cargo.toml && ! -e ios/Cargo.toml &&
+        ! -e .cargo/config && ! -e .cargo/config.toml ]] || return 0
+    jq -e '.game == null and .rust == null and (.host.ios.optimize // "balanced") == "balanced"' app.json >/dev/null || return 0
+    local app_crate
+    app_crate=$(bun -e '
+        const { appCrateName } = await import(process.env.EXACT + "/scripts/app-shells.mjs");
+        console.log(appCrateName(process.cwd(), "apps"));
+    ')
+    [[ "$app_crate" =~ ^[a-z][a-z0-9-]*$ ]]
+    mkdir -p .cargo
+    printf '[profile.balanced.package.%s-apple]\nopt-level = 1\ncodegen-units = 16\n' "$app_crate" > .cargo/config.toml
+    printf 'Using the faster compiler profile for generated crate %s-apple.\n' "$app_crate" >&2
 }
 
 verify_ipa() {
@@ -513,10 +556,11 @@ verify_cache() {
         'select(.format == 1 and .exactRef == $ref) | .imageId | select(test("^sha256:[0-9a-f]{64}$"))' \
         "$cache_root/$platform/$ref/manifest.json")
     image="exact-boat-$platform:$ref"
-    if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
+    image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)
+    if [[ "$image_id" != "$expected_image" ]]; then
         archive="$cache_root/$platform/$ref.image.tar.zst"
         [[ -r "$archive" ]] || {
-            printf 'Docker image %s is missing. Restore its cache archive or save the image on the snapshot producer.\n' "$image" >&2
+            printf 'Docker image %s is missing or differs from the compiler cache. Restore the original image.\n' "$image" >&2
             return 1
         }
         # A Boat clone can restore home files before Docker has the image.

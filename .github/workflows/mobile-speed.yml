@@ -83,6 +83,9 @@ jobs:
     name: iOS / Linux portable compiler cache
     runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 20
+    env:
+      EXACT_MOBILE_CACHE_DIR: ${{ runner.temp }}/exact-mobile-cache
+      EXACT_MOBILE_IOS_FAST_PROFILE: '1'
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -90,14 +93,23 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: '1.4.5'
+      - name: Mount the shared SDK cache
+        uses: useblacksmith/stickydisk@61dac6a8aa5927f7d3343d9dbdc8153787d08a1c # v1.8.0
+        with:
+          key: exact-ios-linux-${{ hashFiles('scripts/boat/mobile-build.sh', '.github/actions/exact-setup/pin.env') }}
+          path: ${{ env.EXACT_MOBILE_CACHE_DIR }}
+          commit: if-missing
       - name: Prepare the shared Linux iOS cache
-        run: /usr/bin/time -f 'prepare_wall_s=%e' bash scripts/boat/mobile-build.sh prepare ios
+        run: |
+          ref=$(sed -n 's/^exact-ref=//p' .github/actions/exact-setup/pin.env)
+          /usr/bin/time -f 'prepare_wall_s=%e' bash scripts/boat/mobile-build.sh prepare ios
+          bash scripts/boat/mobile-build.sh save-image ios "$ref"
       - name: Build and verify a test device IPA
         shell: bash
         run: |
           set -euo pipefail
           ref=$(sed -n 's/^exact-ref=//p' .github/actions/exact-setup/pin.env)
-          export EXACT="$HOME/.local/share/exact-boat/mobile/ios/$ref/home/work/_temp/exact-sdk"
+          export EXACT="$EXACT_MOBILE_CACHE_DIR/ios/$ref/home/work/_temp/exact-sdk"
           (
               cd apps/apps
               bun scripts/locales.mjs
