@@ -84,7 +84,7 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2604
     timeout-minutes: 20
     env:
-      EXACT_MOBILE_CACHE_DIR: ${{ runner.temp }}/exact-mobile-cache
+      EXACT_MOBILE_CACHE_DIR: /tmp/exact-mobile-cache
       EXACT_MOBILE_IOS_FAST_PROFILE: '1'
     steps:
       - uses: actions/checkout@v7.0.1
