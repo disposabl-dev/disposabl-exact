@@ -1,0 +1,35 @@
+{
+  "name": "create-disposabl-app",
+  "version": "0.22.0",
+  "description": "Create a Disposabl app with Exact and Convex",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/disposabl-dev/disposabl-exact.git",
+    "directory": "packages/create-disposabl-app"
+  },
+  "bin": {
+    "create-disposabl-app": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "setup.mjs",
+    "template.tar.gz"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@disposabl/cli": "4.1.0",
+    "proper-lockfile": "4.1.2",
+    "tar": "7.5.23"
+  },
+  "devDependencies": {
+    "yaml": "2.9.1"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test.mjs"
+  }
+}

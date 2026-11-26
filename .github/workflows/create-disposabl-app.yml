@@ -1,0 +1,52 @@
+name: Exact app generator
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+      - run: npm ci
+        working-directory: packages/create-disposabl-app
+      - run: npm test
+        working-directory: packages/create-disposabl-app
+
+  publish:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'disposabl-dev/disposabl-exact'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - run: npm ci
+        working-directory: packages/create-disposabl-app
+      - run: npm publish --access public --tag next
+        working-directory: packages/create-disposabl-app
