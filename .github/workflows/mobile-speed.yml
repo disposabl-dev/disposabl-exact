@@ -1,0 +1,104 @@
+name: Exact mobile build benchmark
+
+on:
+  push:
+    branches: [codex/exact-mobile-speed-ci]
+    paths:
+      - .github/workflows/mobile-speed.yml
+      - scripts/boat/mobile-build.sh
+      - .github/actions/exact-setup/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exact-mobile-speed-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_UPDATE_TRUST: production
+  EXACT_UPDATE_GENESIS: '1'
+  EXACT_MOBILE_CHANNEL: base-1
+  EXACT_BUILD_NUMBER: '1'
+  CONVEX_ORIGIN: wss://build-benchmark.invalid
+  CONVEX_SITE_ORIGIN: https://build-benchmark.invalid
+  EXACT_FEEDBACK: '0'
+
+jobs:
+  android:
+    name: Android / ${{ matrix.cores }} CPU / run ${{ matrix.sample }}
+    runs-on: blacksmith-${{ matrix.cores }}vcpu-ubuntu-2604
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cores: [8, 16]
+        sample: [1, 2]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read shared SDK pin
+        id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/exact-setup
+        with:
+          platform: android
+          exact-ref: ${{ steps.pin.outputs.exact-ref }}
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+          bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      - name: Build and verify a signed test APK
+        working-directory: ${{ env.NATIVE_APP_DIR }}
+        env:
+          EXACT_REF: ${{ steps.pin.outputs.exact-ref }}
+          ANDROID_PLAY_CONNECTED: 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts="$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts"
+          lscpu | sed -nE '/^(CPU\(s\)|Model name|Thread\(s\) per core|Hypervisor vendor):/p'
+          echo "effective_cpus=$(nproc)"
+          java -version
+          export EXACT_BAKE_OUTPUT="$RUNNER_TEMP/android-artifacts/bake"
+          EXACT_UPDATE_SEED="$(openssl rand -base64 32)" bun "$scripts/mobile-updates.mjs" configure android
+          sign_dir=$(mktemp -d)
+          trap 'rm -rf -- "$sign_dir"' EXIT
+          export BENCH_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$sign_dir/fixture.p12" \
+              -storepass:env BENCH_PASSWORD -keypass:env BENCH_PASSWORD -alias android \
+              -keyalg RSA -dname 'CN=Exact CI Benchmark' -validity 2 >/dev/null 2>&1
+          export ANDROID_APK_SIGNING="$(jq -nc --arg password "$BENCH_PASSWORD" \
+              --arg keystore "$(base64 -w0 "$sign_dir/fixture.p12")" '{password:$password,keystore:$keystore}')"
+          unset BENCH_PASSWORD
+          /usr/bin/time -o "$RUNNER_TEMP/native.time" -f '%e' bash "$scripts/native-build.sh" android
+          jq -e '.trust == "production" and .compat.target == "aarch64-linux-android" and .compat.inputs.store.L == "A"' \
+              "$EXACT_BAKE_OUTPUT/android-aarch64-linux-android.build.json"
+          printf 'native_wall_s=%s\n' "$(<"$RUNNER_TEMP/native.time")"
+          printf 'Verified APK native build on %s vCPUs in %s seconds.\n' \
+              "$(nproc)" "$(<"$RUNNER_TEMP/native.time")" >> "$GITHUB_STEP_SUMMARY"
+
+  ios-linux:
+    name: iOS / Linux portable compiler cache
+    runs-on: blacksmith-8vcpu-ubuntu-2604
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: '1.4.5'
+      - name: Prepare the shared Linux iOS cache
+        run: /usr/bin/time -f 'prepare_wall_s=%e' bash scripts/boat/mobile-build.sh prepare ios
+      - name: Build and verify a test device IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref=$(sed -n 's/^exact-ref=//p' .github/actions/exact-setup/pin.env)
+          (
+              cd apps/apps
+              EXACT_REF="$ref" EXACT_UPDATE_SEED="$(openssl rand -base64 32)" \
+                  bun ../../.github/actions/exact-setup/scripts/mobile-updates.mjs configure ios
+          )
+          /usr/bin/time -f 'launcher_wall_s=%e' bash scripts/boat/mobile-build.sh ios "$ref" apps/apps "$RUNNER_TEMP/benchmark.ipa"
