@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: exact-mobile-speed-${{ github.ref }}
+  group: exact-mobile-speed-${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: true
 
 env:
@@ -27,6 +27,7 @@ env:
 
 jobs:
   android:
+    if: github.event_name == 'workflow_dispatch'
     name: Android / ${{ matrix.cores }} CPU / run ${{ matrix.sample }}
     runs-on: blacksmith-${{ matrix.cores }}vcpu-ubuntu-2604
     timeout-minutes: 15
@@ -96,8 +97,10 @@ jobs:
         run: |
           set -euo pipefail
           ref=$(sed -n 's/^exact-ref=//p' .github/actions/exact-setup/pin.env)
+          export EXACT="$HOME/.local/share/exact-boat/mobile/ios/$ref/home/work/_temp/exact-sdk"
           (
               cd apps/apps
+              bun scripts/locales.mjs
               EXACT_REF="$ref" EXACT_UPDATE_SEED="$(openssl rand -base64 32)" \
                   bun ../../.github/actions/exact-setup/scripts/mobile-updates.mjs configure ios
           )

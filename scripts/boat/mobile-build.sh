@@ -28,6 +28,8 @@ Usage:
   $0 prepare ios|android
   $0 ios EXACT_REF APP_DIRECTORY OUTPUT.ipa
   $0 android EXACT_REF APP_DIRECTORY OUTPUT.apk
+  $0 save-image ios|android EXACT_REF
+  $0 load-image ios|android EXACT_REF
   $0 export ios|android EXACT_REF OUTPUT.tar.zst
   $0 restore CACHE.tar.zst
 EOF
@@ -196,6 +198,7 @@ seed_ios() {
     mkdir -p .exact
     ln -s "$EXACT" .exact/checkout
     bun install --frozen-lockfile
+    bun scripts/locales.mjs
     export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1 EXACT_MOBILE_CHANNEL=base-1
     export EXACT_BUILD_NUMBER=1 EXACT_FEEDBACK=0
     export CONVEX_ORIGIN=wss://public-cache.invalid CONVEX_SITE_ORIGIN=https://public-cache.invalid
@@ -504,12 +507,46 @@ PYTHON
 }
 
 verify_cache() {
-    local platform=$1 ref=$2 image_id
+    local platform=$1 ref=$2 image image_id expected_image archive
     [[ $ref =~ ^[0-9a-f]{40}$ ]]
-    image_id=$(docker image inspect --format '{{.Id}}' "exact-boat-$platform:$ref")
-    jq -e --arg ref "$ref" --arg image "$image_id" \
-        '.format == 1 and .exactRef == $ref and .imageId == $image' \
-        "$cache_root/$platform/$ref/manifest.json" >/dev/null
+    expected_image=$(jq -er --arg ref "$ref" \
+        'select(.format == 1 and .exactRef == $ref) | .imageId | select(test("^sha256:[0-9a-f]{64}$"))' \
+        "$cache_root/$platform/$ref/manifest.json")
+    image="exact-boat-$platform:$ref"
+    if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
+        archive="$cache_root/$platform/$ref.image.tar.zst"
+        [[ -r "$archive" ]] || {
+            printf 'Docker image %s is missing. Restore its cache archive or save the image on the snapshot producer.\n' "$image" >&2
+            return 1
+        }
+        # A Boat clone can restore home files before Docker has the image.
+        (
+            flock -x 9
+            if ! docker image inspect "$expected_image" >/dev/null 2>&1; then
+                /usr/bin/time -f 'image_restore_wall_s=%e' docker load --input "$archive"
+            fi
+            docker image tag "$expected_image" "$image"
+        ) 9< "$archive"
+        image_id=$(docker image inspect --format '{{.Id}}' "$image")
+    fi
+    [[ "$image_id" == "$expected_image" ]] || {
+        printf 'Docker image %s differs from the prepared compiler cache.\n' "$image" >&2
+        return 1
+    }
+}
+
+save_image() {
+    local platform=$1 ref=$2 archive
+    verify_cache "$platform" "$ref"
+    archive="$cache_root/$platform/$ref.image.tar.zst"
+    if [[ ! -e "$archive" ]]; then
+        local work
+        work=$(mktemp -d "$cache_root/$platform/.image.XXXXXXXX")
+        cleanup+=("$work")
+        docker save "exact-boat-$platform:$ref" | zstd -q -T4 -1 -o "$work/image.tar.zst"
+        mv -T -- "$work/image.tar.zst" "$archive"
+    fi
+    printf 'Saved %s\n' "$archive"
 }
 
 export_cache() {
@@ -560,6 +597,10 @@ fi
 case "${1:-}" in
     prepare) [[ $# == 2 && ( $2 == ios || $2 == android ) ]] || usage; prepare "$2" ;;
     ios|android) [[ $# == 4 ]] || usage; build_mobile "$@" ;;
+    save-image|load-image)
+        [[ $# == 3 && ( $2 == ios || $2 == android ) ]] || usage
+        if [[ "$1" == save-image ]]; then save_image "$2" "$3"; else verify_cache "$2" "$3"; fi
+        ;;
     _build) [[ $# == 2 && ( $2 == ios || $2 == android ) ]] || usage; execute_build "$2" ;;
     _android-sdk) [[ $# == 1 ]] || usage; setup_android_sdk ;;
     export) [[ $# == 4 && ( $2 == ios || $2 == android ) ]] || usage; shift; export_cache "$@" ;;

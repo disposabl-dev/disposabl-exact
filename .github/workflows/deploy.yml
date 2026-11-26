@@ -213,7 +213,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.deploy.outputs.native_matrix || '[]') }}
-    runs-on: ${{ matrix.platform == 'ios' && 'blacksmith-6vcpu-macos-27' || matrix.platform == 'android' && 'blacksmith-16vcpu-ubuntu-2604' || 'blacksmith-8vcpu-ubuntu-2604' }}
+    runs-on: ${{ matrix.platform == 'ios' && 'blacksmith-6vcpu-macos-27' || 'blacksmith-8vcpu-ubuntu-2604' }}
     timeout-minutes: 90
     environment: &native-environment
       name: android-production
@@ -329,7 +329,7 @@ jobs:
     strategy:
       matrix:
         include: ${{ fromJSON(needs.deploy.outputs.public_android || '[]') }}
-    runs-on: blacksmith-16vcpu-ubuntu-2604
+    runs-on: blacksmith-8vcpu-ubuntu-2604
     permissions:
       contents: write
     timeout-minutes: 90
