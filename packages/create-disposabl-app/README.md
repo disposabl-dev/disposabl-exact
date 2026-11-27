@@ -8,15 +8,21 @@ npx create-disposabl-app@next my-app
 
 npm installs `@disposabl/cli` with the generator. Sign in to Disposabl and connect GitHub and Convex when prompted. The CLI provisions a repository, a Convex project with a development deployment, and the GitHub Actions Convex deploy key. The generated checkout has that repository as its `origin` and local Convex settings for its backend and Exact app.
 
-Provider setup uses the web platform. The generator enables Android and iOS in the local `disposabl.json` afterward. Follow the generated README for the first web deployment and Exact mobile signing.
+The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
-Run the same command with `--resume` if setup stops partway. Use `--skip-setup` to create the starter files without provisioning a repository or deployment. To run the shared CLI directly, use `npx --package @disposabl/cli disposabl --help`.
+```sh
+npx create-disposabl-app@next my-app --platforms web,ios --features authentication,payments
+```
+
+The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
+
+Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. To run the shared CLI directly, use `npx --package @disposabl/cli disposabl --help`.
 
 ## Reset to the clean starter
 
 Run `bun run reset-app` from this package directory in the Exact source checkout to export the clean app and backend to a temporary directory. The command prints the directory path. The package build uses the same reset automatically.
 
-The generator takes `apps/apps`, `packages/backend`, and the backend workspace manifest and lockfile from the clean commit in [starter.ref](starter.ref). Product files and edits in those directories stay in the Disposabl checkout. To ship an intentional starter change, commit it on a clean starter branch, keep that commit reachable on GitHub, and update `starter.ref`. Keep the shared kit and workflows compatible with the pinned starter.
+The generator takes `apps/apps`, `packages/backend`, and the backend workspace manifest and lockfile from the commit in [starter.ref](starter.ref). Product files and edits in those directories stay in the Disposabl checkout. To change the starter, commit and push the change on `starter/exact`, then update `starter.ref`. Keep the shared kit and workflows compatible with the pinned starter.
 
 ## Release from Exact
 

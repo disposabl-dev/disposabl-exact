@@ -10,7 +10,7 @@ const root = join(import.meta.dirname, "../..");
 const deployPath = ".github/workflows/deploy.yml";
 const actionPath = ".github/actions/exact-setup/action.yml";
 const templatePaths = [
-  "README.md", "disposabl.json", "packages/.gitignore",
+  "README.md", "packages/.gitignore",
   "packages/disposabl-kit", "packages/cli", "packages/sdk",
   ".github/workflows/app-config.yml", ".github/workflows/clients.yml", deployPath,
   ".github/actions/exact-setup",
@@ -82,6 +82,7 @@ try {
     .split("\0").filter(Boolean).filter(file =>
       !file.startsWith(".github/actions/exact-setup/scripts/") || !publisherScripts.has(file.split("/").at(-1)));
   const sources = new Map([
+    ["disposabl.json", join(import.meta.dirname, "disposabl.json")],
     ...sharedFiles.map(file => [file, join(root, file)]),
     ...appFiles.map(file => [file, join(restored, file)]),
   ]);
@@ -110,6 +111,8 @@ try {
     cwd: stage, file: join(import.meta.dirname, "template.tar.gz"), gzip: true,
     portable: true, noMtime: true, strict: true,
   }, files);
+  await copyFile(join(root, "packages/disposabl-kit/server/platform-config.mjs"),
+    join(import.meta.dirname, "platform-config.mjs"));
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

@@ -6,15 +6,18 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { extract } from "tar";
 import lockfile from "proper-lockfile";
+import { features, platforms, readProjectConfig } from "./platform-config.mjs";
 import { git, readJson, setup, writeJson } from "./setup.mjs";
 
-const help = `Usage: create-disposabl-app [app-name] [--skip-setup | --resume]
+const help = `Usage: create-disposabl-app [app-name] [options]
 
-Create an Exact and Convex project with web, Android and iOS enabled.
+Create an Exact and Convex project. Web and authentication are the defaults.
 Setup uses @disposabl/cli to provision GitHub and Convex.
 
+  --platforms  Comma-separated list of ${platforms.join(", ")}.
+  --features   Comma-separated list of ${features.join(", ")}.
   --skip-setup  Generate files and skip account and provider setup.
-  --resume      Continue provider setup in an existing generated project.
+  --resume      Continue provider setup with the existing disposabl.json.
   --version     Show the generator version.
   --help        Show this message.`;
 
@@ -45,10 +48,35 @@ async function setNativeCallback(directory, id) {
   }
 }
 
-async function createProject(directory, name) {
+function parseSelection(value) {
+  return value.trim() === "" || value.trim() === "none" ? [] : value.split(",").map(item => item.trim());
+}
+
+async function selectConfig(path, options) {
+  const config = await readJson(path);
+  let prompt;
+  try {
+    for (const [key, choices] of [["platforms", platforms], ["features", features]]) {
+      if (options[key] !== undefined) {
+        config[key] = parseSelection(options[key]);
+      } else if (process.stdin.isTTY) {
+        prompt ??= createInterface({ input: process.stdin, output: process.stdout });
+        const answer = await prompt.question(`Choose ${key} (${choices.join(", ")} or none) [${config[key].join(", ")}]: `);
+        if (answer.trim()) config[key] = parseSelection(answer);
+      }
+    }
+  } finally {
+    prompt?.close();
+  }
+  readProjectConfig(config);
+  await writeJson(path, config);
+}
+
+async function createProject(directory, name, options) {
   await mkdir(directory);
   try {
     await extract({ cwd: directory, file: join(import.meta.dirname, "template.tar.gz"), strict: true });
+    await selectConfig(join(directory, "disposabl.json"), options);
     const appPath = join(directory, "apps/apps/app.json");
     const app = await readJson(appPath);
     const id = `dev.disposabl.app.a${name.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
@@ -57,9 +85,6 @@ async function createProject(directory, name) {
     app.variants.preview.name = `${name} Preview`;
     await writeJson(appPath, app);
     await setNativeCallback(directory, id);
-    await writeJson(join(directory, "disposabl.json"), {
-      platforms: ["web"], features: ["authentication"],
-    });
     git(directory, "init", "--quiet", "--initial-branch=main");
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
@@ -75,6 +100,8 @@ async function main() {
       version: { type: "boolean", short: "V" },
       "skip-setup": { type: "boolean" },
       resume: { type: "boolean" },
+      platforms: { type: "string" },
+      features: { type: "string" },
     },
   });
   if (values.help) {
@@ -86,9 +113,12 @@ async function main() {
     return;
   }
   if (values.resume && values["skip-setup"]) throw new Error("Choose either --resume or --skip-setup.");
+  if (values.resume && (values.platforms !== undefined || values.features !== undefined)) {
+    throw new Error("Edit disposabl.json before resuming setup.");
+  }
   const name = await getName(positionals);
   const directory = resolve(name);
-  if (!values.resume) await createProject(directory, name);
+  if (!values.resume) await createProject(directory, name, values);
   const configPath = join(directory, "disposabl.json");
   const app = await readJson(join(directory, "apps/apps/app.json"));
   if (!app.id.startsWith("dev.disposabl.app.") || resolve(git(directory, "rev-parse", "--show-toplevel")) !== directory) {
@@ -99,15 +129,14 @@ async function main() {
   });
   try {
     const config = await readJson(configPath);
+    readProjectConfig(config);
     if (!values["skip-setup"]) await setup(directory, app.name, config);
-    config.platforms = [...new Set([...config.platforms, "android", "ios"])];
-    await writeJson(configPath, config);
   } catch (error) {
     throw new Error(`${error.message}\nFiles are in ${directory}. Rerun the generator with --resume.`);
   } finally {
     await release();
   }
-  console.log(`Created ${directory}\nSee README.md for local development and Exact mobile signing.`);
+  console.log(`Created ${directory}\nSee README.md for local development and deployment.`);
 }
 
 try {

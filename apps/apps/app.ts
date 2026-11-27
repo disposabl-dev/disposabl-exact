@@ -16,8 +16,6 @@ export const grants = `net.websocket ${origin}\n${authGrants}`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
 const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>('app:features');
-const getCounter = makeFunctionReference<'query', Record<string, never>, Result<'counter'>>('counter:get');
-const incrementCounter = makeFunctionReference<'mutation', Record<string, never>, null>('counter:increment');
 const credentials = '/api/dashboard/api-keys';
 
 function webRequest(path: string, body?: object) {
@@ -67,11 +65,6 @@ const sources: Sources = {
     const flags = await client.query(rev, getFeatures, {});
     const topLevelWeb = exactHost() === 'web' && globalThis.exactPlatformWeb === true;
     return { ...flags, ready: true, credentials: topLevelWeb && flags.credentials, consent: topLevelWeb && flags.consent };
-  },
-  counter: ([rev]) => client.query(rev, getCounter, {}),
-  increment: async () => {
-    await client.mutation(incrementCounter, {});
-    return { ok: true };
   },
 };
 export const answer: Answer = (source, args, store, storage, native) =>
