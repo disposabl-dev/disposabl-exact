@@ -59,7 +59,21 @@ case "$phase" in
     pin=$(bun -e 'console.log(Bun.TOML.parse(await Bun.file(process.env.EXACT + "/rust-toolchain.toml").text()).toolchain.channel)')
     rustup toolchain install "$pin" --profile minimal --target "$target"
     host=$(rustc +"$pin" -vV | awk '/^host:/ {print $2}')
-    cargo +"$pin" run --locked --manifest-path "$EXACT/vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml" -- --target "$host" --target "$target"
+    manifest="$EXACT/vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml"
+    if [[ "$platform" == android && -n ${EXACT_REF:-} ]]; then
+      [[ "$EXACT_REF" =~ ^[0-9a-f]{40}$ && $(git -C "$EXACT" rev-parse HEAD) == "$EXACT_REF" ]]
+      installer="$CARGO_TARGET_DIR/hermes-installer-$host-$EXACT_REF"
+      if [[ ! -x "$installer" ]]; then
+        cargo +"$pin" build --locked --manifest-path "$manifest" --target-dir "$RUNNER_TEMP/hermes-build"
+        mkdir -p "$CARGO_TARGET_DIR"
+        staged=$(mktemp "${installer}.XXXXXX")
+        install -s -m 755 "$RUNNER_TEMP/hermes-build/debug/hermes-lean-sys-installer" "$staged"
+        mv -f "$staged" "$installer"
+      fi
+      rustup run "$pin" "$installer" --target "$host" --target "$target"
+    else
+      cargo +"$pin" run --locked --manifest-path "$manifest" -- --target "$host" --target "$target"
+    fi
     ;;
   build)
     mkdir -p "$out"
