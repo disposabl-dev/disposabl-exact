@@ -93,6 +93,11 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   assert.deepEqual((await config()).platforms, ["web"]);
   assert.equal((await config()).appId, appId);
   assert.equal(creations, 1);
+  const callsBeforeRejectedOrigin = calls.length;
+  await assert.rejects(scaffold("exact-demo", ["--resume"], {
+    ...env, DISPOSABL_API_ORIGIN: "",
+  }), /Set DISPOSABL_API_ORIGIN/);
+  assert.equal(calls.length, callsBeforeRejectedOrigin);
   failSetup = false;
   const result = await scaffold("exact-demo", ["--resume"], env);
   assert.ok(!result.stdout.includes(deployKey) && !result.stderr.includes(deployKey));
@@ -120,6 +125,16 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   assert.equal(app.name, "exact-demo");
   assert.match(app.host.android.id, /^dev\.disposabl\.app\.a[a-z0-9]+$/);
   assert.equal(app.app.id, app.host.android.id);
+  for (const source of ["apps/apps/auth.ts", "packages/disposabl-kit/server/authSettings.ts"]) {
+    assert.ok((await read(source)).includes(app.app.id + ":/oauth/google"));
+  }
+
+  const git = (...args) => execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
+  const sshOrigin = "git@github.com:Example/exact-demo.git";
+  git("remote", "set-url", "origin", sshOrigin);
+  await scaffold("exact-demo", ["--resume"], env);
+  assert.equal(git("config", "--get", "remote.origin.url"), sshOrigin);
+  assert.equal(creations, 1);
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);

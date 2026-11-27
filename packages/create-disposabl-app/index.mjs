@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomBytes } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
@@ -34,6 +34,17 @@ async function getName(positionals) {
   return name;
 }
 
+async function setNativeCallback(directory, id) {
+  const original = "dev.disposabl.exact:/oauth/google";
+  const callback = id + ":/oauth/google";
+  for (const file of ["apps/apps/auth.ts", "packages/disposabl-kit/server/authSettings.ts"]) {
+    const path = join(directory, file);
+    const source = await readFile(path, "utf8");
+    if (!source.includes(original)) throw new Error("Missing native callback in " + file);
+    await writeFile(path, source.replace(original, callback));
+  }
+}
+
 async function createProject(directory, name) {
   await mkdir(directory);
   try {
@@ -45,6 +56,7 @@ async function createProject(directory, name) {
     app.name = app.short_name = app.app.name = name;
     app.variants.preview.name = `${name} Preview`;
     await writeJson(appPath, app);
+    await setNativeCallback(directory, id);
     await writeJson(join(directory, "disposabl.json"), {
       platforms: ["web"], features: ["authentication"],
     });

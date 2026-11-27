@@ -68,11 +68,19 @@ async function updateEnv(directory, relativePath, variables, remove = []) {
   }
 }
 
+function githubRepository(url) {
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([a-z0-9-]+\/[a-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(url);
+  return match?.[1].toLowerCase();
+}
+
 async function configureExact(directory, scratch) {
-  const repository = git(scratch, "remote", "get-url", "origin");
+  const repository = git(scratch, "config", "--get", "remote.origin.url");
+  const expected = githubRepository(repository);
+  if (!expected) throw new Error("Disposabl did not configure a GitHub repository.");
   const remotes = git(directory, "remote").split("\n");
   if (remotes.includes("origin")) {
-    if (git(directory, "remote", "get-url", "origin") !== repository) {
+    const current = git(directory, "config", "--get", "remote.origin.url");
+    if (githubRepository(current) !== expected) {
       throw new Error("The existing origin belongs to a different repository.");
     }
   } else {
@@ -96,9 +104,9 @@ async function configureExact(directory, scratch) {
 }
 
 export async function setup(directory, name, config) {
-  const origin = process.env.DISPOSABL_API_ORIGIN || config.serviceOrigin || defaultOrigin;
+  const origin = process.env.DISPOSABL_API_ORIGIN || defaultOrigin;
   if (config.appId && config.serviceOrigin !== origin) {
-    throw new Error("Resume with the original Disposabl API origin.");
+    throw new Error("Set DISPOSABL_API_ORIGIN to the original Disposabl API origin before resuming.");
   }
 
   const features = JSON.stringify(config.features.filter(feature => feature !== "payments"));
