@@ -3,20 +3,22 @@
 Run the Exact starter generator with Node.js 22.12 or newer, Git, and Bun.
 
 ```sh
-npx create-disposabl-app my-app
+bunx create-disposabl-app@latest my-app
+cd my-app
+bun run dev
 ```
 
-npm installs `@disposabl/cli` with the generator. Sign in to Disposabl and connect GitHub and Convex when prompted. The CLI provisions a repository, a Convex project with a development deployment, and the GitHub Actions Convex deploy key. The generated checkout has that repository as its `origin` and local Convex settings for its backend and Exact app.
+The generator installs `@disposabl/cli` as a development dependency in the new app root. Sign in to Disposabl and connect GitHub and Convex when prompted. The CLI provisions a repository, a Convex project with a development deployment, and the GitHub Actions Convex deploy key. The generated checkout has that repository as its `origin` and local Convex settings for its backend and Exact app.
 
 The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
 ```sh
-npx create-disposabl-app my-app --platforms web,ios --features authentication,payments
+bunx create-disposabl-app@latest my-app --platforms web,ios --features authentication,payments
 ```
 
 The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
 
-Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. To run the shared CLI directly, use `npx --package @disposabl/cli disposabl --help`.
+Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. Run the project CLI with `bun run disposabl --help`.
 
 ## Reset to the clean starter
 

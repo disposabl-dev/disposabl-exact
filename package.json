@@ -1,0 +1,13 @@
+{
+  "name": "disposabl-app",
+  "private": true,
+  "scripts": {
+    "postinstall": "bun install --cwd packages --frozen-lockfile && bun scripts/exact.mjs install-cli",
+    "dev": "bun scripts/dev.mjs",
+    "exact": "bun scripts/exact.mjs",
+    "android": "bun scripts/exact.mjs run android"
+  },
+  "devDependencies": {
+    "@disposabl/cli": "4.1.0"
+  }
+}

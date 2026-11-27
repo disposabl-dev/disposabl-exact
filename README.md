@@ -37,7 +37,19 @@ Generated repositories call Disposabl's shared deployment workflow on `main`. Ev
 
 ### Run the app locally
 
-Set `EXACT` to an up-to-date checkout of [expo/exact](https://github.com/expo/exact). The shared Boat sandbox includes web, Android and Apple cross-build tools on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox with the command below. A login shell loads the toolchain automatically.
+Create the app and start its backend and web development server from the project root.
+
+```sh
+bunx create-disposabl-app@latest my-app
+cd my-app
+bun run dev
+```
+
+The generator installs dependencies. After cloning an existing app, run `bun install` at its root first. Convex starts the configured development deployment (or a local deployment with `--skip-setup`), then starts Exact with the development URLs. The first web build prepares the Exact SDK and compiler tools. Use `EXACT` to select an existing SDK checkout.
+
+To launch Android on a connected device or running emulator, run `bun run android` at the project root. On a fresh installation with Bun's bin directory on PATH, `exact run android` also works. If you already have another global Exact CLI, `bun run android` selects this project's launcher.
+
+The shared Boat sandbox includes web, Android and Apple cross-build tools on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox with the command below. A login shell loads the toolchain automatically.
 
 ```sh
 boat new --type default --no-env --from bsh_hvAwp0phMPSKIjvJPxpHipEdJCa3iQQ1wyXzS465pzi
@@ -51,8 +63,6 @@ exact mac --release
 ```
 
 The snapshot includes both SDKs. On a fresh restore, the commands above wait for Boat to finish loading the compiler cache. Once `boat info <sandbox-id> --json` reports `.sandbox.hydrated` as `true`, app-local commands such as `bun exact.mjs ios --device --release --unsigned --archive app.ipa` and `EXACT_IDENTITY=- bun exact.mjs mac --release` use them directly. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
-
-Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
 

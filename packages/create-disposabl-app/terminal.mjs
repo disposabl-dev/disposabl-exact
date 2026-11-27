@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import * as prompts from "@clack/prompts";
 
 class PromptCancelled extends Error {}
@@ -43,7 +44,7 @@ export function createTerminal() {
       }));
     },
     complete(directory) {
-      const message = `Created ${directory}\nSee README.md for local development and deployment.`;
+      const message = `Created ${directory}\n\ncd ${basename(directory)}\nbun run dev`;
       if (interactive) prompts.outro(message);
       else console.log(message);
     },
