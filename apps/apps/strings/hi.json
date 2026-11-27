@@ -66,5 +66,10 @@
   "app.loading": "लोड हो रहा है…",
   "keys.failed": "कनेक्शन लोड या अपडेट नहीं हो सके। फिर कोशिश करें।",
   "billing.monthlyOffer": "{price} में हर महीने {count} क्रेडिट",
-  "billing.topupOffer": "{price} में एक बार के {count} क्रेडिट"
+  "billing.topupOffer": "{price} में एक बार के {count} क्रेडिट",
+  "storeUpdate.open": "App Store में अपडेट करें",
+  "storeUpdate.install": "ऐप अपडेट करें",
+  "storeUpdate.restart": "अपडेट के लिए फिर से शुरू करें",
+  "storeUpdate.downloading": "अपडेट डाउनलोड हो रहा है…",
+  "storeUpdate.failed": "ऐप अपडेट नहीं हो सका। फिर कोशिश करें।"
 }
