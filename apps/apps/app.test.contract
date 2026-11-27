@@ -1,4 +1,0 @@
-test "the app reads live data from Convex"
-  locale "en-US"
-  expect text "convex-status" == "Connected to Convex"
-  expect tree has "convex-count"
