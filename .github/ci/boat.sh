@@ -132,6 +132,8 @@ if [[ ${1:-} == smoke ]]; then
     apk=$(jq -er '.path | select(endswith(".apk"))' android.json)
     test -s "$apk"
     unzip -tq "$apk"
+    # Release the Android build daemons before compiling Swift on the 8 GB VM.
+    (cd "$EXACT/host/android" && ./gradlew --stop)
   fi
   if [[ ${3:-} == all ]]; then
     export RUNNER_TEMP="$fixture/runner"
