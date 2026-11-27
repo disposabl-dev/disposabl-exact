@@ -1,31 +1,69 @@
-// NOTE: You can remove this file. Declaring the shape
-// of the database is entirely optional in Convex.
-// See https://docs.convex.dev/database/schemas.
-
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-export default defineSchema(
-  {
-    documents: defineTable({
-      fieldOne: v.string(),
-      fieldTwo: v.object({
-        subFieldOne: v.array(v.number()),
-      }),
-    }),
-    users: defineTable({ name: v.optional(v.string()) }),
-    counters: defineTable({
-      name: v.literal("shared"),
-      count: v.number(),
-    }).index("by_name", ["name"]),
-  },
-  // If you ever get an error about schema mismatch
-  // between your data and your schema, and you cannot
-  // change the schema to match the current data in your database,
-  // you can:
-  //  1. Use the dashboard to delete tables or individual documents
-  //     that are causing the error.
-  //  2. Change this option to `false` and make changes to the data
-  //     freely, ignoring the schema. Don't forget to change back to `true`!
-  { schemaValidation: true }
+const platformResult = v.object({
+  url: v.optional(v.string()),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("building"),
+    v.literal("done"),
+    v.literal("error"),
+  ),
+  commitSha: v.optional(v.string()),
+});
+
+const optionalResult = v.optional(platformResult);
+const previewPlatforms = v.object({
+  web: optionalResult,
+  api: optionalResult,
+  mcp: optionalResult,
+  android: optionalResult,
+  ios: optionalResult,
+  macos: optionalResult,
+});
+
+const appPlatforms = v.union(
+  v.null(),
+  previewPlatforms.extend({
+    cli: optionalResult,
+    sdk: optionalResult,
+  }),
 );
+
+export default defineSchema({
+  users: defineTable({ name: v.optional(v.string()) }),
+
+  apps: defineTable({
+    userId: v.id("users"),
+    slug: v.string(),
+    name: v.string(),
+    githubOwner: v.string(),
+    githubRepoName: v.string(),
+    convexProjectId: v.number(),
+    prod: appPlatforms,
+    live: appPlatforms,
+  })
+    .index("by_userId", ["userId"])
+    .index("by_slug", ["slug"]),
+
+  previews: defineTable({
+    appId: v.id("apps"),
+    previewName: v.string(),
+    previewSlug: v.string(),
+    platforms: previewPlatforms,
+  })
+    .index("by_appId", ["appId"])
+    .index("by_previewSlug", ["previewSlug"]),
+
+  connections: defineTable({
+    userId: v.id("users"),
+    github: v.optional(v.object({
+      owner: v.string(),
+      installationId: v.string(),
+    })),
+    convex: v.optional(v.object({
+      teamId: v.number(),
+      accessToken: v.string(),
+    })),
+  }).index("by_userId", ["userId"]),
+});
