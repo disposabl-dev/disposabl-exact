@@ -12,7 +12,8 @@ declare global {
 }
 
 const origin = import.meta.env.CONVEX_ORIGIN;
-export const grants = `net.websocket ${origin}\n${authGrants}`;
+export const grants = `net.websocket ${origin}\n${authGrants}
+net.fetch https://itunes.apple.com`;
 
 const client = convex(origin, { getFunctionName, convexToJson, jsonToConvex });
 const getFeatures = makeFunctionReference<'query', Record<string, never>, Omit<Result<'loadAppFeatures'>, 'ready'>>('app:features');
