@@ -55,11 +55,20 @@ jobs:
     permissions: { contents: write }
     env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
     steps:
+      - uses: actions/checkout@v7.0.1
+        with: { sparse-checkout: .github/ci, persist-credentials: false }
       - uses: actions/download-artifact@v8.0.2
         with: { pattern: cache-*, merge-multiple: true, path: cache }
       - run: |
           for platform in web android ios macos; do test -s "cache/cache-$platform.tar.zst.part-aaa"; done
-          tag="exact-ci-linux-v3-$EXACT_REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          gh release create "$tag" --target "$GITHUB_SHA" --title "Exact $EXACT_REF" --notes 'Verified on fresh Ubuntu runners for all four platforms.' --latest=false cache/*
-          gh release list --limit 100 --exclude-drafts --json tagName --jq '[.[].tagName | select(startswith("exact-ci-linux-v3-"))] | sort_by(split("-")[-2:] | map(tonumber)) | reverse | .[2:][]' |
-            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
+          for platform in web android ios macos; do
+            tag="exact-ci-linux-v2-$platform-$EXACT_REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Exact $platform cache $EXACT_REF" --notes 'Verified on a fresh Ubuntu runner.' --latest=false cache/cache-"$platform".tar.zst.part-*
+          done
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          jq -f .github/ci/cache-sets.jq "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/sets.json"
+          jq -e --argjson run "$GITHUB_RUN_ID" 'any(.[]; .run == $run)' "$RUNNER_TEMP/sets.json" >/dev/null
+          jq -r --slurpfile sets "$RUNNER_TEMP/sets.json" '
+            ($sets[0][:2] | map(.tags[]) ) as $keep | .[][] | select(.draft == false) | .tag_name
+            | select(test("^exact-ci-linux-v2-(android|ios|macos|web)-[a-f0-9]{40}-[0-9]+-[0-9]+$")) | select(. as $t | $keep | index($t) == null)
+          ' "$RUNNER_TEMP/releases.json" | while read -r old; do gh release delete "$old" --yes --cleanup-tag; done

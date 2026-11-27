@@ -31,7 +31,7 @@ On the first deployment, CI builds each selected native app on Ubuntu and writes
 
 ## Exact updates
 
-Generated repositories call Disposabl's shared deployment workflow on `main`. Every six hours, the central repository builds the latest upstream Exact commit and tests the caches on fresh Ubuntu runners. Once all four platforms pass, it publishes them together. New and existing apps automatically use the newest published set on their next deployment. The refresh also rebuilds the shared Boat development snapshot and tests a fresh restore.
+Generated repositories call Disposabl's shared deployment workflow on `main`. Every six hours, the central repository builds the latest upstream Exact commit and tests the caches on fresh Ubuntu runners. Once all four platforms pass, it publishes them together. New and existing apps automatically use the newest complete set on their next deployment. During a failed or incomplete refresh, deployments continue using the previous complete set. If no verified set exists, deployment stops before building. The refresh also rebuilds the shared Boat development snapshot and tests a fresh restore.
 
 ### Run the app locally
 
