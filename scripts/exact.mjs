@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, resolve } from "node:path";
 
@@ -146,6 +147,21 @@ async function prepare(sdk, app, args) {
   run(process.execPath, [cli, "setup", "--platform", "web"], sdk, env);
 }
 
+function publicBackendOrigins(app) {
+  const local = dir => {
+    const path = resolve(dir, ".env.local");
+    return existsSync(path) ? parseEnv(readFileSync(path, "utf8")) : {};
+  };
+  const frontend = local(app);
+  const backend = local(resolve(app, "../../packages/backend"));
+  const url = process.env.CONVEX_URL || backend.CONVEX_URL || "http://127.0.0.1:3210";
+  return {
+    CONVEX_ORIGIN: process.env.CONVEX_ORIGIN || frontend.CONVEX_ORIGIN || url.replace(/^http/, "ws"),
+    CONVEX_SITE_ORIGIN: process.env.CONVEX_SITE_ORIGIN || frontend.CONVEX_SITE_ORIGIN ||
+      process.env.CONVEX_SITE_URL || backend.CONVEX_SITE_URL || "http://127.0.0.1:3211",
+  };
+}
+
 async function main(args) {
   if (args[0] === "install-cli") return installCli();
   if (basename(import.meta.path) === "exact") {
@@ -173,7 +189,22 @@ async function main(args) {
   }
 
   await prepare(sdk, app, args);
-  return launch(resolve(app, "exact.mjs"), args, app, { ...process.env, EXACT: sdk });
+  const origins = publicBackendOrigins(app);
+  if (args[0] === "android" && args.includes("--run") && !args.includes("--help") && !args.includes("-h")) {
+    const { androidSdk } = await import(resolve(sdk, "scripts/android-abi.mjs"));
+    const binary = resolve(androidSdk(process.env), "platform-tools/adb");
+    const ports = new Set();
+    for (const value of Object.values(origins)) {
+      const url = new URL(value);
+      if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && url.port) ports.add(url.port);
+    }
+    for (const port of ports) {
+      run(existsSync(binary) ? binary : "adb", ["-s", process.env.ANDROID_SERIAL, "reverse", `tcp:${port}`, `tcp:${port}`], app);
+    }
+  }
+  const env = { ...process.env, ...origins, EXACT: sdk };
+  for (const key of ["CONVEX_DEPLOY_KEY", "CONVEX_SELF_HOSTED_ADMIN_KEY", "CONVEX_DEPLOYMENT"]) delete env[key];
+  return launch(resolve(app, "exact.mjs"), args, app, env);
 }
 
 async function launch(cli, args, cwd, env) {
