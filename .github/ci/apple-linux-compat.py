@@ -45,8 +45,8 @@ if platform == "macos":
     )
     edit(
         "host/apple/build.mjs",
-        "`${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos${targets.macos}`",
-        "`${macTriple}${targets.macos}`",
+        "    webArgs.push('-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos${targets.macos}`);",
+        "    webArgs.push('-target', `${macTriple}${targets.macos}`);",
     )
     edit(
         "host/apple/bundle.mjs",
