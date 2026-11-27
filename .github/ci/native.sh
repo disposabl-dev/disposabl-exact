@@ -14,6 +14,7 @@ case "$phase" in
         sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
         yes | "$sdk" --licenses >/dev/null || true
         "$sdk" 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+        bash "$(dirname "$0")/android-tools.sh" install >/dev/null
         target=aarch64-linux-android ;;
       ios) target=aarch64-apple-ios ;;
       macos) target=aarch64-apple-darwin ;;
@@ -52,7 +53,8 @@ PYCODE
         jq -er '.keystore | select(type == "string" and length > 0)' <<< "$ANDROID_APK_SIGNING" | base64 --decode > "$EXACT_KEYSTORE"
         bun exact.mjs android --release --no-install --json > "$out/build.json"
         cp "$(jq -er '.path' "$out/build.json")" "$out/app.apk"
-        "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$out/app.apk" > "$signing/cert.txt"
+        apksigner=$(bash "$(dirname "$0")/android-tools.sh" path)
+        "$apksigner" verify --print-certs "$out/app.apk" > "$signing/cert.txt"
         expected=$(keytool -exportcert -keystore "$EXACT_KEYSTORE" -storepass:env EXACT_KEYSTORE_PASSWORD -alias android | shasum -a 256 | cut -d ' ' -f 1)
         actual=$(awk -F 'certificate SHA-256 digest: ' '/certificate SHA-256 digest:/ {print tolower($NF)}' "$signing/cert.txt" | sort -u)
         [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" ]] || {
