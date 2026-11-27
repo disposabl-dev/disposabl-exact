@@ -55,8 +55,12 @@ CLI
   cd "$EXACT"
   exact setup --platform web
   bash "$0" prepare-android
+  # Apple SDKs are fetched at runtime, outside the publicly shared snapshot.
   bash "$0" smoke "$ref" android
   install -m 755 "$0" "$root/boat-smoke.sh"
+  for file in native.sh apple-linux.sh apple-linux-compat.py swift-6-release.asc; do
+    install -m 644 "$script_dir/$file" "$root/$file"
+  done
   printf '%s\n' "$ref" > "$root/prepared"
   exit
 fi
@@ -77,7 +81,8 @@ if [[ ${1:-} == prepare-android ]]; then
   mv "$work/cmdline-tools" "$tools"
   sdk="$tools/bin/sdkmanager"
   (set +o pipefail; yes | "$sdk" --sdk_root="$ANDROID_HOME" --licenses >/dev/null)
-  "$sdk" --sdk_root="$ANDROID_HOME" 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.3.13750724'
+  "$sdk" --sdk_root="$ANDROID_HOME" 'platform-tools' 'platforms;android-37.2' 'ndk;27.3.13750724'
+  bash "$script_dir/android-tools.sh" install
   cd "$EXACT"
   rustup target add aarch64-linux-android x86_64-linux-android
   cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- \
@@ -97,7 +102,7 @@ if [[ ${1:-} == smoke ]]; then
   trap 'rm -rf "$fixture"' EXIT
   exact new "$fixture/app" --name BoatSmoke --bundle-id dev.boat.exact.smoke
   cd "$fixture/app"
-  if [[ ${3:-} == android ]]; then
+  if [[ ${3:-} == android || ${3:-} == all ]]; then
     test ! -e "$ANDROID_HOME/emulator"
     test ! -e "$ANDROID_HOME/system-images"
     export ANDROID_USER_HOME="$fixture/android-home"
@@ -105,6 +110,16 @@ if [[ ${1:-} == smoke ]]; then
     apk=$(jq -er '.path | select(endswith(".apk"))' android.json)
     test -s "$apk"
     unzip -tq "$apk"
+  fi
+  if [[ ${3:-} == all ]]; then
+    # Keep Apple toolchain and SDKs ephemeral: the shared snapshot must not
+    # redistribute SDKs. Exercise the same bootstrap as CI on each restore.
+    export RUNNER_TEMP="$fixture/runner" EXACT_APPLE_ROOT="$fixture/apple"
+    mkdir -p "$RUNNER_TEMP"
+    for platform in ios macos; do
+      bash "$script_dir/native.sh" prepare "$platform"
+      bash "$script_dir/native.sh" build "$platform"
+    done
   fi
   time bun exact.mjs web-build --out dist
   test -s dist/shell.html
@@ -135,25 +150,27 @@ wait_for() {
   return 1
 }
 producer=$(boat new --type default --no-env --ttl 5400 --name exact-snapshot-producer --json \
-  --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh" | ready_id)
+  --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh" --file "/tmp/android-tools.sh=$script_dir/android-tools.sh" \
+  --file "/tmp/native.sh=$script_dir/native.sh" --file "/tmp/apple-linux.sh=$script_dir/apple-linux.sh" \
+  --file "/tmp/apple-linux-compat.py=$script_dir/apple-linux-compat.py" --file "/tmp/swift-6-release.asc=$script_dir/swift-6-release.asc" | ready_id)
 boat exec --timeout 3600 --stream "$producer" -- bash /tmp/exact-boat.sh prepare "$ref" "$bun_version"
 boat stop "$producer"
 wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "completed" and .sandbox.holdsCreatorLogins == false'
 
 started=$SECONDS
-sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 2400 --json "$producer" | ready_id)
+sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 5400 --json "$producer" | ready_id)
 echo "Boat shell ready in $((SECONDS - started))s"
-boat exec --timeout 1800 --stream "$sandbox" -- bash -lc '
+boat exec --timeout 3600 --stream "$sandbox" -- bash -lc '
   set -e
   root="$HOME/.local/share/exact-boat"
   test "$EXACT" = "$root/sdk"
   test "$ANDROID_HOME" = "$root/android"
   test "$RUSTUP_HOME" = "$root/rustup"
   test "$(command -v rustup)" = "$root/cargo/bin/rustup"
-  exec bash "$root/boat-smoke.sh" smoke "$1" android
+  exec bash "$root/boat-smoke.sh" smoke "$1" all
 ' boat-smoke "$ref"
 wait_for "$sandbox" '.sandbox.hydrated == true'
-echo "Boat Android build, web smoke, and hydration verified by $((SECONDS - started))s"
+echo "Boat Android, Apple, and web builds and hydration verified by $((SECONDS - started))s"
 boat stop "$sandbox"
 sandbox=
 
