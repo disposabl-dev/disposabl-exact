@@ -19,22 +19,15 @@ app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   app="$RUNNER_TEMP/exact-cache-fixture"
-  if [[ "$platform" == ios || "$platform" == macos ]]; then
-    # Seed the same native capabilities as a generated app, under another identity.
-    starter=$(cat "$GITHUB_WORKSPACE/packages/create-disposabl-app/starter.ref")
-    git fetch --quiet --depth=1 origin "$starter"
-    mkdir -p "$app"
-    git archive "$starter:apps/apps" | tar -x -C "$app"
-    (cd "$app" && jq '.id="dev.disposabl.exactcacheseed" | .app.id=.id | .app.name="ExactCacheSeed" | .name=.app.name | .short_name=.name' app.json > manifest.tmp && mv manifest.tmp app.json)
-    sed -i 's/dev\.disposabl\.exact:\/oauth\/google/dev.disposabl.exactcacheseed:\/oauth\/google/g' "$app/auth.ts"
-  else
-    (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed)
-    mkdir -p "$app/assets"
-    cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
-    (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}]' app.json > manifest.tmp && mv manifest.tmp app.json)
-  fi
+  # Seed the same native capabilities as a generated app, under another identity.
+  starter=$(cat "$GITHUB_WORKSPACE/packages/create-disposabl-app/starter.ref")
+  git fetch --quiet --depth=1 origin "$starter"
+  mkdir -p "$app"
+  git archive "$starter:apps/apps" | tar -x -C "$app"
+  (cd "$app" && jq '.id="dev.disposabl.exactcacheseed" | .app.id=.id | .app.name="ExactCacheSeed" | .name=.app.name | .short_name=.name' app.json > manifest.tmp && mv manifest.tmp app.json)
+  sed -i 's/dev\.disposabl\.exact:\/oauth\/google/dev.disposabl.exactcacheseed:\/oauth\/google/g' "$app/auth.ts"
 fi
-if [[ "$platform" == ios || "$platform" == macos ]]; then
+if [[ "$platform" != web ]]; then
   export EXACT_UPDATE_CHANNEL="base-$platform-1"
   # Main ships updatable (level A) binaries. A fixed-plan fixture omits their host modules.
   key=$(node -p 'require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({format:"der", type:"spki"}).subarray(-32).toString("base64")')
@@ -64,8 +57,8 @@ if [[ "$platform" == web ]]; then
     ! grep -q 'not found' "$RUNNER_TEMP/ota-ldd.txt"
   done
   "$ota/exact-bake" --help >/dev/null
-  # Direct compiler calls bypass Exact's before_build hook on the restored app.
-  if [[ ${CACHE_VERIFY:-} == 1 ]]; then (cd "$app" && bun --no-env-file scripts/locales.mjs); fi
+  # Direct compiler calls bypass the starter's before_build hook.
+  (cd "$app" && bun --no-env-file scripts/locales.mjs)
   (cd "$EXACT" && "$ota/exact-js-bake" "$app" --out "$RUNNER_TEMP/ota-smoke" > "$RUNNER_TEMP/ota-receipt.json")
   test -s "$RUNNER_TEMP/ota-smoke/app.hbc"
   "$ota/exact-bake" compat "$app" --platform android --json > "$RUNNER_TEMP/ota-compat.json"
