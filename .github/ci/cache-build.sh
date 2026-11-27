@@ -22,14 +22,19 @@ if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   platforms=()
   if [[ "$platform" == ios || "$platform" == macos ]]; then platforms=(--with "$platform"); fi
   (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed "${platforms[@]}")
-  if [[ "$platform" == ios || "$platform" == macos ]]; then
-    cat >> "$app/app.contract" <<'CONTRACT'
-      canvas width=32 height=32
-      svg width=32 height=32 viewBox="0 0 32 32"
-        path d="M 0 0 L 32 0 L 0 32 Z" fill="#0066cc"
-CONTRACT
-  fi
   mkdir -p "$app/assets"
+  if [[ "$platform" == ios || "$platform" == macos ]]; then
+    # A simple SVG draws natively. A masked SVG reaches Exact’s SVG raster module.
+    cat > "$app/assets/masked.svg" <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <mask id="m" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <path d="M 0 0 H 32 V 32 H 0 Z" fill="white"/>
+  </mask>
+  <path d="M 0 0 L 32 0 L 0 32 Z" fill="#0066cc" mask="url(#m)"/>
+</svg>
+SVG
+    printf '%s\n' '            image "assets/masked.svg" width=32 height=32' >> "$app/app.contract"
+  fi
   cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
   (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}] | .deploy.store.ios="0" | .deploy.store.macos="0"' app.json > manifest.tmp && mv manifest.tmp app.json)
 fi
@@ -81,4 +86,10 @@ else
   done
 fi
 [[ "${CACHE_VERIFY:-}" != 1 ]] || exit 0
+if [[ "$platform" == ios || "$platform" == macos ]]; then
+  [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]] || {
+    echo 'The Apple cache fixture did not compile the SVG raster module.' >&2
+    exit 1
+  }
+fi
 COPYFILE_DISABLE=1 tar --format pax -C "$HOME" -cf - --exclude=incremental --exclude='*.lock' --exclude='*.lck' --exclude='*.part' --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
