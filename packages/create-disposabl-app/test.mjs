@@ -45,6 +45,7 @@ test("the packed generator defaults to web and preserves selections through prov
   execFileSync("bun", ["add", "--ignore-scripts", archive], { cwd: work });
   const packed = JSON.parse(await readFile(join(work, "node_modules/create-disposabl-app/package.json"), "utf8"));
   const repository = "https://github.com/disposabl-dev/disposabl-exact";
+  assert.equal(packed.dependencies["@disposabl/cli"], undefined);
   assert.equal(packed.repository.url, `git+${repository}.git`);
   assert.equal(packed.repository.directory, "packages/create-disposabl-app");
   assert.equal(packed.homepage, `${repository}/tree/main/packages/create-disposabl-app#readme`);
@@ -121,6 +122,9 @@ esac
     assert.equal(await read(`apps/apps/${name}`), await readFile(join(packageDir, `../../apps/apps/${name}`), "utf8"));
   }
   assert.equal((await config()).appId, appId);
+  assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "4.1.0");
+  await access(join(directory, "node_modules/.bin/disposabl"));
+  for (const script of ["dev.mjs", "dev-web.mjs", "exact.mjs"]) await access(join(directory, "scripts", script));
   assert.equal(creations, 1);
   const callsBeforeRejectedOrigin = calls.length;
   await assert.rejects(scaffold("exact-demo", ["--resume"], {
