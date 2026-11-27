@@ -27,6 +27,10 @@ export GRADLE_USER_HOME="$exact_root/gradle"
 export EXACT_APPLE_ROOT="${EXACT_APPLE_ROOT:-$exact_root/apple}"
 export RUNNER_TEMP="${RUNNER_TEMP:-$exact_root/tmp}"
 exact_boat_path="$HOME/.local/bin:$CARGO_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+if [ -r "$EXACT_APPLE_ROOT/swift-sdk.json" ]; then
+  export EXACT_APPLE_SDK="$EXACT_APPLE_ROOT" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
+  exact_boat_path="$exact_boat_path:$EXACT_APPLE_ROOT/bin:$EXACT_APPLE_ROOT/swift/usr/bin:$EXACT_APPLE_LLVM_BIN"
+fi
 case "$PATH" in
   "$exact_boat_path"|"$exact_boat_path":*) ;;
   *) export PATH="$exact_boat_path:$PATH" ;;
@@ -54,13 +58,7 @@ source "$HOME/.local/share/exact-boat/env.sh"
 case "${1:-}" in
   ios|mac)
     [[ -f exact.mjs ]] || { echo 'Run this command from an Exact app directory.' >&2; exit 1; }
-    platform=$1
-    [[ "$platform" != mac ]] || platform=macos
-    mkdir -p "$RUNNER_TEMP"
-    bash "$HOME/.local/share/exact-boat/native.sh" prepare "$platform" >&2
-    export EXACT_APPLE_SDK="$EXACT_APPLE_ROOT/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
-    export PATH="$EXACT_APPLE_ROOT/bin:$EXACT_APPLE_ROOT/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
-    [[ "$platform" != macos ]] || export EXACT_IDENTITY="${EXACT_IDENTITY:--}"
+    [[ $1 != mac ]] || export EXACT_IDENTITY="${EXACT_IDENTITY:--}"
     exec bun exact.mjs "$@" ;;
   *) exec bun "$EXACT/scripts/exact.mjs" "$@" ;;
 esac
@@ -73,13 +71,29 @@ CLI
   for file in native.sh apple-linux.sh apple-linux-compat.py swift-6-release.asc; do
     install -m 644 "$script_dir/$file" "$root/$file"
   done
-  # Warm open toolchain and compiled caches in the private producer. Remove
-  # downloaded Apple SDK trees before the producer can become a snapshot.
+  for platform in ios macos; do bash "$root/native.sh" prepare "$platform"; done
+  bash "$0" register-apple
   bash "$root/boat-smoke.sh" smoke "$ref" all
-  rm -rf -- "$EXACT_APPLE_ROOT/ios" "$EXACT_APPLE_ROOT/macos"
-  rm -f -- "$EXACT_APPLE_ROOT/ios-27.1.ready" "$EXACT_APPLE_ROOT/macos-27.0.ready"
-  test ! -e "$EXACT_APPLE_ROOT/ios" && test ! -e "$EXACT_APPLE_ROOT/macos"
   printf '%s\n' "$ref" > "$root/prepared"
+  exit
+fi
+
+# Exact selects the target triple from one Darwin bundle for app-local commands.
+if [[ ${1:-} == register-apple ]]; then
+  source "$HOME/.local/share/exact-boat/env.sh"
+  cd "$EXACT_APPLE_ROOT"
+  jq -n --slurpfile ios ios/swift-sdk.json --slurpfile macos macos/swift-sdk.json '
+    def targets($sdk; $dir): $sdk.targetTriples | map_values(
+      .sdkRootPath |= ($dir + "/" + .) | .swiftResourcesPath |= ($dir + "/" + .) |
+      .toolsetPaths |= map($dir + "/" + .));
+    {schemaVersion: "4.0", targetTriples: (targets($ios[0]; "ios") + targets($macos[0]; "macos"))}
+  ' > swift-sdk.json.tmp
+  ln -sfnT ios/toolset toolset
+  mv swift-sdk.json.tmp swift-sdk.json
+  swift_sdks="${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/swiftpm}"
+  swift_sdks="${swift_sdks:-$HOME/.swiftpm}/swift-sdks"
+  mkdir -p "$swift_sdks"
+  ln -sfnT "$EXACT_APPLE_ROOT" "$swift_sdks/darwin.artifactbundle"
   exit
 fi
 
@@ -113,7 +127,7 @@ if [[ ${1:-} == smoke ]]; then
   awk '/MemTotal/ {exit !($2 >= 7000000 && $2 <= 9000000)}' /proc/meminfo
   source "$HOME/.local/share/exact-boat/env.sh"
   test "$(git -C "$EXACT" rev-parse HEAD)" = "$2"
-  for path in "$HOME"/{.netrc,.git-credentials,.config/gh/hosts.yml,.codex/auth.json,.claude/.credentials.json,.swiftpm/swift-sdks/darwin.artifactbundle,.local/share/x86sim/runtimes}; do
+  for path in "$HOME"/{.netrc,.git-credentials,.config/gh/hosts.yml,.codex/auth.json,.claude/.credentials.json,.local/share/x86sim/runtimes}; do
     [[ ! -e $path ]] || { echo "Unexpected snapshot path: $path" >&2; exit 1; }
   done
   fixture=$(mktemp -d)
@@ -138,16 +152,14 @@ if [[ ${1:-} == smoke ]]; then
   if [[ ${3:-} == all ]]; then
     export RUNNER_TEMP="$fixture/runner"
     mkdir -p "$RUNNER_TEMP"
-    # Run precisely the launcher commands available in a restored sandbox.
-    exact ios --device --release --unsigned --archive "$fixture/app.ipa" --json > "$fixture/ios.json"
+    bun exact.mjs ios --device --release --unsigned --archive "$fixture/app.ipa" --json > "$fixture/ios.json"
     unzip -tq "$fixture/app.ipa" >/dev/null
     unzip -q "$fixture/app.ipa" 'Payload/*' -d "$fixture/ios"
     bundles=("$fixture"/ios/Payload/*.app)
     [[ ${#bundles[@]} == 1 && -d "${bundles[0]}" ]]
     source "$script_dir/apple-linux.sh"
-    export PATH="$EXACT_APPLE_ROOT/bin:$EXACT_APPLE_ROOT/swift/usr/bin:/usr/lib/llvm-23/bin:$PATH"
     apple_verify_bundle "${bundles[0]}" ios "$fixture"
-    exact mac --release --json > "$fixture/mac.json"
+    EXACT_IDENTITY=- bun exact.mjs mac --release --json > "$fixture/mac.json"
     bundle=$(jq -er '.path | select(endswith(".app"))' "$fixture/mac.json")
     test -d "$bundle"
     apple_verify_bundle "$bundle" macos "$fixture"
@@ -200,7 +212,8 @@ boat exec --timeout 5400 --stream "$sandbox" -- bash -lc '
   test "$(command -v rustup)" = "$root/cargo/bin/rustup"
   test -x "$EXACT_APPLE_ROOT/swift/usr/bin/swiftc"
   test -x "$EXACT_APPLE_ROOT/bin/xtool"
-  test ! -e "$EXACT_APPLE_ROOT/ios" && test ! -e "$EXACT_APPLE_ROOT/macos"
+  test -r "$EXACT_APPLE_SDK/ios/swift-sdk.json" && test -r "$EXACT_APPLE_SDK/macos/swift-sdk.json"
+  test "$(command -v xcrun)" = "$EXACT_APPLE_ROOT/bin/xcrun"
   exec bash "$root/boat-smoke.sh" smoke "$1" all
 ' boat-smoke "$ref"
 wait_for "$sandbox" '.sandbox.hydrated == true'
