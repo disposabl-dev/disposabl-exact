@@ -19,5 +19,25 @@ jobs:
           run-id: 46040506760
           name: cache-ios
           path: ${{ runner.temp }}/restored-cache
-      - env: { CARGO_LOG: 'cargo::core::compiler::fingerprint=info' }
-        run: bash .github/ci/cache-build.sh ios
+      - name: Capture Cargo's reasons for rebuilding on a fresh runner
+        run: |
+          mkdir "$RUNNER_TEMP/probe"
+          cat > "$RUNNER_TEMP/probe/cargo" <<'SH'
+          #!/usr/bin/env bash
+          set -u
+          for arg in "$@"; do
+            if [[ "$arg" == build || "$arg" == rustc ]]; then
+              log=$(mktemp "$RUNNER_TEMP/cargo-reasons.XXXXXX")
+              "$HOME/.cargo/bin/cargo" "$@" -vv 2>"$log"
+              result=$?
+              grep -E '^ *(Dirty |Compiling |Finished |error)' "$log" >&2 || :
+              exit "$result"
+            fi
+          done
+          exec "$HOME/.cargo/bin/cargo" "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/probe/cargo"
+          export PATH="$RUNNER_TEMP/probe:$PATH"
+          bash .github/ci/cache-build.sh ios
+      - if: always()
+        run: grep -hE '^ *Dirty (libsqlite3-sys|exact-logic|apps-apple|exact-js)' "$RUNNER_TEMP"/cargo-reasons.* || true
