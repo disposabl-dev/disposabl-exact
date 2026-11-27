@@ -1,7 +1,8 @@
 name: Refresh shared Exact cache
 on:
   push:
-    branches: [ci/fresh-exact]
+    branches: [main, ci/fresh-exact]
+    paths: ['.github/workflows/refresh.yml', '.github/ci/**']
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -11,93 +12,68 @@ jobs:
   resolve:
     if: github.repository == 'disposabl-dev/disposabl-exact'
     runs-on: ubuntu-24.04
-    outputs: { ref: '${{ steps.version.outputs.ref }}', missing: '${{ steps.version.outputs.missing }}' }
+    outputs: { ref: '${{ steps.version.outputs.ref }}' }
     steps:
       - id: version
-        env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          set -euo pipefail
           ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
-          [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/exact-ci-v1-$ref" > release.json 2> error; then
-            echo "missing=$(jq -r .draft release.json)" >> "$GITHUB_OUTPUT"
-          elif grep -q 'HTTP 404' error; then echo 'missing=true' >> "$GITHUB_OUTPUT"; else cat error >&2; exit 1; fi
+          [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && echo "ref=$ref" >> "$GITHUB_OUTPUT"
   build:
     needs: resolve
-    if: needs.resolve.outputs.missing == 'true'
-    strategy:
+    strategy: &platforms
       fail-fast: false
       matrix: { platform: [web, android, ios, macos] }
-    runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'macos') && 'xcode-27' || 'ubuntu-24.04' }}
+    runs-on: &runner ${{ (matrix.platform == 'ios' || matrix.platform == 'macos') && 'xcode-27' || 'ubuntu-24.04' }}
     timeout-minutes: 120
-    env: { EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
+    env: &sdk { EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
     steps:
-      - uses: actions/checkout@v7.0.1
+      - &checkout
+        uses: actions/checkout@v7.0.1
         with: { persist-credentials: false }
-      - uses: oven-sh/setup-bun@v2.2.0
+      - &bun
+        uses: oven-sh/setup-bun@v2.2.0
         with: { bun-version: '1.4.5' }
-      - uses: android-actions/setup-android@v4.0.4
-        if: matrix.platform == 'android'
-        with: { packages: 'platforms;android-37.2 build-tools;37.0.0 ndk;27.1.12297006' }
       - run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
       - uses: actions/upload-artifact@v7.0.2
         with: { name: 'cache-${{ matrix.platform }}', path: '${{ runner.temp }}/cache-output/', if-no-files-found: error, retention-days: 1, compression-level: 0 }
   verify:
     needs: [resolve, build]
-    if: needs.build.result == 'success'
-    strategy:
-      fail-fast: false
-      matrix: { platform: [web, android, ios, macos] }
-    runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'macos') && 'xcode-27' || 'ubuntu-24.04' }}
+    strategy: *platforms
+    runs-on: *runner
     timeout-minutes: 120
-    env: { EXACT_REF: '${{ needs.resolve.outputs.ref }}', CACHE_VERIFY: '1' }
+    env: *sdk
     steps:
-      - uses: actions/checkout@v7.0.1
-        with: { persist-credentials: false }
-      - uses: oven-sh/setup-bun@v2.2.0
-        with: { bun-version: '1.4.5' }
-      - uses: android-actions/setup-android@v4.0.4
-        if: matrix.platform == 'android'
-        with: { packages: 'platforms;android-37.2 build-tools;37.0.0 ndk;27.1.12297006' }
+      - *checkout
+      - *bun
       - uses: actions/download-artifact@v8.0.2
         with: { name: 'cache-${{ matrix.platform }}', path: '${{ runner.temp }}/restored-cache' }
-      - run: |
-          command -v zstd >/dev/null || { if [[ "$RUNNER_OS" == macOS ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
-          cat "$RUNNER_TEMP"/restored-cache/cache-${{ matrix.platform }}.tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME"
-      - run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
+      - env: { CACHE_VERIFY: '1' }
+        run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
   publish:
-    needs: [resolve, build, verify]
-    if: github.event_name != 'push' && always() && needs.resolve.result == 'success' && (needs.verify.result == 'success' || (needs.build.result == 'skipped' && needs.verify.result == 'skipped'))
+    needs: [resolve, verify]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/ci/fresh-exact')
     runs-on: ubuntu-24.04
     permissions: { contents: write }
     env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', REF: '${{ needs.resolve.outputs.ref }}' }
     steps:
       - uses: actions/download-artifact@v8.0.2
-        if: needs.resolve.outputs.missing == 'true'
         with: { path: caches, pattern: 'cache-*', merge-multiple: true }
       - run: |
-          set -euo pipefail
-          tag="exact-ci-v1-$REF"
-          if [[ '${{ needs.resolve.outputs.missing }}' == true ]]; then
-            for platform in web android ios macos; do cat caches/cache-"$platform".tar.zst.part-* | zstd -t; done
-            if gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
-              gh release upload "$tag" caches/* --clobber
-              gh release edit "$tag" --draft=false --latest
-            else
-              gh release create "$tag" --target "$GITHUB_SHA" --title "Exact cache $REF" --notes 'Public Exact toolchains.' --latest caches/*
-            fi
-          else gh release edit "$tag" --latest; fi
+          tag="exact-ci-v1-$REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Exact cache $REF" --notes 'Verified web, Android, iOS and macOS compiler caches.' --latest caches/*
+          # Keep the previous generation available to builds already downloading it.
+          gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false and (.tagName | startswith("exact-ci-v1-")))][2:][].tagName' |
+            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
   boat:
     needs: resolve
-    if: github.event_name != 'push' && needs.resolve.result == 'success'
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/ci/fresh-exact')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    env: { BOAT_API_KEY: '${{ secrets.BOAT_API_KEY }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}', BUN_VERSION: '1.4.5' }
     steps:
-      - uses: actions/checkout@v7.0.1
-        with: { persist-credentials: false }
+      - *checkout
       - run: |
           curl -fsSL --retry 3 'https://boat.dev/api/boat/cli/download?platform=linux-x64&channel=prod' -o "$RUNNER_TEMP/boat"
           chmod +x "$RUNNER_TEMP/boat"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - run: bash .github/ci/boat.sh
+      - env: { BOAT_API_KEY: '${{ secrets.BOAT_API_KEY }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}', BUN_VERSION: '1.4.5' }
+        run: bash .github/ci/boat.sh

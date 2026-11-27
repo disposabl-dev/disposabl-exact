@@ -47,6 +47,7 @@ CLI
   exact setup --platform web
   bash "$0" prepare-android
   bash "$0" smoke "$ref" android
+  install -m 755 "$0" "$root/boat-smoke.sh"
   printf '%s\n' "$ref" > "$root/prepared"
   exit
 fi
@@ -80,6 +81,9 @@ if [[ ${1:-} == smoke ]]; then
   awk '/MemTotal/ {exit !($2 >= 7000000 && $2 <= 9000000)}' /proc/meminfo
   source "$HOME/.local/share/exact-boat/env.sh"
   test "$(git -C "$EXACT" rev-parse HEAD)" = "$2"
+  for path in "$HOME"/{.netrc,.git-credentials,.config/gh/hosts.yml,.codex/auth.json,.claude/.credentials.json,.swiftpm/swift-sdks/darwin.artifactbundle,.local/share/x86sim/runtimes}; do
+    [[ ! -e $path ]] || { echo "Unexpected snapshot path: $path" >&2; exit 1; }
+  done
   fixture=$(mktemp -d)
   trap 'rm -rf "$fixture"' EXIT
   exact new "$fixture/app" --name BoatSmoke --bundle-id dev.boat.exact.smoke
@@ -108,9 +112,8 @@ producer=
 sandbox=
 trap 'if [[ -n $sandbox ]]; then boat stop "$sandbox" >&2 || true; fi
       if [[ -n $producer ]]; then boat stop "$producer" >&2 || true; fi' EXIT
-create() {
-  boat new --type default --no-env --json "$@" |
-    jq -rs '"\(map(select(.event == "ready") | .id) | first // error("Boat did not become ready"))"'
+ready_id() {
+  jq -ers 'map(select(.event == "ready") | .id) | first // error("Boat did not become ready")'
 }
 wait_for() {
   local id=$1 predicate=$2 deadline=$((SECONDS + 900)) state
@@ -122,17 +125,33 @@ wait_for() {
   echo "Boat timeout waiting for $predicate on $id" >&2
   return 1
 }
-producer=$(create --ttl 5400 --name exact-snapshot-producer \
-  --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh")
+producer=$(boat new --type default --no-env --ttl 5400 --name exact-snapshot-producer --json \
+  --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh" | ready_id)
 boat exec --timeout 3600 --stream "$producer" -- bash /tmp/exact-boat.sh prepare "$ref" "$bun_version"
 boat stop "$producer"
-wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "completed"'
-boat snapshot "$producer" "$name"
-producer=
+wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "completed" and .sandbox.holdsCreatorLogins == false'
 
 started=$SECONDS
-sandbox=$(create --ttl 2400 --name exact-snapshot-smoke --from "$name" --file "/tmp/exact-boat.sh=$script_dir/boat.sh")
+sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 2400 --json "$producer" | ready_id)
 echo "Boat shell ready in $((SECONDS - started))s"
-boat exec --timeout 1800 --stream "$sandbox" -- bash /tmp/exact-boat.sh smoke "$ref" android
+boat exec --timeout 1800 --stream "$sandbox" -- bash /home/user/.local/share/exact-boat/boat-smoke.sh smoke "$ref" android
 wait_for "$sandbox" '.sandbox.hydrated == true'
 echo "Boat Android build, web smoke, and hydration verified by $((SECONDS - started))s"
+boat stop "$sandbox"
+sandbox=
+
+boat snapshot "$producer" "$name"
+producer=
+if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+  {
+    printf 'Exact %s passed a fresh 4 vCPU, 8 GB Boat restore.\n\n' "$ref"
+    shares=$(boat snapshot shares "$name" --json)
+    if jq -e 'any(.shares[]; .status == "active")' <<<"$shares" >/dev/null; then
+      printf 'The existing share code now deploys this snapshot.\n\n'
+      printf '```sh\nboat new --type default --no-env --from "$EXACT_BOAT_SHARE_CODE"\n```\n'
+    else
+      share_code=$(boat snapshot share "$name" --json | jq -er '.shareCode | select(startswith("bsh_"))')
+      printf '```sh\nboat new --type default --no-env --from %s\n```\n' "$share_code"
+    fi
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

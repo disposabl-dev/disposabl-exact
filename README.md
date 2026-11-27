@@ -31,15 +31,22 @@ Android requires a signed APK for installation. Run the following once from the 
 bash .github/ci/android-key.sh
 ```
 
-On main, the workflow builds each selected native app and puts its unlisted AppDrop link in the job summary. Android uses the same APK key across builds. iOS produces a device IPA for re-signing through AppDrop. macOS produces a non-notarized app ZIP. Web and its backend share the Convex site URL. Native builds stay off pull requests.
+On main, the workflow builds each selected native app and puts its unlisted AppDrop link in the job summary. Android uses the same APK key across builds. iOS produces a device IPA for re-signing through AppDrop. macOS produces a non-notarized app ZIP. Web and its backend share the Convex site URL. Native builds stay off pull requests. To pick up a change on an existing native installation, install the new build from its AppDrop link.
 
 ## Exact updates
 
-Generated repositories call Disposabl's shared deployment workflow on `main`. Each deployment resolves Exact at runtime. The central Disposabl repository checks upstream every six hours, builds shared caches from a public fixture, and refreshes the Boat development snapshot. A new app's first build can use these shared tools immediately after publication.
+Generated repositories call Disposabl's shared deployment workflow on `main`. Each deployment resolves the current upstream Exact commit once. When that commit is newer than the latest cache, the app builds from source. The central Disposabl repository checks upstream every six hours, builds shared caches from a public fixture, and refreshes the Boat development snapshot. A new app's first build can use these shared tools immediately after publication.
 
 ### Run the app locally
 
-Set `EXACT` to an up-to-date checkout of [expo/exact](https://github.com/expo/exact). On a Boat sandbox created from the shared snapshot, load its toolchain with `source ~/.local/share/exact-boat/env.sh`.
+Set `EXACT` to an up-to-date checkout of [expo/exact](https://github.com/expo/exact). The shared Boat sandbox includes the web and Android toolchains on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox, then load its toolchain inside the new shell.
+
+```sh
+boat new --type default --no-env --from bsh_hvAwp0phMPSKIjvJPxpHipEdJCa3iQQ1wyXzS465pzi
+source ~/.local/share/exact-boat/env.sh
+```
+
+iPhone and macOS builds run on GitHub-hosted Macs with Xcode. The Boat image omits emulator and simulator runtimes.
 
 Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
