@@ -7,6 +7,9 @@ export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-n
 mkdir -p "$RUNNER_TEMP/cache-output" "$CARGO_TARGET_DIR"
 if [[ ${CACHE_VERIFY:-} == 1 ]]; then
   cat "$RUNNER_TEMP"/restored-cache/cache-"$platform".tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME"
+  if [[ "$platform" == ios || "$platform" == macos ]]; then
+    [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]]
+  fi
 fi
 mode=
 [[ "$platform" != web || ${CACHE_VERIFY:-} == 1 ]] || mode=keep-tools
@@ -17,6 +20,13 @@ export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   app="$RUNNER_TEMP/exact-cache-fixture"
   (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed)
+  if [[ "$platform" == ios || "$platform" == macos ]]; then
+    cat >> "$app/app.contract" <<'CONTRACT'
+      canvas width=32 height=32
+      svg width=32 height=32 viewBox="0 0 32 32"
+        path d="M 0 0 L 32 0 L 0 32 Z" fill="#0066cc"
+CONTRACT
+  fi
   mkdir -p "$app/assets"
   cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
   (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}] | .deploy.store.ios="0" | .deploy.store.macos="0"' app.json > manifest.tmp && mv manifest.tmp app.json)
@@ -52,4 +62,4 @@ else
   done
 fi
 [[ "${CACHE_VERIFY:-}" != 1 ]] || exit 0
-COPYFILE_DISABLE=1 tar --format pax -C "$HOME" -cf - --exclude=incremental --exclude='*.lock' --exclude='*.lck' --exclude='*.part' --exclude='*.sdk' --exclude='ModuleCache*' --exclude=apple-modules --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
+COPYFILE_DISABLE=1 tar --format pax -C "$HOME" -cf - --exclude=incremental --exclude='*.lock' --exclude='*.lck' --exclude='*.part' --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
