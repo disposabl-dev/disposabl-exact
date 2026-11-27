@@ -63,7 +63,7 @@ export default defineSchema({
     })),
     convex: v.optional(v.object({
       teamId: v.number(),
-      encryptedAccessToken: v.string(),
+      accessToken: v.string(),
     })),
   }).index("by_userId", ["userId"]),
 });
