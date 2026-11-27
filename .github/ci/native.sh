@@ -53,9 +53,11 @@ PYCODE
         bun exact.mjs android --release --no-install --json > "$out/build.json"
         cp "$(jq -er '.path' "$out/build.json")" "$out/app.apk"
         "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$out/app.apk" > "$signing/cert.txt"
-        expected=$(keytool -list -v -keystore "$EXACT_KEYSTORE" -storepass:env EXACT_KEYSTORE_PASSWORD -alias android | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
-        actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$signing/cert.txt" | tr '[:upper:]' '[:lower:]')
-        [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" && $(grep -c 'certificate SHA-256 digest:' "$signing/cert.txt") == 1 ]] || { echo 'APK signing key mismatch' >&2; exit 1; } ;;
+        expected=$(keytool -exportcert -keystore "$EXACT_KEYSTORE" -storepass:env EXACT_KEYSTORE_PASSWORD -alias android | shasum -a 256 | cut -d ' ' -f 1)
+        actual=$(awk -F 'certificate SHA-256 digest: ' '/certificate SHA-256 digest:/ {print tolower($NF)}' "$signing/cert.txt" | sort -u)
+        [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" ]] || {
+          echo "APK signing key mismatch. Expected $expected. Found ${actual:-no certificate}." >&2; exit 1;
+        } ;;
       ios)
         bun exact.mjs ios --device --release --unsigned --archive "$out/app.ipa" --json > "$out/build.json"
         unzip -tq "$out/app.ipa" >/dev/null ;;
