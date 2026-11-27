@@ -25,16 +25,24 @@ jobs:
           cat > "$RUNNER_TEMP/probe/cargo" <<'SH'
           #!/usr/bin/env bash
           set -u
+          original=("$@")
+          args=()
+          compile=false
           for arg in "$@"; do
-            if [[ "$arg" == build || "$arg" == rustc ]]; then
-              log=$(mktemp "$RUNNER_TEMP/cargo-reasons.XXXXXX")
-              "$HOME/.cargo/bin/cargo" "$@" -vv 2>"$log"
-              result=$?
-              grep -E '^ *(Dirty |Compiling |Finished |error)' "$log" >&2 || :
-              exit "$result"
-            fi
+            case "$arg" in
+              --) args+=("$@"); break ;;
+              build|rustc) args+=("$arg" -vv); compile=true ;;
+              --quiet|-q) ;;
+              *) args+=("$arg") ;;
+            esac
+            shift
           done
-          exec "$HOME/.cargo/bin/cargo" "$@"
+          if ! "$compile"; then exec "$HOME/.cargo/bin/cargo" "${original[@]}"; fi
+          log=$(mktemp "$RUNNER_TEMP/cargo-reasons.XXXXXX")
+          "$HOME/.cargo/bin/cargo" "${args[@]}" 2>"$log"
+          result=$?
+          grep -E '^ *(Dirty |Compiling |Finished |error)' "$log" >&2 || :
+          exit "$result"
           SH
           chmod +x "$RUNNER_TEMP/probe/cargo"
           export PATH="$RUNNER_TEMP/probe:$PATH"
