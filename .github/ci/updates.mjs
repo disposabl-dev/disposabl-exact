@@ -26,8 +26,7 @@ export function appInputs(env, exactRef) {
 }
 
 export function signerScope(env, platform, nativeInputs) {
-  return [env.GITHUB_REPOSITORY, platform, env.CONVEX_ORIGIN, env.CONVEX_SITE_ORIGIN,
-    env.EXACT_ANDROID_SKIP_R8 ?? 'true', nativeInputs];
+  return [env.GITHUB_REPOSITORY, platform, env.CONVEX_ORIGIN, env.CONVEX_SITE_ORIGIN, nativeInputs];
 }
 
 export function updateSigner(seed, scope, canonicalBytes) {
