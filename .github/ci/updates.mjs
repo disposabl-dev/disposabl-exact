@@ -53,6 +53,19 @@ export function latestChannel(names, platform) {
   return Math.max(0, ...names.map(name => channelPattern.exec(name)).filter(match => match?.[1] === platform).map(match => Number(match[2])));
 }
 
+// A changed stream needs the host baker even on a runner without a shared cache.
+export function preparePublisher(env) {
+  const toolchain = readFileSync(resolve(env.EXACT, 'rust-toolchain.toml'), 'utf8');
+  const pin = /^channel\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"/m.exec(toolchain)?.[1];
+  if (!pin) throw Error('Missing pinned Rust toolchain');
+  execFileSync('rustup', ['toolchain', 'install', pin, '--profile', 'minimal'], { env, stdio: 'inherit' });
+  const host = /^host: (\S+)$/m.exec(execFileSync('rustc', [`+${pin}`, '-vV'], { env, encoding: 'utf8' }))?.[1];
+  if (!host) throw Error('Cannot determine Rust host target');
+  execFileSync('cargo', [`+${pin}`, 'run', '--locked', '--manifest-path',
+    resolve(env.EXACT, 'vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml'), '--', '--target', host],
+  { env, cwd: env.EXACT, stdio: 'inherit' });
+}
+
 export async function deliver({ origin, sdk, app, platform, channel, signer, env, fingerprint, seed }) {
   const builds = seed ? sdk.readBuilds(app, env).filter(build =>
     build.trust === 'production' && build.compat.inputs.platform === platform &&
@@ -88,6 +101,7 @@ export async function deliver({ origin, sdk, app, platform, channel, signer, env
     workspace: { value: app.workspace, enumerable: true },
   });
   mkdirSync(app.target, { recursive: true });
+  if (!seed) await sdk.preparePublisher(env);
   const [candidate] = await sdk.streamCandidates(candidateApp, origin, found, env);
   if (candidate.note) throw Error(candidate.note);
   if (candidate.reason && !candidate.needsBinary) throw Error(candidate.reason);
@@ -152,7 +166,7 @@ async function main() {
   const run = channel => {
     execFileSync(process.execPath, ['--no-env-file', 'scripts/locales.mjs'], { env: candidateEnv, stdio: 'inherit' });
     const app = appApi.resolveApp(process.cwd());
-    return deliver({ origin, sdk: { ...appApi, ...publisher }, app, platform, channel, signer,
+    return deliver({ origin, sdk: { ...appApi, ...publisher, preparePublisher }, app, platform, channel, signer,
       env: candidateEnv, fingerprint: inputs.fingerprint, seed: phase === 'seed' });
   };
 

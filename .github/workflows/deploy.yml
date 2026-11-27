@@ -79,7 +79,7 @@ jobs:
       - *checkout
       - *shared
       - *bun
-      - run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM"
+      - run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" checkout
         env:
           GH_TOKEN: ${{ github.token }}
           EXACT_REF: ${{ needs.config.outputs.exact }}
@@ -94,7 +94,10 @@ jobs:
         working-directory: apps/apps
         env:
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: node "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+      - if: steps.plan.outputs.native == 'true'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" restore
       - if: steps.plan.outputs.native == 'true'
         working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
@@ -118,4 +121,4 @@ jobs:
         working-directory: apps/apps
         env:
           EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: node "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"
+        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"

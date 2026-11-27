@@ -173,7 +173,6 @@ esac
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
   assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main");
   await access(join(directory, ".github/ci/android-key.sh"));
-  await access(join(directory, ".github/ci/update-key.sh"));
   for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh"]) {
     await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
   }

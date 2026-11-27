@@ -35,7 +35,9 @@ function fixture(platform, seed = false) {
   const candidate = { build, row };
   let publishes = 0;
   let bakes = 0;
+  let preparations = 0;
   const sdk = {
+    preparePublisher: () => { preparations++; },
     streams: async (_origin, _app, wantedChannel, opts) => {
       assert.equal(wantedChannel, channel);
       assert.deepEqual(opts.platforms, [platform]);
@@ -53,7 +55,7 @@ function fixture(platform, seed = false) {
       return { action: 'published', seq: 1 };
     },
   };
-  return { sdk, found, build, candidate, counts: () => [bakes, publishes],
+  return { sdk, found, build, candidate, counts: () => [bakes, publishes], preparations: () => preparations,
     run: () => deliver({ sdk, app, origin: {}, platform, channel, signer, fingerprint, seed,
       env: { GITHUB_SHA: 'a'.repeat(40) } }) };
 }
@@ -64,6 +66,7 @@ for (const platform of ['android', 'ios', 'macos']) {
       const state = fixture(platform, seed);
       assert.equal(await state.run(), 'published');
       assert.deepEqual(state.counts(), [1, 1]);
+      assert.equal(state.preparations(), seed ? 0 : 1);
     }
   });
 }
@@ -73,6 +76,7 @@ test('same authenticated source skips the bake and still checks native evidence'
   state.found[0].head.release = 'fixture-src-' + 'a'.repeat(64);
   assert.equal(await state.run(), 'current');
   assert.deepEqual(state.counts(), [0, 0]);
+  assert.equal(state.preparations(), 0);
   state.sdk.readBinaryInputFile = async () => { throw Error('corrupt evidence'); };
   await assert.rejects(state.run, /corrupt evidence/);
 });

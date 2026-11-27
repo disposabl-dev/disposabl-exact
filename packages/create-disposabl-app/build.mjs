@@ -8,7 +8,7 @@ import { resetApp } from "./reset-app.mjs";
 const root = join(import.meta.dirname, "../..");
 const templatePaths = [
   "README.md", "packages/.gitignore", "packages/disposabl-kit", "packages/cli", "packages/sdk",
-  ".github/ci/android-key.sh", ".github/ci/update-key.sh",
+  ".github/ci/android-key.sh",
 ];
 
 const temporary = await realpath(await mkdtemp(join(tmpdir(), "exact-starter-")));
