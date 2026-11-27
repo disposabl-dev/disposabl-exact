@@ -100,7 +100,7 @@ test("the packed generator defaults to web and preserves selections through prov
 case "$1 $2" in
   "repo view") echo "example/exact-demo" ;;
   "api repos/example/exact-demo/environments/android-production") exit 0 ;;
-  "secret list") echo ANDROID_APK_SIGNING ;;
+  "secret list") printf "ANDROID_APK_SIGNING\nEXACT_UPDATE_SEED\n" ;;
   *) exit 1 ;;
 esac
 `, { mode: 0o755 });
@@ -173,6 +173,7 @@ esac
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
   assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main");
   await access(join(directory, ".github/ci/android-key.sh"));
+  await access(join(directory, ".github/ci/update-key.sh"));
   for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh"]) {
     await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
   }

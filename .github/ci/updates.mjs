@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const keyId = 'ci';
-const channelPattern = /^base-([1-9][0-9]{0,8})$/;
+const channelPattern = /^base-(android|ios|macos)-([1-9][0-9]{0,8})$/;
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 
 // Push carries static assets forward. Keep those files (including app icons),
@@ -45,12 +45,12 @@ export function updateSigner(seed, scope, canonicalBytes) {
   };
 }
 
-export function latestChannel(names) {
+export function latestChannel(names, platform) {
   if (!Array.isArray(names) || names.some(name => typeof name !== 'string' ||
     (name !== 'blobs' && !channelPattern.test(name)))) {
     throw Error('Unexpected listing in the dedicated CI update origin');
   }
-  return Math.max(0, ...names.filter(name => name !== 'blobs').map(name => Number(name.slice(5))));
+  return Math.max(0, ...names.map(name => channelPattern.exec(name)).filter(match => match?.[1] === platform).map(match => Number(match[2])));
 }
 
 export async function deliver({ origin, sdk, app, platform, channel, signer, env, fingerprint, seed }) {
@@ -59,7 +59,14 @@ export async function deliver({ origin, sdk, app, platform, channel, signer, env
     build.compat.inputs.keys?.[keyId] === signer.publicKey && build.compat.inputs.store?.L === 'A') : [];
   if (seed && builds.length !== 1) throw Error('Expected exactly one matching production build receipt');
 
-  const found = await sdk.streams(origin, app, channel, { platforms: [platform], builds });
+  let found;
+  try {
+    found = await sdk.streams(origin, app, channel, { platforms: [platform], builds });
+  } catch (error) {
+    if (!String(error.message).includes('the head is missing with authenticated release history')) throw error;
+    if (!seed) return 'retry';
+    found = await sdk.streams(origin, app, channel, { deploying: true, platforms: [platform], builds });
+  }
   if (found.length !== 1 || found[0].platform !== platform ||
       found[0].cohort.compat.inputs.keys?.[keyId] !== signer.publicKey ||
       found[0].cohort.compat.inputs.store?.L !== 'A' ||
@@ -151,25 +158,27 @@ async function main() {
 
   if (phase === 'seed') {
     const channel = env.EXACT_UPDATE_CHANNEL;
-    if (!channelPattern.test(channel ?? '') || readFileSync('app.json', 'utf8') !== configure(channel)) {
+    if (channelPattern.exec(channel ?? '')?.[1] !== platform || readFileSync('app.json', 'utf8') !== configure(channel)) {
       throw Error('Seed requires the native build’s configured manifest and channel');
     }
     await run(channel);
     return;
   }
 
-  const latest = latestChannel(await origin.list('.exact'));
+  const latest = latestChannel(await origin.list('.exact'), platform);
+  let retry = false;
   if (latest) {
-    const channel = `base-${latest}`;
+    const channel = `base-${platform}-${latest}`;
     writeFileSync('app.json', configure(channel));
     const outcome = await run(channel);
-    if (outcome !== 'native') {
+    retry = outcome === 'retry';
+    if (outcome !== 'native' && !retry) {
       appendFileSync(env.GITHUB_OUTPUT, 'native=false\n');
       return;
     }
   }
 
-  const channel = `base-${latest + 1}`;
+  const channel = `base-${platform}-${retry ? latest : latest + 1}`;
   if (!channelPattern.test(channel)) throw Error('CI update channel number exhausted');
   writeFileSync('app.json', configure(channel));
   appendFileSync(env.GITHUB_ENV, `EXACT_UPDATE_CHANNEL=${channel}\nEXACT_UPDATE_TRUST=production\nEXACT_VERSION=${manifest.version}\nEXACT_UPDATE_GENESIS=1\n`);

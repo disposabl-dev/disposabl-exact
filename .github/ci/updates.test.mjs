@@ -17,13 +17,13 @@ test('scope controls the Ed25519 key and directory parsing fails closed', () => 
   assert.equal(updateSigner(key, ['fixture', 'ios'], canonical).publicKey, signer.publicKey);
   assert.notEqual(updateSigner(key, ['fixture', 'android'], canonical).publicKey, signer.publicKey);
   assert.throws(() => updateSigner('invalid', [], canonical));
-  assert.equal(latestChannel([]), 0);
-  assert.equal(latestChannel(['base-2', 'base-10', 'blobs']), 10);
-  for (const names of [null, {}, ['broken'], ['base-0']]) assert.throws(() => latestChannel(names));
+  assert.equal(latestChannel([], 'ios'), 0);
+  assert.equal(latestChannel(['base-ios-2', 'base-ios-10', 'base-android-20', 'blobs'], 'ios'), 10);
+  for (const names of [null, {}, ['broken'], ['base-0']]) assert.throws(() => latestChannel(names, 'ios'));
 });
 
 function fixture(platform, seed = false) {
-  const channel = 'base-1';
+  const channel = `base-${platform}-1`;
   const fingerprint = 'a'.repeat(64);
   const app = { dir: '.', workspace: '.', target: '.' };
   const compat = { id: 'cohort', inputs: { platform, keys: { ci: signer.publicKey }, store: { L: 'A' } } };
@@ -100,4 +100,17 @@ test('seed rejects an existing head, a missing receipt, and an incompatible fres
   state.sdk.readBuilds = () => [];
   await assert.rejects(state.run, /one matching production build receipt/);
   assert.deepEqual(state.counts(), [1, 0]);
+});
+
+test('an interrupted authenticated seed retries the same base and recovers its receipt', async () => {
+  const plan = fixture('ios');
+  plan.sdk.streams = async () => { throw Error('the head is missing with authenticated release history; run deploy to recover it'); };
+  assert.equal(await plan.run(), 'retry');
+  const seed = fixture('ios', true);
+  const normal = seed.sdk.streams;
+  seed.sdk.streams = async (...args) => {
+    if (!args[3].deploying) throw Error('the head is missing with authenticated release history; run deploy to recover it');
+    return normal(...args);
+  };
+  assert.equal(await seed.run(), 'published');
 });

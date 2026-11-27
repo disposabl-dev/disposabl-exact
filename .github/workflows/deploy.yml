@@ -70,12 +70,11 @@ jobs:
       fail-fast: false
       matrix:
         platform: ${{ fromJSON(needs.config.outputs.native) }}
-    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || 'xcode-27' }}
+    runs-on: ubuntu-24.04
     environment: { name: android-production, deployment: false }
     env:
       PLATFORM: ${{ matrix.platform }}
       EXACT_BUILD_NUMBER: ${{ github.run_number }}
-      EXACT_UPDATE_GENESIS: '1'
     steps:
       - *checkout
       - *shared
@@ -91,17 +90,32 @@ jobs:
           mkdir -p .exact
           ln -s "$EXACT" .exact/checkout
           bun install --frozen-lockfile
-          bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
-      - working-directory: apps/apps
+      - id: plan
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: node "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+      - if: steps.plan.outputs.native == 'true'
+        working-directory: apps/apps
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
+      - if: steps.plan.outputs.native == 'true'
+        working-directory: apps/apps
         env:
           ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
-      - working-directory: apps/apps
+      - if: steps.plan.outputs.native == 'true'
+        working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
-      - working-directory: packages/backend
+      - if: steps.plan.outputs.native == 'true'
+        working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           name=$(echo "$PLATFORM" | tr '[:lower:]' '[:upper:]')
           bun run convex env set "EXACT_INSTALL_$name" --from-file "$RUNNER_TEMP/installer-$PLATFORM.json"
           printf '[Install %s](%s)\n' "$PLATFORM" "$(jq -er .url "$RUNNER_TEMP/installer-$PLATFORM.json")" >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.plan.outputs.native == 'true'
+        working-directory: apps/apps
+        env:
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: node "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"

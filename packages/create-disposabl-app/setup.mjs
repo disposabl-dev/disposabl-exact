@@ -136,6 +136,9 @@ export async function setup(directory, name, config) {
     "--platforms", web, "--features", features,
   ]);
   await configureExact(directory, config.appId, deployment);
+  if (config.platforms.some(platform => ["android", "ios", "macos"].includes(platform))) {
+    execFileSync("bash", [".github/ci/update-key.sh"], { cwd: directory, stdio: "inherit" });
+  }
   if (config.platforms.includes("android")) {
     execFileSync("bash", [".github/ci/android-key.sh"], { cwd: directory, stdio: "inherit" });
   }
