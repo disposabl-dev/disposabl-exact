@@ -24,6 +24,8 @@ export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3
 export ANDROID_HOME="$exact_root/android" ANDROID_SDK_ROOT="$exact_root/android"
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export GRADLE_USER_HOME="$exact_root/gradle"
+export EXACT_APPLE_ROOT="${EXACT_APPLE_ROOT:-$exact_root/apple}"
+export RUNNER_TEMP="${RUNNER_TEMP:-$exact_root/tmp}"
 exact_boat_path="$HOME/.local/bin:$CARGO_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
 case "$PATH" in
   "$exact_boat_path"|"$exact_boat_path":*) ;;
@@ -49,18 +51,34 @@ ENV
 #!/usr/bin/env bash
 set -euo pipefail
 source "$HOME/.local/share/exact-boat/env.sh"
-exec bun "$EXACT/scripts/exact.mjs" "$@"
+case "${1:-}" in
+  ios|mac)
+    [[ -f exact.mjs ]] || { echo 'Run this command from an Exact app directory.' >&2; exit 1; }
+    platform=$1
+    [[ "$platform" != mac ]] || platform=macos
+    mkdir -p "$RUNNER_TEMP"
+    bash "$HOME/.local/share/exact-boat/native.sh" prepare "$platform" >&2
+    export EXACT_APPLE_SDK="$EXACT_APPLE_ROOT/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
+    export PATH="$EXACT_APPLE_ROOT/bin:$EXACT_APPLE_ROOT/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
+    [[ "$platform" != macos ]] || export EXACT_IDENTITY="${EXACT_IDENTITY:--}"
+    exec bun exact.mjs "$@" ;;
+  *) exec bun "$EXACT/scripts/exact.mjs" "$@" ;;
+esac
 CLI
   chmod +x "$bin/exact"
   cd "$EXACT"
   exact setup --platform web
   bash "$0" prepare-android
-  # Apple SDKs are fetched at runtime, outside the publicly shared snapshot.
-  bash "$0" smoke "$ref" android
   install -m 755 "$0" "$root/boat-smoke.sh"
   for file in native.sh apple-linux.sh apple-linux-compat.py swift-6-release.asc; do
     install -m 644 "$script_dir/$file" "$root/$file"
   done
+  # Warm open toolchain and compiled caches in the private producer. Remove
+  # downloaded Apple SDK trees before the producer can become a snapshot.
+  bash "$root/boat-smoke.sh" smoke "$ref" all
+  rm -rf -- "$EXACT_APPLE_ROOT/ios" "$EXACT_APPLE_ROOT/macos"
+  rm -f -- "$EXACT_APPLE_ROOT/ios-27.1.ready" "$EXACT_APPLE_ROOT/macos-27.0.ready"
+  test ! -e "$EXACT_APPLE_ROOT/ios" && test ! -e "$EXACT_APPLE_ROOT/macos"
   printf '%s\n' "$ref" > "$root/prepared"
   exit
 fi
@@ -112,14 +130,21 @@ if [[ ${1:-} == smoke ]]; then
     unzip -tq "$apk"
   fi
   if [[ ${3:-} == all ]]; then
-    # Keep Apple toolchain and SDKs ephemeral: the shared snapshot must not
-    # redistribute SDKs. Exercise the same bootstrap as CI on each restore.
-    export RUNNER_TEMP="$fixture/runner" EXACT_APPLE_ROOT="$fixture/apple"
+    export RUNNER_TEMP="$fixture/runner"
     mkdir -p "$RUNNER_TEMP"
-    for platform in ios macos; do
-      bash "$script_dir/native.sh" prepare "$platform"
-      bash "$script_dir/native.sh" build "$platform"
-    done
+    # Run precisely the launcher commands available in a restored sandbox.
+    exact ios --device --release --unsigned --archive "$fixture/app.ipa" --json > "$fixture/ios.json"
+    unzip -tq "$fixture/app.ipa" >/dev/null
+    unzip -q "$fixture/app.ipa" 'Payload/*' -d "$fixture/ios"
+    bundles=("$fixture"/ios/Payload/*.app)
+    [[ ${#bundles[@]} == 1 && -d "${bundles[0]}" ]]
+    source "$script_dir/apple-linux.sh"
+    export PATH="$EXACT_APPLE_ROOT/bin:$EXACT_APPLE_ROOT/swift/usr/bin:/usr/lib/llvm-23/bin:$PATH"
+    apple_verify_bundle "${bundles[0]}" ios "$fixture"
+    exact mac --release --json > "$fixture/mac.json"
+    bundle=$(jq -er '.path | select(endswith(".app"))' "$fixture/mac.json")
+    test -d "$bundle"
+    apple_verify_bundle "$bundle" macos "$fixture"
   fi
   time bun exact.mjs web-build --out dist
   test -s dist/shell.html
@@ -149,24 +174,27 @@ wait_for() {
   echo "Boat timeout waiting for $predicate on $id" >&2
   return 1
 }
-producer=$(boat new --type default --no-env --ttl 5400 --name exact-snapshot-producer --json \
+producer=$(boat new --type default --no-env --ttl 10800 --name exact-snapshot-producer --json \
   --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh" --file "/tmp/android-tools.sh=$script_dir/android-tools.sh" \
   --file "/tmp/native.sh=$script_dir/native.sh" --file "/tmp/apple-linux.sh=$script_dir/apple-linux.sh" \
   --file "/tmp/apple-linux-compat.py=$script_dir/apple-linux-compat.py" --file "/tmp/swift-6-release.asc=$script_dir/swift-6-release.asc" | ready_id)
-boat exec --timeout 3600 --stream "$producer" -- bash /tmp/exact-boat.sh prepare "$ref" "$bun_version"
+boat exec --timeout 7200 --stream "$producer" -- bash /tmp/exact-boat.sh prepare "$ref" "$bun_version"
 boat stop "$producer"
 wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "completed" and .sandbox.holdsCreatorLogins == false'
 
 started=$SECONDS
-sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 5400 --json "$producer" | ready_id)
+sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 7200 --json "$producer" | ready_id)
 echo "Boat shell ready in $((SECONDS - started))s"
-boat exec --timeout 3600 --stream "$sandbox" -- bash -lc '
+boat exec --timeout 5400 --stream "$sandbox" -- bash -lc '
   set -e
   root="$HOME/.local/share/exact-boat"
   test "$EXACT" = "$root/sdk"
   test "$ANDROID_HOME" = "$root/android"
   test "$RUSTUP_HOME" = "$root/rustup"
   test "$(command -v rustup)" = "$root/cargo/bin/rustup"
+  test -x "$EXACT_APPLE_ROOT/swift/usr/bin/swiftc"
+  test -x "$EXACT_APPLE_ROOT/bin/xtool"
+  test ! -e "$EXACT_APPLE_ROOT/ios" && test ! -e "$EXACT_APPLE_ROOT/macos"
   exec bash "$root/boat-smoke.sh" smoke "$1" all
 ' boat-smoke "$ref"
 wait_for "$sandbox" '.sandbox.hydrated == true'
