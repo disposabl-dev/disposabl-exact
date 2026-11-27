@@ -26,7 +26,8 @@ jobs:
       - if: github.event_name != 'pull_request'
         working-directory: packages/create-disposabl-app
         run: |
-          version="$(node -p 'require("./package.json").version')-next.${GITHUB_RUN_NUMBER}"
+          base=$(node -p 'require("./package.json").version')
+          version="${base%.*}.$(( ${base##*.} + GITHUB_RUN_NUMBER ))"
           npm pkg set "version=$version" "gitHead=$GITHUB_SHA"
           bun pm pack --ignore-scripts --filename "$RUNNER_TEMP/generator.tgz"
       - if: github.event_name != 'pull_request'
@@ -48,6 +49,6 @@ jobs:
           status=$(curl -sS --retry 3 -o published.json -w '%{http_code}' "$registry/$version")
           case "$status" in
             200) test "$(jq -r '.dist.integrity' published.json)" = "sha512-$(openssl dgst -sha512 -binary generator.tgz | openssl base64 -A)" ;;
-            404) npm publish generator.tgz --tag next --access public ;;
+            404) npm publish generator.tgz --access public ;;
             *) echo "npm registry returned HTTP $status" >&2; exit 1 ;;
           esac
