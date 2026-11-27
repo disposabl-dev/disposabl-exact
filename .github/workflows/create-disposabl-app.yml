@@ -22,7 +22,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with: { bun-version: '1.4.5' }
       - working-directory: packages/create-disposabl-app
-        run: bun install --frozen-lockfile && bun run test
+        run: |
+          node --test ../../.github/ci/updates.test.mjs
+          bun install --frozen-lockfile && bun run test
       - if: github.event_name != 'pull_request'
         working-directory: packages/create-disposabl-app
         run: |
