@@ -51,10 +51,9 @@ export default defineSchema({
     appId: v.id("apps"),
     previewName: v.string(),
     previewSlug: v.string(),
-    gitRef: v.optional(v.string()),
     platforms: previewPlatforms,
   })
-    .index("by_appId_and_gitRef", ["appId", "gitRef"])
+    .index("by_appId", ["appId"])
     .index("by_previewSlug", ["previewSlug"]),
 
   connections: defineTable({

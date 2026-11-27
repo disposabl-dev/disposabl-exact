@@ -11,5 +11,5 @@ export const previewPage = paginationResultValidator(preview);
 
 export const listArgs = { ...appSlugArgs, paginationOpts: paginationOptsValidator };
 export const getArgs = { previewSlug: v.string() };
-export const createArgs = { ...appSlugArgs, gitRef: v.string(), previewName: v.optional(v.string()) };
+export const createArgs = { ...appSlugArgs, previewName: v.string() };
 export const removeArgs = { ...getArgs, confirm: v.literal(true) };

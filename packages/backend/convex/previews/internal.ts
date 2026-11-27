@@ -23,38 +23,32 @@ async function ownedPreview(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, prev
   return app?.userId === userId ? { row, app } : null;
 }
 
-function slugPart(value: string, maxLength: number) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, maxLength).replace(/^-|-$/g, "");
-}
-
 export const create = internalMutation({
   platforms: true,
-  description: "Create or get a preview record for an app's Git ref.",
+  description: "Create or get a named preview for an app.",
   args: { ...identity, ...createArgs },
   returns: preview,
-  handler: async (ctx, { userId, appSlug, gitRef, previewName }) => {
+  handler: async (ctx, { userId, appSlug, previewName }) => {
     const app = await requireOwnedApp(ctx, userId, appSlug);
-    const name = previewName?.trim() ?? gitRef;
-    if (!gitRef || gitRef.length > 200
-      || /\s/.test(gitRef) || [...gitRef].some(char => char <= " " || char.charCodeAt(0) === 127)) {
-      throw new ConvexError("Provide a Git ref of up to 200 characters without whitespace.");
-    }
-    if (!name || name.length > 200) throw new ConvexError("Invalid preview name.");
+    const name = previewName.trim();
+    if (!name || name.length > 200) throw new ConvexError("Preview name must be 1–200 characters.");
 
+    const nameSlug = name.normalize("NFKC").toLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+      .replace(/^-|-$/g, "");
+    if (!/[\p{L}\p{N}]/u.test(nameSlug)) {
+      throw new ConvexError("Preview name must contain a letter or number.");
+    }
+    const previewSlug = `${app.slug}--${nameSlug}`;
     const existing = await ctx.db.query("previews")
-      .withIndex("by_appId_and_gitRef", q => q.eq("appId", app._id).eq("gitRef", gitRef))
+      .withIndex("by_previewSlug", q => q.eq("previewSlug", previewSlug))
       .unique();
-    if (existing) return presentPreview(existing, app);
-
-    const appSlugPart = slugPart(app.slug, 28) || "app";
-    const refSlug = slugPart(gitRef, 24) || "preview";
-    const suffix = crypto.randomUUID().slice(0, 8);
-    const previewSlug = `${appSlugPart}--${refSlug}-${suffix}`;
-    if (await ctx.db.query("previews").withIndex("by_previewSlug", q => q.eq("previewSlug", previewSlug)).unique()) {
-      throw new ConvexError("Preview slug already exists. Retry creation.");
+    if (existing) {
+      if (existing.appId === app._id && existing.previewName === name) return presentPreview(existing, app);
+      throw new ConvexError("A preview with this slug already exists. Choose another name.");
     }
 
-    const id = await ctx.db.insert("previews", { appId: app._id, gitRef, previewName: name, previewSlug, platforms: {} });
+    const id = await ctx.db.insert("previews", { appId: app._id, previewName: name, previewSlug, platforms: {} });
     const row = await ctx.db.get("previews", id);
     if (!row) throw new ConvexError("Preview could not be saved.");
     return presentPreview(row, app);
@@ -69,7 +63,7 @@ export const list = internalQuery({
   handler: async (ctx, { userId, appSlug, paginationOpts }) => {
     const app = await requireOwnedApp(ctx, userId, appSlug);
     const page = await ctx.db.query("previews")
-      .withIndex("by_appId_and_gitRef", q => q.eq("appId", app._id))
+      .withIndex("by_appId", q => q.eq("appId", app._id))
       .paginate(paginationOpts);
     return { ...page, page: page.page.map(row => presentPreview(row, app)) };
   },
@@ -106,7 +100,7 @@ export const removeForApp = internalMutation({
 
     const batchSize = 100;
     const rows = await ctx.db.query("previews")
-      .withIndex("by_appId_and_gitRef", q => q.eq("appId", appDocumentId))
+      .withIndex("by_appId", q => q.eq("appId", appDocumentId))
       .take(batchSize);
     await Promise.all(rows.map(row => ctx.db.delete("previews", row._id)));
     if (rows.length === batchSize) await ctx.scheduler.runAfter(0, internal.previews.internal.removeForApp, { appDocumentId });
