@@ -2,7 +2,7 @@ import { v, type Infer } from "convex/values";
 import { internal } from "../_generated/api";
 import { mutation, query } from "../_generated/server";
 import { requireUserId } from "../lib/requireUserId";
-import { app, appIdArgs, appOrNull, appPage, createArgs, listArgs, removeArgs } from "./validators";
+import { app, appSlugArgs, appOrNull, appPage, createArgs, listArgs, removeArgs } from "./validators";
 
 export const list = query({
   args: listArgs,
@@ -12,7 +12,7 @@ export const list = query({
 });
 
 export const get = query({
-  args: appIdArgs,
+  args: appSlugArgs,
   returns: appOrNull,
   handler: async (ctx, args): Promise<Infer<typeof appOrNull>> =>
     ctx.runQuery(internal.apps.internal.get, { ...args, userId: await requireUserId(ctx) }),

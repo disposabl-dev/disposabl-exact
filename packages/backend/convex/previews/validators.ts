@@ -1,13 +1,15 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
-import { appIdArgs } from "../apps/validators";
+import { appSlugArgs } from "../apps/validators";
 import schema from "../schema";
 
-export const preview = schema.doc("previews");
+export const preview = schema.doc("previews")
+  .omit("_id", "appId")
+  .extend({ appSlug: v.string(), appName: v.string() });
 export const previewOrNull = v.union(preview, v.null());
 export const previewPage = paginationResultValidator(preview);
 
-export const listArgs = { ...appIdArgs, paginationOpts: paginationOptsValidator };
+export const listArgs = { ...appSlugArgs, paginationOpts: paginationOptsValidator };
 export const getArgs = { previewSlug: v.string() };
-export const createArgs = { ...appIdArgs, gitRef: v.string(), name: v.optional(v.string()) };
-export const removeArgs = { previewId: v.id("previews"), confirm: v.literal(true) };
+export const createArgs = { ...appSlugArgs, gitRef: v.string(), previewName: v.optional(v.string()) };
+export const removeArgs = { ...getArgs, confirm: v.literal(true) };

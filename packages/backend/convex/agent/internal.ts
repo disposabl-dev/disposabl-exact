@@ -12,13 +12,13 @@ export const sendMessage = internalMutation({
   description: "Save a user message to an app's conversation.",
   args: { ...identity, ...sendArgs },
   returns: sendResult,
-  handler: async (ctx, { userId, appId, prompt }) => {
-    const app = await requireOwnedApp(ctx, userId, appId);
+  handler: async (ctx, { userId, appSlug, prompt }) => {
+    const app = await requireOwnedApp(ctx, userId, appSlug);
     const text = prompt.trim();
     if (!text || text.length > 32_000) throw new ConvexError("Message must be 1–32,000 characters.");
 
     const threadId = app.agentThreadId ?? await createThread(ctx, components.agent, { userId, title: app.name });
-    if (!app.agentThreadId) await ctx.db.patch("apps", appId, { agentThreadId: threadId });
+    if (!app.agentThreadId) await ctx.db.patch("apps", app._id, { agentThreadId: threadId });
     const { messageId } = await saveMessage(ctx, components.agent, { threadId, userId, prompt: text });
     return { threadId, messageId };
   },
@@ -29,8 +29,8 @@ export const getMessages = internalQuery({
   description: "Read messages from an app's conversation.",
   args: { ...identity, ...messagesArgs },
   returns: messagesResult,
-  handler: async (ctx, { userId, appId, paginationOpts, streamArgs }) => {
-    const { agentThreadId: threadId } = await requireOwnedApp(ctx, userId, appId);
+  handler: async (ctx, { userId, appSlug, paginationOpts, streamArgs }) => {
+    const { agentThreadId: threadId } = await requireOwnedApp(ctx, userId, appSlug);
     if (!threadId) return { page: [], isDone: true, continueCursor: "" };
 
     const page = await listUIMessages(ctx, components.agent, { threadId, paginationOpts });
@@ -44,8 +44,8 @@ export const abortMessage = internalMutation({
   description: "Stop an active stream for a message in an app's conversation.",
   args: { ...identity, ...abortArgs },
   returns: abortResult,
-  handler: async (ctx, { userId, appId, messageId }) => {
-    const { agentThreadId: threadId } = await requireOwnedApp(ctx, userId, appId);
+  handler: async (ctx, { userId, appSlug, messageId }) => {
+    const { agentThreadId: threadId } = await requireOwnedApp(ctx, userId, appSlug);
     if (!threadId) return { accepted: false };
     const [message] = await ctx.runQuery(components.agent.messages.getMessagesByIds, { messageIds: [messageId] });
     if (message?.threadId !== threadId || message.message?.role !== "user") return { accepted: false };

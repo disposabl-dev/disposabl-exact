@@ -2,17 +2,19 @@ import { paginationOptsValidator, paginationResultValidator } from "convex/serve
 import { v } from "convex/values";
 import schema from "../schema";
 
-export const app = schema.doc("apps");
+export const app = schema.doc("apps")
+  .omit("_id", "userId", "slug", "name", "agentThreadId")
+  .extend({ appSlug: v.string(), appName: v.string() });
 export const appOrNull = v.union(app, v.null());
 export const appPage = paginationResultValidator(app);
 
-export const appIdArgs = { appId: v.id("apps") };
+export const appSlugArgs = { appSlug: v.string() };
 export const listArgs = { paginationOpts: paginationOptsValidator };
 export const createArgs = {
-  name: v.string(),
-  slug: v.string(),
+  ...appSlugArgs,
+  appName: v.string(),
   githubOwner: v.string(),
   githubRepoName: v.string(),
   convexProjectId: v.number(),
 };
-export const removeArgs = { ...appIdArgs, confirm: v.literal(true) };
+export const removeArgs = { ...appSlugArgs, confirm: v.literal(true) };
