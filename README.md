@@ -31,6 +31,8 @@ On the first deployment, CI builds each selected native app on Ubuntu and writes
 
 ## Exact updates
 
+Store-installed apps can offer a newer native build on the home screen through `@exact/store-update`. Apple opens the App Store listing. Google Play downloads the update in the background when supported and offers a restart once it is ready. The feature uses the installed app's store identity and needs no extra environment variables or credentials. AppDrop installs use the signed update flow above.
+
 Generated repositories call Disposabl's shared deployment workflow on `main`. Each deployment resolves the current upstream Exact commit once. When that commit is newer than the latest cache, the app builds from source. The central Disposabl repository checks upstream every six hours, builds shared caches from a public fixture, and refreshes the Boat development snapshot. A new app's first build can use these shared tools immediately after publication.
 
 ### Run the app locally

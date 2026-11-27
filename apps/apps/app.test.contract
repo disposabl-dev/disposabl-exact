@@ -1,0 +1,39 @@
+test "the web has no store update controls" on web
+  expect tree has "root"
+  expect tree missing "store-update-open"
+  expect tree missing "store-update-download"
+  expect tree missing "store-update-immediate"
+  expect tree missing "store-update-restart"
+
+test "Apple opens its listing only when a newer build is listed" on ios, macos
+  prefer extension store-update.storeUpdateStatus={"available":false,"updateAvailability":"listed"}
+  expect tree missing "store-update-open"
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"unknown","apple":{"lookup":"not-found"}}
+  clock data
+  expect tree missing "store-update-open"
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"listed","apple":{"version":"2.0"}}
+  clock data
+  tap "store-update-open"
+
+test "Play prefers a flexible update and offers a restart after download" on android
+  prefer extension store-update.storeUpdateStatus={"available":false,"updateAvailability":"offered","android":{"flexibleAllowed":true}}
+  expect tree missing "store-update-download"
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"offered","android":{"flexibleAllowed":true,"immediateAllowed":true}}
+  clock data
+  expect tree missing "store-update-immediate"
+  tap "store-update-download"
+  tap "@store-update" accepted
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"offered","android":{"flexibleAllowed":true,"installStatus":"downloading"}}
+  clock data
+  expect tree has "store-update-downloading"
+  expect tree missing "store-update-download"
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"offered","android":{"flexibleAllowed":true,"installStatus":"downloaded"}}
+  clock data
+  tap "store-update-restart"
+
+test "Play can offer an immediate update without requiring it" on android
+  prefer extension store-update.storeUpdateStatus={"available":true,"updateAvailability":"offered","android":{"immediateAllowed":true}}
+  expect tree missing "store-update-download"
+  tap "store-update-immediate"
+  tap "@store-update" canceled
+  expect tree missing "store-update-error"
