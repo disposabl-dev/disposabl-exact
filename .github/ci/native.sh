@@ -21,9 +21,10 @@ from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 source = path.read_text()
-flag = """'profile.release.lto="fat"'"""
-assert source.count(flag) == 1
-path.write_text(source.replace(flag, """'profile.release.lto="off"','--config','profile.release.codegen-units=16'"""))
+old = """profile === 'release' ? ['--config','profile.release.lto="fat"']"""
+new = """['release','balanced'].includes(profile) ? ['--config',`profile.${profile}.lto="off"`,'--config',`profile.${profile}.codegen-units=16`]"""
+assert source.count(old) == 1
+path.write_text(source.replace(old, new))
 PYCODE
 fi
 case "$phase" in

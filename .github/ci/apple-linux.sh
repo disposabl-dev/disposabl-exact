@@ -48,15 +48,15 @@ apple_linux() (
         echo 'Using runner Swift 6.4.3 toolchain'
       else
         (
-        download "$swift_url" "$work/swift.tar.gz"
-        download "$swift_url.sig" "$work/swift.tar.gz.sig"
-        mkdir -m 700 "$work/swift-gpg"
-        gpg --batch --homedir "$work/swift-gpg" --import "$ci_dir/swift-6-release.asc"
-        gpg --batch --homedir "$work/swift-gpg" --status-fd 1 --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz" |
-          awk -v key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F '$2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'
-        mkdir "$work/swift"
-        tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
-        rm "$work/swift.tar.gz"
+          download "$swift_url" "$work/swift.tar.gz"
+          download "$swift_url.sig" "$work/swift.tar.gz.sig"
+          mkdir -m 700 "$work/swift-gpg"
+          gpg --batch --homedir "$work/swift-gpg" --import "$ci_dir/swift-6-release.asc"
+          gpg --batch --homedir "$work/swift-gpg" --status-fd 1 --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz" |
+            awk -v key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F '$2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'
+          mkdir "$work/swift"
+          tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
+          rm "$work/swift.tar.gz"
         ) & jobs+=("$!")
       fi
       download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage "$work/xtool.AppImage" \
