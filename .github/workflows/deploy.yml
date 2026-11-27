@@ -1,5 +1,10 @@
 name: Deploy app
 on:
+  workflow_call:
+    secrets:
+      ANDROID_APK_SIGNING: { required: false }
+      CONVEX_DEPLOY_KEY: { required: false }
+      CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
   pull_request:
   push:
     branches: [main]
@@ -10,6 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   EXACT_FEEDBACK: '0'
+  CI_SCRIPTS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && '.github/ci' || '.disposabl-ci/.github/ci' }}
 jobs:
   web:
     runs-on: ubuntu-24.04
@@ -22,6 +28,15 @@ jobs:
       - &checkout
         uses: actions/checkout@v7.0.1
         with: { persist-credentials: false }
+      - &shared
+        if: github.repository != 'disposabl-dev/disposabl-exact'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: disposabl-dev/disposabl-exact
+          ref: main
+          path: .disposabl-ci
+          sparse-checkout: .github/ci
+          persist-credentials: false
       - &bun
         uses: oven-sh/setup-bun@v2.2.0
         with: { bun-version: '1.4.5' }
@@ -29,8 +44,9 @@ jobs:
         run: |
           bun -e 'import {platform as p} from "./packages/disposabl-kit/server/platform.ts"; console.log("web="+p.web); console.log("native="+JSON.stringify([...p.mobile,...(p.macos?["macos"]:[])]))' >> "$GITHUB_OUTPUT"
       - id: setup
-        if: steps.platforms.outputs.web == 'true'
-        run: bash .github/ci/setup.sh web
+        if: steps.platforms.outputs.web == 'true' || (github.event_name == 'push' && steps.platforms.outputs.native != '[]')
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" ${{ steps.platforms.outputs.web == 'true' && 'web' || 'resolve' }}
       - id: deploy
         if: github.event_name == 'push' || steps.platforms.outputs.web == 'true'
         env:
@@ -38,7 +54,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PREVIEW_BUILD_ONLY: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
           CONVEX_DEPLOY_KEY: ${{ secrets[github.event_name == 'pull_request' && 'CONVEX_DEPLOY_KEY_PREVIEW' || 'CONVEX_DEPLOY_KEY'] }}
-        run: bash .github/ci/web.sh
+        run: bash "$CI_SCRIPTS/web.sh"
 
   native:
     needs: web
@@ -57,20 +73,24 @@ jobs:
       EXACT_UPDATE_GENESIS: '1'
     steps:
       - *checkout
+      - *shared
       - *bun
-      - run: bash .github/ci/setup.sh "$PLATFORM"
+      - run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_REF: ${{ needs.web.outputs.exact }}
       - working-directory: apps/apps
         run: |
           mkdir -p .exact
           ln -s "$EXACT" .exact/checkout
           bun install --frozen-lockfile
-          bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$PLATFORM"
+          bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
       - working-directory: apps/apps
         env:
           ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
-        run: bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$PLATFORM"
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
       - working-directory: apps/apps
-        run: bash "$GITHUB_WORKSPACE/.github/ci/native.sh" publish "$PLATFORM"
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
       - working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

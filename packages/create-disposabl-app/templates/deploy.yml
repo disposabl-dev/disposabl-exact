@@ -1,0 +1,13 @@
+name: Deploy app
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  deploy:
+    uses: disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main
+    secrets:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      CONVEX_DEPLOY_KEY_PREVIEW: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}

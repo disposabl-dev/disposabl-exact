@@ -8,8 +8,7 @@ import { resetApp } from "./reset-app.mjs";
 const root = join(import.meta.dirname, "../..");
 const templatePaths = [
   "README.md", "packages/.gitignore", "packages/disposabl-kit", "packages/cli", "packages/sdk",
-  ".github/workflows/deploy.yml", ".github/ci/setup.sh", ".github/ci/checkout.sh",
-  ".github/ci/native.sh", ".github/ci/web.sh", ".github/ci/android-key.sh",
+  ".github/ci/android-key.sh",
 ];
 
 const temporary = await realpath(await mkdtemp(join(tmpdir(), "exact-starter-")));
@@ -20,6 +19,7 @@ try {
   const sharedFiles = execFileSync("git", ["ls-files", "-z", "--", ...templatePaths], { cwd: root, encoding: "utf8" })
     .split("\0").filter(Boolean);
   const sources = new Map([
+    [".github/workflows/deploy.yml", join(import.meta.dirname, "templates/deploy.yml")],
     ["disposabl.json", join(import.meta.dirname, "disposabl.json")],
     ...sharedFiles.map(file => [file, join(root, file)]),
     ...appFiles.map(file => [file, join(restored, file)]),

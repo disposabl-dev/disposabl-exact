@@ -3,7 +3,9 @@
 set -euo pipefail
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 env_name=android-production
-gh api --method PUT "repos/$repo/environments/$env_name" >/dev/null
+if ! gh api "repos/$repo/environments/$env_name" >/dev/null 2>&1; then
+  gh api --method PUT "repos/$repo/environments/$env_name" >/dev/null
+fi
 names=$(gh secret list --repo "$repo" --env "$env_name" --json name --jq '.[].name')
 if grep -Fxq ANDROID_APK_SIGNING <<< "$names"; then echo 'Using the existing APK key.'; exit 0; fi
 dir=$(mktemp -d)
