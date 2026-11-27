@@ -9,7 +9,8 @@ ref=${EXACT_REF:?Expected upstream Exact commit}
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 if [[ "$phase" == all || "$phase" == checkout ]]; then
   bash "$(dirname "$0")/checkout.sh" "$ref" "$EXACT"
-  (cd "$EXACT" && bun install --frozen-lockfile && git ls-files -z | xargs -0 touch -t 202001010000)
+  normalize=$(cd "$(dirname "$0")" && pwd)/normalize-sdk-mtimes.py
+  (cd "$EXACT" && bun install --frozen-lockfile && python3 "$normalize")
   printf 'EXACT=%s\nEXACT_REF=%s\nCARGO_TARGET_DIR=%s\n' "$EXACT" "$ref" "$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
 fi
 [[ "$phase" != checkout ]] || exit 0

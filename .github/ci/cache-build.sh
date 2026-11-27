@@ -14,7 +14,8 @@ fi
 mode=
 [[ "$platform" != web || ${CACHE_VERIFY:-} == 1 ]] || mode=keep-tools
 bash "$GITHUB_WORKSPACE/.github/ci/checkout.sh" "$EXACT_REF" "$EXACT" ${mode:+"$mode"}
-(cd "$EXACT" && bun install --frozen-lockfile && git ls-files -z | xargs -0 touch -t 202001010000)
+normalize=$(cd "$(dirname "$0")" && pwd)/normalize-sdk-mtimes.py
+(cd "$EXACT" && bun install --frozen-lockfile && python3 "$normalize")
 app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
@@ -88,7 +89,7 @@ else
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
   paths=()
-  for file in .cargo/registry/cache .cargo/registry/index .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
+  for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
     [[ ! -e "$HOME/$file" ]] || paths+=("$file")
   done
 fi
