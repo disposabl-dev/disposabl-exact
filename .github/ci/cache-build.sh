@@ -81,6 +81,17 @@ else
   fi
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
+  python3 - "$CARGO_TARGET_DIR" <<'PYCODE'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1], "aarch64-linux-android/release/.fingerprint")
+for crate in ("wgpu-hal", "exact-logic"):
+    paths = list(root.glob(crate + "-*/run-build-script-*.json"))
+    assert paths, crate
+    for path in paths:
+        inputs = json.loads(path.read_text())["local"]
+        print(path.parent.name, inputs)
+        assert any(x.get("Precalculated", "").endswith("(Cargo.toml)") for x in inputs), inputs
+PYCODE
   paths=()
   for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
     [[ ! -e "$HOME/$file" ]] || paths+=("$file")

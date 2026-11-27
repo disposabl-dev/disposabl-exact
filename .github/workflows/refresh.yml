@@ -21,7 +21,7 @@ jobs:
     steps:
       - id: version
         run: |
-          ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
+          ref=39c69d97d08f7ff4d14a41e26c96f5b1ae6216c4
           [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && echo "ref=$ref" >> "$GITHUB_OUTPUT"
   cache:
     needs: resolve
