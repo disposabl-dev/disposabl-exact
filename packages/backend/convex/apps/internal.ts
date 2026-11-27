@@ -12,8 +12,12 @@ function presentApp(row: Doc<"apps">): Infer<typeof app> {
   return { ...fields, appName: name, appSlug: slug };
 }
 
-async function ownedApp(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, appSlug: string) {
-  const row = await ctx.db.query("apps").withIndex("by_slug", q => q.eq("slug", appSlug)).unique();
+export function findAppBySlug(ctx: Pick<QueryCtx, "db">, appSlug: string) {
+  return ctx.db.query("apps").withIndex("by_slug", q => q.eq("slug", appSlug)).unique();
+}
+
+export async function ownedApp(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, appSlug: string) {
+  const row = await findAppBySlug(ctx, appSlug);
   return row?.userId === userId ? row : null;
 }
 
@@ -72,7 +76,7 @@ export const create = internalMutation({
       throw new ConvexError("Invalid Convex project ID.");
     }
 
-    const existing = await ctx.db.query("apps").withIndex("by_slug", q => q.eq("slug", slug)).unique();
+    const existing = await findAppBySlug(ctx, slug);
     if (existing) {
       if (existing.userId === userId && existing.name === name && existing.githubOwner === githubOwner
         && existing.githubRepoName === githubRepoName && existing.convexProjectId === convexProjectId) {
@@ -80,6 +84,12 @@ export const create = internalMutation({
       }
       throw new ConvexError("App slug is already in use.");
     }
+
+    // Reserve the slug until any previews from the deleted app have been removed.
+    const leftoverPreview = await ctx.db.query("previews")
+      .withIndex("by_appSlug", q => q.eq("appSlug", slug))
+      .first();
+    if (leftoverPreview) throw new ConvexError("This app is still being removed. Try again shortly.");
 
     const id = await ctx.db.insert("apps", {
       userId, name, slug, githubOwner, githubRepoName, convexProjectId, prod: null, live: null,
@@ -103,8 +113,8 @@ export const remove = internalMutation({
     if (row.agentThreadId) {
       await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId: row.agentThreadId });
     }
-    await ctx.scheduler.runAfter(0, internal.previews.internal.removeForApp, { appDocumentId: row._id });
     await ctx.db.delete("apps", row._id);
+    await ctx.runMutation(internal.previews.internal.removeForApp, { appSlug: row.slug });
     return null;
   },
 });

@@ -4,8 +4,8 @@ import { appSlugArgs } from "../apps/validators";
 import schema from "../schema";
 
 export const preview = schema.doc("previews")
-  .omit("_id", "appId")
-  .extend({ appSlug: v.string(), appName: v.string() });
+  .omit("_id")
+  .extend({ appName: v.string() });
 export const previewOrNull = v.union(preview, v.null());
 export const previewPage = paginationResultValidator(preview);
 

@@ -48,12 +48,12 @@ export default defineSchema({
     .index("by_slug", ["slug"]),
 
   previews: defineTable({
-    appId: v.id("apps"),
+    appSlug: v.string(),
     previewName: v.string(),
     previewSlug: v.string(),
     platforms: previewPlatforms,
   })
-    .index("by_appId", ["appId"])
+    .index("by_appSlug", ["appSlug"])
     .index("by_previewSlug", ["previewSlug"]),
 
   connections: defineTable({

@@ -3,14 +3,15 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { requireOwnedApp } from "../apps/internal";
+import { findAppBySlug, ownedApp, requireOwnedApp } from "../apps/internal";
+import { appSlugArgs } from "../apps/validators";
 import { createArgs, getArgs, listArgs, preview, previewOrNull, previewPage, removeArgs } from "./validators";
 
 const identity = { userId: v.id("users") };
 
 function presentPreview(row: Doc<"previews">, app: Doc<"apps">): Infer<typeof preview> {
-  const { _id, appId: _appId, ...fields } = row;
-  return { ...fields, appSlug: app.slug, appName: app.name };
+  const { _id, ...fields } = row;
+  return { ...fields, appName: app.name };
 }
 
 async function ownedPreview(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, previewSlug: string) {
@@ -19,8 +20,8 @@ async function ownedPreview(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, prev
     .unique();
   if (!row) return null;
 
-  const app = await ctx.db.get("apps", row.appId);
-  return app?.userId === userId ? { row, app } : null;
+  const app = await ownedApp(ctx, userId, row.appSlug);
+  return app ? { row, app } : null;
 }
 
 export const create = internalMutation({
@@ -44,11 +45,11 @@ export const create = internalMutation({
       .withIndex("by_previewSlug", q => q.eq("previewSlug", previewSlug))
       .unique();
     if (existing) {
-      if (existing.appId === app._id && existing.previewName === name) return presentPreview(existing, app);
+      if (existing.appSlug === app.slug && existing.previewName === name) return presentPreview(existing, app);
       throw new ConvexError("A preview with this slug already exists. Choose another name.");
     }
 
-    const id = await ctx.db.insert("previews", { appId: app._id, previewName: name, previewSlug, platforms: {} });
+    const id = await ctx.db.insert("previews", { appSlug: app.slug, previewName: name, previewSlug, platforms: {} });
     const row = await ctx.db.get("previews", id);
     if (!row) throw new ConvexError("Preview could not be saved.");
     return presentPreview(row, app);
@@ -63,7 +64,7 @@ export const list = internalQuery({
   handler: async (ctx, { userId, appSlug, paginationOpts }) => {
     const app = await requireOwnedApp(ctx, userId, appSlug);
     const page = await ctx.db.query("previews")
-      .withIndex("by_appId", q => q.eq("appId", app._id))
+      .withIndex("by_appSlug", q => q.eq("appSlug", app.slug))
       .paginate(paginationOpts);
     return { ...page, page: page.page.map(row => presentPreview(row, app)) };
   },
@@ -93,17 +94,17 @@ export const remove = internalMutation({
 });
 
 export const removeForApp = internalMutation({
-  args: { appDocumentId: v.id("apps") },
+  args: appSlugArgs,
   returns: v.null(),
-  handler: async (ctx, { appDocumentId }): Promise<null> => {
-    if (await ctx.db.get("apps", appDocumentId)) throw new ConvexError("App still exists.");
+  handler: async (ctx, { appSlug }): Promise<null> => {
+    if (await findAppBySlug(ctx, appSlug)) return null;
 
     const batchSize = 100;
     const rows = await ctx.db.query("previews")
-      .withIndex("by_appId", q => q.eq("appId", appDocumentId))
+      .withIndex("by_appSlug", q => q.eq("appSlug", appSlug))
       .take(batchSize);
     await Promise.all(rows.map(row => ctx.db.delete("previews", row._id)));
-    if (rows.length === batchSize) await ctx.scheduler.runAfter(0, internal.previews.internal.removeForApp, { appDocumentId });
+    if (rows.length === batchSize) await ctx.scheduler.runAfter(0, internal.previews.internal.removeForApp, { appSlug });
     return null;
   },
 });
