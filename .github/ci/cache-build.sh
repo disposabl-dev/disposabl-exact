@@ -35,6 +35,7 @@ if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   fi
 fi
 if [[ "$platform" == ios || "$platform" == macos ]]; then
+  export EXACT_UPDATE_CHANNEL="base-$platform-1"
   # Main ships updatable (level A) binaries. A fixed-plan fixture omits their host modules.
   key=$(node -p 'require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({format:"der", type:"spki"}).subarray(-32).toString("base64")')
   (cd "$app" && jq --arg platform "$platform" --arg key "$key" '
@@ -79,7 +80,6 @@ if [[ "$platform" == web ]]; then
 else
   cd "$app"
   export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1 EXACT_MOBILE_CHANNEL=base-1 EXACT_BUILD_NUMBER=1
-  export EXACT_UPDATE_CHANNEL="base-$platform-1"
   if [[ "$platform" == android ]]; then
     key="$RUNNER_TEMP/public-fixture.p12"
     keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$key" -storepass publicfixture -keypass publicfixture -alias android -keyalg RSA -dname CN=PublicFixture -validity 2 >/dev/null 2>&1

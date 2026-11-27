@@ -27,31 +27,6 @@ apple_linux() (
       curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 "$url" -o "$destination"
       if [[ -n "$digest" ]]; then printf '%s  %s\n' "$digest" "$destination" | sha256sum -c -; fi
     }
-    # Cache only upstream public tool archives, never the SDK or installation root.
-    public_cache=${EXACT_APPLE_PUBLIC_CACHE:-}
-    public_download() {
-      local url=$1 name=$2 digest=$3
-      if [[ -n "$public_cache" && -f "$public_cache/$name" ]]; then
-        cp "$public_cache/$name" "$work/$name"
-        if printf '%s  %s\n' "$digest" "$work/$name" | sha256sum -c --status; then
-          return
-        fi
-      fi
-      download "$url" "$work/$name" "$digest"
-      if [[ -n "$public_cache" ]]; then
-        local staged
-        staged=$(mktemp "$public_cache/.download.XXXXXX")
-        if ! cp "$work/$name" "$staged" || ! mv -f "$staged" "$public_cache/$name"; then
-          rm -f -- "$staged"
-          return 1
-        fi
-      fi
-    }
-    if [[ -n "$public_cache" ]]; then
-      mkdir -p "$public_cache"
-      public_cache=$(realpath "$public_cache")
-    fi
-
     jobs=()
     # Reap background work before deleting its staging directory, including on failure.
     trap 'for job in "${jobs[@]}"; do wait "$job" || :; done; rm -rf -- "$work"' EXIT
@@ -70,9 +45,9 @@ apple_linux() (
         tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
         rm "$work/swift.tar.gz"
       ) & jobs+=("$!")
-      public_download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage xtool.AppImage \
+      download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage "$work/xtool.AppImage" \
         512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd & jobs+=("$!")
-      public_download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz rcodesign.tgz \
+      download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz "$work/rcodesign.tgz" \
         dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002 & jobs+=("$!")
     fi
     install_sdk=false
@@ -85,9 +60,9 @@ apple_linux() (
         tar --no-same-owner -xzf "$work/input.tgz" -C "$work" "$sdk_name" darwin
         rm "$work/input.tgz"
       ) & jobs+=("$!")
-      public_download https://github.com/xtool-org/darwin-tools-linux-llvm/releases/download/v1.1.0/toolset-x86_64.tar.gz tools.tgz \
+      download https://github.com/xtool-org/darwin-tools-linux-llvm/releases/download/v1.1.0/toolset-x86_64.tar.gz "$work/tools.tgz" \
         a5166f2d56ac45707e5ef2f3c20a41a94af8ef0c0456354224dd08656e874188 & jobs+=("$!")
-      public_download https://github.com/xtool-org/OpenAppleMacros/releases/download/v1.4.1/OpenAppleMacrosServer-x86_64.tar.gz macros.tgz \
+      download https://github.com/xtool-org/OpenAppleMacros/releases/download/v1.4.1/OpenAppleMacrosServer-x86_64.tar.gz "$work/macros.tgz" \
         2d80c922d0873dd8b0a85e19d10bd7f42a1aea3db3a85f7b6edf56fe9b687a21 & jobs+=("$!")
     fi
 
