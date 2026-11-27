@@ -66,7 +66,12 @@ case "$phase" in
         echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
         export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
         jq -er '.keystore | select(type == "string" and length > 0)' <<< "$ANDROID_APK_SIGNING" | base64 --decode > "$EXACT_KEYSTORE"
-        bun exact.mjs android --release --no-install --json > "$out/build.json"
+        for attempt in 1 2; do
+          if { bun exact.mjs android --release --no-install --json > "$out/build.json"; } 2>&1 | tee "$signing/build.log" >&2; then break; fi
+          [[ "$attempt" == 1 ]] && grep -Fq 'Received status code 429 from server' "$signing/build.log" || exit 1
+          echo 'Gradle dependency download was rate-limited. Retrying on this runner in 15 seconds.' >&2
+          sleep 15
+        done
         cp "$(jq -er '.path' "$out/build.json")" "$out/app.apk"
         apksigner=$(bash "$(dirname "$0")/android-tools.sh" path)
         "$apksigner" verify --print-certs "$out/app.apk" > "$signing/cert.txt"
