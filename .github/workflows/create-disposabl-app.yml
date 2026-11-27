@@ -24,9 +24,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: ${{ steps.pin.outputs.bun-version }}
-      - run: npm ci
+      - run: bun install --frozen-lockfile
         working-directory: packages/create-disposabl-app
-      - run: npm test
+      - run: bun run test
         working-directory: packages/create-disposabl-app
 
   publish:
@@ -46,7 +46,13 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
-      - run: npm ci
+      - id: pin
+        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ steps.pin.outputs.bun-version }}
+      - run: bun install --frozen-lockfile
         working-directory: packages/create-disposabl-app
-      - run: npm publish --access public --tag next
+      - run: bun pm pack --filename "$RUNNER_TEMP/create-disposabl-app.tgz"
         working-directory: packages/create-disposabl-app
+      - run: npm publish "$RUNNER_TEMP/create-disposabl-app.tgz" --access public --tag next

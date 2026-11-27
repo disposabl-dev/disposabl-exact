@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parseEnv, promisify } from "node:util";
+import { list } from "tar";
 import { parseDocument } from "yaml";
 
 const exec = promisify(execFile);
@@ -30,12 +31,14 @@ const contract = {
 test("the packed generator uses the published CLI for web setup and enables Exact mobile afterward", async t => {
   const work = await mkdtemp(join(tmpdir(), "create-disposabl-app-test-"));
   t.after(() => rm(work, { recursive: true, force: true }));
-  const [{ filename, files }] = JSON.parse(execFileSync("npm", [
-    "pack", "--ignore-scripts", "--json", "--pack-destination", work,
-  ], { cwd: packageDir, encoding: "utf8" }));
-  assert.ok(files.some(file => file.path === "template.tar.gz"));
-  assert.ok(!files.some(file => file.path === "build.mjs"));
-  execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", join(work, filename)], { cwd: work });
+  const archive = join(work, "generator.tgz");
+  execFileSync("bun", ["pm", "pack", "--ignore-scripts", "--filename", archive], { cwd: packageDir });
+  const files = new Set();
+  await list({ file: archive, onReadEntry: entry => files.add(entry.path) });
+  assert.ok(files.has("package/template.tar.gz"));
+  assert.ok(!files.has("package/build.mjs"));
+  assert.ok(!files.has("package/bun.lock"));
+  execFileSync("bun", ["add", "--ignore-scripts", archive], { cwd: work });
 
   const cli = join(work, "node_modules/create-disposabl-app/index.mjs");
   const scaffold = (name, flags, env = {}) =>
@@ -132,7 +135,7 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   await access(join(directory, "apps/apps/.gitignore"));
 
   const priorCalls = calls.length;
-  await exec("npm", ["exec", "--", "create-disposabl-app", "offline-app", "--skip-setup"], {
+  await exec("npx", ["--yes", "--package", archive, "--", "create-disposabl-app", "offline-app", "--skip-setup"], {
     cwd: work, env: { ...process.env, ...env },
   });
   assert.equal(calls.length, priorCalls);

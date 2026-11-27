@@ -14,4 +14,4 @@ Run the same command with `--resume` if setup stops partway. Use `--skip-setup` 
 
 ## Release from Exact
 
-Run `npm ci` and `npm test` in this directory to pack the starter and test it with the published CLI. The repository's **Exact app generator** workflow publishes from `main` when manually dispatched, using npm Trusted Publishing for `create-disposabl-app.yml`. It publishes to `next`. After verifying the release, a maintainer can move the npm `latest` tag.
+Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack the starter and test it with the published CLI. The repository's **Exact app generator** workflow publishes from `main` when manually dispatched, using a Bun-packed tarball and npm Trusted Publishing for `create-disposabl-app.yml`. It publishes to `next`. After verifying the release, a maintainer can move the npm `latest` tag.
