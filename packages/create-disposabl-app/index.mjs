@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -123,7 +122,7 @@ async function main() {
   try {
     const config = await readJson(configPath);
     readProjectConfig(config);
-    execFileSync("bun", ["install", "--frozen-lockfile"], { cwd: directory, stdio: "inherit" });
+    await terminal.install(directory, config);
     if (!values["skip-setup"]) await setup(directory, app.name, config);
   } catch (error) {
     throw new Error(`${error.message}\nFiles are in ${directory}. Rerun the generator with --resume.`);

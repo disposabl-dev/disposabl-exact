@@ -1,5 +1,9 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { basename } from "node:path";
 import * as prompts from "@clack/prompts";
+
+const exec = promisify(execFile);
 
 class PromptCancelled extends Error {}
 
@@ -42,6 +46,25 @@ export function createTerminal() {
         initialValues: defaults,
         required: false,
       }));
+    },
+    async install(directory, config) {
+      const progress = interactive ? prompts.spinner() : null;
+      if (interactive) {
+        const names = ids => ids.map(id => labels[id] ?? id).join(", ") || "None";
+        prompts.note([
+          `App         ${basename(directory)}`,
+          `Platforms   ${names(config.platforms)}`,
+          `Features    ${names(config.features)}`,
+        ].join("\n"), "Project setup");
+      }
+      progress?.start("Installing project dependencies");
+      try {
+        await exec("bun", ["install", "--frozen-lockfile"], { cwd: directory });
+        progress?.stop("Project dependencies installed");
+      } catch (error) {
+        progress?.stop("Dependency installation failed");
+        throw error;
+      }
     },
     complete(directory) {
       const message = `Created ${directory}\n\ncd ${basename(directory)}\nbun run dev`;
