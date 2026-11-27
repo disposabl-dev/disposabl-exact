@@ -23,7 +23,7 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 ## First deployment from a new repository
 
-Create a repository from this template and enable it in GitHub Actions and Blacksmith. Use a Convex deployment. Enable Static Hosting if you select web. Configure the following GitHub Actions secrets before the push that starts your first deployment.
+Use the GitHub repository provisioned by the generator, or create one from this template. Enable GitHub Actions and Blacksmith for that repository. Enable Static Hosting on your Convex deployment if you select web. The generator provisions the Convex deploy key in GitHub Actions. For manual setup, add it yourself.
 
 | Scope | Name | Value |
 | --- | --- | --- |
@@ -33,13 +33,13 @@ Create a repository from this template and enable it in GitHub Actions and Black
 
 Create `android-production` in **Settings → Environments** and restrict it to `main`. Mobile builds use the signing secrets in this environment. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
-Set the Convex key at repository scope. If you select Android or iOS, provision the mobile signing secrets once from your clone with a repository administrator's GitHub CLI login. A GitHub-hosted runner generates the keys and encrypts them with the environment's public key. The command saves the encrypted values and keeps any existing keys.
+For a new repository with Android or iOS selected, commit and push the project with only web enabled first. This registers the signing workflow on `main`. Restore your mobile selections in your local `disposabl.json` after that push, then run the setup command below with a repository administrator's GitHub CLI login. A GitHub-hosted runner generates the keys and encrypts them with the environment's public key. The command saves the encrypted values and keeps any existing keys.
 
 ```sh
 python3 .github/actions/exact-setup/scripts/setup-signing.py
 ```
 
-Push or merge to `main` to deploy. The first deployment starts the selected platform jobs. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
+Commit and push the mobile selections to `main` to start the first native builds. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
 
 ## iPhone builds
 
@@ -59,7 +59,7 @@ Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UP
 
 ### Run the app locally
 
-Use the Exact revision in [pin.env](.github/actions/exact-setup/pin.env). Android cache builds and restores automatically apply the [layer-header fix](.github/actions/exact-setup/scripts/android-layer-header.patch) for the revision that needs it. Apply the same patch to that revision in a local Android SDK checkout.
+Check out [expo/exact](https://github.com/expo/exact) at the revision in [pin.env](.github/actions/exact-setup/pin.env) and set `EXACT` to that checkout's absolute path. Android cache builds and restores automatically apply the [layer-header fix](.github/actions/exact-setup/scripts/android-layer-header.patch) for the revision that needs it. Apply the same patch to that revision in a local Android SDK checkout.
 
 Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
