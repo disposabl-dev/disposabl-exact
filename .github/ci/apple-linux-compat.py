@@ -28,6 +28,16 @@ edit(
     # This iOS patch runs after the checkout stamps SDK inputs for cache reuse.
     mtime=1577836800 if platform == "ios" else None,  # 2020-01-01 00:00:00 UTC
 )
+# The native workflow already restores the host baker from this exact SDK revision.
+# Let the iOS target keep its SQLite flags while the Linux baker runs independently.
+if platform == "ios" and os.environ.get("EXACT_OTA_TOOLS_READY") == "1":
+    edit(
+        "scripts/linked-plan.mjs",
+        "export function appleBakeTool(env, cargoArgs) {",
+        """export function appleBakeTool(env, cargoArgs) {
+  const cached = resolve(process.env.HOME, '.cache/exact/ota-tools', process.env.EXACT_REF, 'exact-js-bake');
+  if (existsSync(cached)) return cached;""",
+    )
 if platform == "macos":
     edit(
         "scripts/app.mjs",
