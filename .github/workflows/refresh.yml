@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Qualify a single platform (default runs all four)
+        type: choice
+        options: [all, web, android, ios, macos]
 permissions: { contents: read }
 concurrency: { group: 'exact-refresh-${{ github.ref }}', cancel-in-progress: false }
 jobs:
@@ -23,14 +28,15 @@ jobs:
     permissions: { contents: write }
     strategy:
       fail-fast: false
-      matrix: { platform: [web, android, ios, macos] }
+      matrix:
+        platform: ${{ fromJSON(inputs.platform && inputs.platform != 'all' && format('["{0}"]', inputs.platform) || '["web","android","ios","macos"]') }}
     uses: ./.github/workflows/cache-platform.yml
     with:
       platform: ${{ matrix.platform }}
       exact: ${{ needs.resolve.outputs.ref }}
   boat:
     needs: resolve
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (!inputs.platform || inputs.platform == 'all')
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:

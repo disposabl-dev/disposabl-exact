@@ -19,24 +19,28 @@ app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   app="$RUNNER_TEMP/exact-cache-fixture"
-  platforms=()
-  if [[ "$platform" == ios || "$platform" == macos ]]; then platforms=(--with "$platform"); fi
-  (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed "${platforms[@]}")
-  mkdir -p "$app/assets"
   if [[ "$platform" == ios || "$platform" == macos ]]; then
-    # A simple SVG draws natively. A masked SVG reaches Exact’s SVG raster module.
-    cat > "$app/assets/masked.svg" <<'SVG'
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <mask id="m" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
-    <path d="M 0 0 H 32 V 32 H 0 Z" fill="white"/>
-  </mask>
-  <path d="M 0 0 L 32 0 L 0 32 Z" fill="#0066cc" mask="url(#m)"/>
-</svg>
-SVG
-    printf '%s\n' '            image "assets/masked.svg" width=32 height=32' >> "$app/app.contract"
+    # Seed the same native capabilities as a generated app, under another identity.
+    starter=$(cat "$GITHUB_WORKSPACE/packages/create-disposabl-app/starter.ref")
+    git fetch --quiet --depth=1 origin "$starter"
+    mkdir -p "$app"
+    git archive "$starter:apps/apps" | tar -x -C "$app"
+    (cd "$app" && jq '.id="dev.disposabl.exactcacheseed" | .app.id=.id | .app.name="ExactCacheSeed" | .name=.app.name | .short_name=.name' app.json > manifest.tmp && mv manifest.tmp app.json)
+    sed -i 's/dev\.disposabl\.exact:\/oauth\/google/dev.disposabl.exactcacheseed:\/oauth\/google/g' "$app/auth.ts"
+  else
+    (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed)
+    mkdir -p "$app/assets"
+    cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
+    (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}]' app.json > manifest.tmp && mv manifest.tmp app.json)
   fi
-  cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
-  (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}] | .deploy.store.ios="0" | .deploy.store.macos="0"' app.json > manifest.tmp && mv manifest.tmp app.json)
+fi
+if [[ "$platform" == ios || "$platform" == macos ]]; then
+  # Main ships updatable (level A) binaries. A fixed-plan fixture omits their host modules.
+  key=$(node -p 'require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({format:"der", type:"spki"}).subarray(-32).toString("base64")')
+  (cd "$app" && jq --arg platform "$platform" --arg key "$key" '
+    .deploy.store[$platform]="A" | .deploy.signing={key:"ci",keys:{ci:$key}} |
+    .deploy.channel=("base-"+$platform+"-1") | .deploy.channels={(.deploy.channel):"appdrop"}
+  ' app.json > manifest.tmp && mv manifest.tmp app.json)
 fi
 mkdir -p "$app/.exact"
 ln -sfn "$EXACT" "$app/.exact/checkout"
@@ -75,6 +79,7 @@ if [[ "$platform" == web ]]; then
 else
   cd "$app"
   export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1 EXACT_MOBILE_CHANNEL=base-1 EXACT_BUILD_NUMBER=1
+  export EXACT_UPDATE_CHANNEL="base-$platform-1"
   if [[ "$platform" == android ]]; then
     key="$RUNNER_TEMP/public-fixture.p12"
     keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$key" -storepass publicfixture -keypass publicfixture -alias android -keyalg RSA -dname CN=PublicFixture -validity 2 >/dev/null 2>&1
