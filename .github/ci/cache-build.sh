@@ -92,4 +92,11 @@ if [[ "$platform" == ios || "$platform" == macos ]]; then
     exit 1
   }
 fi
-COPYFILE_DISABLE=1 tar --format pax -C "$HOME" -cf - --exclude=incremental --exclude='*.lock' --exclude='*.lck' --exclude='*.part' --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
+# Production relinks the app executable and symbols. SDK module caches are local.
+tar --format pax -C "$HOME" -cf - \
+  --exclude=incremental --exclude='.gradle/*.lock' --exclude=.cargo-lock --exclude='*.lck' --exclude='*.part' \
+  --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*-module-cache' --exclude='*.dSYM' \
+  --exclude='*/release/ExactIOS' --exclude='*/release/ExactMac' --exclude='*.linked' \
+  --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' \
+  --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' \
+  "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
