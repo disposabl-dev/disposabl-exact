@@ -87,6 +87,8 @@ else
 fi
 [[ "${CACHE_VERIFY:-}" != 1 ]] || exit 0
 if [[ "$platform" == ios || "$platform" == macos ]]; then
+  generated="$EXACT/host/apple/Sources/ExactCore/GeneratedBatch.swift"
+  if [[ -f "$generated" ]]; then cp -p "$generated" "$CARGO_TARGET_DIR/GeneratedBatch.swift"; fi
   [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]] || {
     echo 'The Apple cache fixture did not compile the SVG raster module.' >&2
     exit 1

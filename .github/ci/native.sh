@@ -18,6 +18,13 @@ if [[ "$platform" != android && "$phase" != publish ]]; then
   apple_root=${EXACT_APPLE_ROOT:-$RUNNER_TEMP/exact-apple}
   export EXACT_APPLE_SDK="$apple_root/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
   export PATH="$apple_root/bin:$apple_root/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
+  if [[ "$phase" == build && -f "$CARGO_TARGET_DIR/GeneratedBatch.swift" && -f "$EXACT/kernel/build/apple-batch.mjs" ]]; then
+    bun "$EXACT/kernel/build/apple-batch.mjs"
+    generated="$EXACT/host/apple/Sources/ExactCore/GeneratedBatch.swift"
+    if cmp -s "$generated" "$CARGO_TARGET_DIR/GeneratedBatch.swift"; then
+      touch -r "$CARGO_TARGET_DIR/GeneratedBatch.swift" "$generated"
+    fi
+  fi
 fi
 # These local artifacts use per-crate optimization. Exact's store profile
 # enables whole-program LTO, which stalled before Gradle on both 8 GB trials.
