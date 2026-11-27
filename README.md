@@ -50,7 +50,7 @@ exact ios --device --release --unsigned --archive app.ipa
 exact mac --release
 ```
 
-The snapshot includes both SDKs. App-local commands such as `bun exact.mjs ios --device --release --unsigned --archive app.ipa` and `EXACT_IDENTITY=- bun exact.mjs mac --release` use them directly. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
+The snapshot includes both SDKs. On a fresh restore, the commands above wait for Boat to finish loading the compiler cache. Once `boat info <sandbox-id> --json` reports `.sandbox.hydrated` as `true`, app-local commands such as `bun exact.mjs ios --device --release --unsigned --archive app.ipa` and `EXACT_IDENTITY=- bun exact.mjs mac --release` use them directly. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
 
 Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
