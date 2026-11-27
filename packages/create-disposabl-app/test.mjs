@@ -117,6 +117,9 @@ esac
   ], env), /--resume/);
   assert.deepEqual((await config()).platforms, selected.platforms);
   assert.deepEqual((await config()).features, selected.features);
+  for (const name of ["gradle.lockfile", "gradle-verification.xml"]) {
+    assert.equal(await read(`apps/apps/${name}`), await readFile(join(packageDir, `../../apps/apps/${name}`), "utf8"));
+  }
   assert.equal((await config()).appId, appId);
   assert.equal(creations, 1);
   const callsBeforeRejectedOrigin = calls.length;
