@@ -24,6 +24,8 @@ if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   git fetch --quiet --depth=1 origin "$starter"
   mkdir -p "$app"
   git archive "$starter:apps/apps" | tar -x -C "$app"
+  # Use the same reviewed dependency graph as the production app and generator.
+  cp "$GITHUB_WORKSPACE/apps/apps/gradle.lockfile" "$GITHUB_WORKSPACE/apps/apps/gradle-verification.xml" "$app/"
   (cd "$app" && jq '.id="dev.disposabl.exactcacheseed" | .app.id=.id | .app.name="ExactCacheSeed" | .name=.app.name | .short_name=.name' app.json > manifest.tmp && mv manifest.tmp app.json)
   sed -i 's/dev\.disposabl\.exact:\/oauth\/google/dev.disposabl.exactcacheseed:\/oauth\/google/g' "$app/auth.ts"
 fi

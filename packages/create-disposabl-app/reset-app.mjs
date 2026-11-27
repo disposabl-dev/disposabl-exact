@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extract } from "tar";
@@ -7,6 +7,8 @@ import { extract } from "tar";
 export const starterRef = (await readFile(new URL("./starter.ref", import.meta.url), "utf8")).trim();
 const root = join(import.meta.dirname, "../..");
 const starterPaths = ["apps/apps", "packages/backend", "packages/package.json", "packages/bun.lock"];
+// Share the reviewed Android dependency graph with the production app and CI seed.
+const androidLocks = ["apps/apps/gradle.lockfile", "apps/apps/gradle-verification.xml"];
 
 export async function resetApp(directory) {
   if (!/^[a-f0-9]{40}$/.test(starterRef)) {
@@ -19,9 +21,11 @@ export async function resetApp(directory) {
       cwd: root, stdio: "inherit",
     });
     await extract({ file: archive, cwd: directory, strict: true });
-    return execFileSync("git", ["ls-tree", "-r", "-z", "--name-only", starterRef, "--", ...starterPaths], {
+    for (const file of androidLocks) await copyFile(join(root, file), join(directory, file));
+    const files = execFileSync("git", ["ls-tree", "-r", "-z", "--name-only", starterRef, "--", ...starterPaths], {
       cwd: root, encoding: "utf8",
     }).split("\0").filter(Boolean);
+    return [...new Set([...files, ...androidLocks])];
   } finally {
     await rm(archive, { force: true });
   }
