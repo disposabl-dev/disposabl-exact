@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 platform=${1:?Expected web, android, ios or macos}
-case "$platform:${RUNNER_OS:-}:$(uname -m)" in resolve:*:*|web:Linux:x86_64|android:Linux:x86_64|ios:macOS:arm64|macos:macOS:arm64) ;; *) exit 1 ;; esac
+case "$platform:${RUNNER_OS:-}:$(uname -m)" in web:Linux:x86_64|android:Linux:x86_64|ios:macOS:arm64|macos:macOS:arm64) ;; *) exit 1 ;; esac
 repo=disposabl-dev/disposabl-exact
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/exact-setup.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
-ref=${EXACT_REF:-$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)}
+ref=${EXACT_REF:?Expected upstream Exact commit}
 [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
-printf 'exact-ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
-[[ "$platform" != resolve ]] || exit 0
 tag=
 if gh api "repos/$repo/releases/latest" > "$work/release.json" 2> "$work/error"; then
   tag=$(jq -r --arg prefix "exact-ci-v1-$ref-" '.tag_name | select(startswith($prefix))' "$work/release.json")

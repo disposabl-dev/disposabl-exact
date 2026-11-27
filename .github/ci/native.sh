@@ -20,17 +20,31 @@ case "$phase" in
     esac
     pin=$(bun -e 'console.log(Bun.TOML.parse(await Bun.file(process.env.EXACT + "/rust-toolchain.toml").text()).toolchain.channel)')
     rustup toolchain install "$pin" --profile minimal --target "$target"
-    bun install --frozen-lockfile --cwd "$EXACT"
     host=$(rustc +"$pin" -vV | awk '/^host:/ {print $2}')
     cargo +"$pin" run --locked --manifest-path "$EXACT/vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml" -- --target "$host" --target "$target"
-    cargo +"$pin" fetch --locked --manifest-path "$EXACT/Cargo.toml"
     ;;
   build)
     mkdir -p "$out"
     case "$platform" in
       android)
-        : "${ANDROID_APK_SIGNING:?Production APK signing is required}" "${ANDROID_HOME:?}"
-        signing=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX"); trap 'rm -rf "$signing"' EXIT
+        : "${ANDROID_APK_SIGNING:?Set the standalone APK key with .github/ci/android-key.sh}" "${ANDROID_HOME:?}"
+        signing=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
+        gradle="$EXACT/host/android/app/build.gradle.kts"
+        cleanup() { [[ ! -f "$signing/build.gradle.kts" ]] || cp -p "$signing/build.gradle.kts" "$gradle"; rm -rf "$signing"; }
+        trap cleanup EXIT
+        if [[ ${EXACT_ANDROID_SKIP_R8:-true} == true ]]; then
+          cp -p "$gradle" "$signing/build.gradle.kts"
+          python3 - "$gradle" <<'PYCODE'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+old = "isMinifyEnabled = true"
+if text.count(old) != 1:
+    raise SystemExit("Expected one Exact Android minification setting")
+p.write_text(text.replace(old, "isMinifyEnabled = false"))
+PYCODE
+          echo 'Exact CI: R8 disabled for this signed release APK'
+        fi
         export EXACT_KEYSTORE="$signing/key.p12" EXACT_KEY_ALIAS=android EXACT_UPDATE_TRUST=production
         EXACT_KEYSTORE_PASSWORD=$(jq -er '.password | select(type == "string" and length > 0)' <<< "$ANDROID_APK_SIGNING")
         echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"

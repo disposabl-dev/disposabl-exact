@@ -25,7 +25,7 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses two repository secrets, `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
 
-Android requires a signed APK for installation. Run the following once from the app repository with GitHub CLI and a JDK. It keeps the existing standalone signing key or creates a random one in the `android-production` GitHub environment.
+Android requires a signed APK for installation. When Android is selected, generator setup uses GitHub CLI and a JDK to provision a random key in the repository’s `android-production` environment. It reuses an existing key. To enable Android in an existing project, run this once from the app repository.
 
 ```sh
 bash .github/ci/android-key.sh

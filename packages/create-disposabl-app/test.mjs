@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,7 +94,18 @@ test("the packed generator defaults to web and preserves selections through prov
     DO_NOT_TRACK: "1",
   };
 
-  const selected = { platforms: ["web", "ios", "mcp"], features: ["authentication", "payments"] };
+  const bin = join(work, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "gh"), `#!/bin/sh
+case "$1 $2" in
+  "repo view") echo "example/exact-demo" ;;
+  "api repos/example/exact-demo/environments/android-production") exit 0 ;;
+  "secret list") echo ANDROID_APK_SIGNING ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  env.PATH = bin + ":" + process.env.PATH;
+  const selected = { platforms: ["web", "android", "ios", "mcp"], features: ["authentication", "payments"] };
   await assert.rejects(scaffold("exact-demo", [
     "--platforms", selected.platforms.join(","), "--features", selected.features.join(","),
   ], env), /--resume/);
@@ -116,7 +127,8 @@ test("the packed generator defaults to web and preserves selections through prov
   const mobile = execFileSync("bun", ["--print", 'JSON.stringify((await import("./packages/disposabl-kit/server/platform.ts")).platform.mobile)'], {
     cwd: directory, encoding: "utf8",
   });
-  assert.deepEqual(JSON.parse(mobile), ["ios"]);
+  assert.deepEqual(JSON.parse(mobile).sort(), ["android", "ios"]);
+  assert.match(result.stdout, /Using the existing APK key/);
   assert.equal(execFileSync("git", ["remote", "get-url", "origin"], { cwd: directory, encoding: "utf8" }).trim(), repositoryUrl);
   assert.equal(parseEnv(await read("packages/backend/.env.local")).CONVEX_DEPLOY_KEY, deployKey);
   assert.deepEqual(parseEnv(await read("apps/apps/.env.local")), {

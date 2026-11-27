@@ -2,6 +2,18 @@
 set -euo pipefail
 root=${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")/../.." && pwd)}
 cd "$root"
+origins() {
+  url=$(bun run convex env get CONVEX_CLOUD_URL)
+  site=$(bun run convex env get CONVEX_SITE_URL)
+  [[ "$url" =~ ^https://[a-zA-Z0-9.-]+$ && "$site" =~ ^https://[a-zA-Z0-9.-]+$ ]]
+}
+if [[ ${1:-} == origins ]]; then
+  cd packages/backend
+  bun install --frozen-lockfile
+  origins
+  printf 'CONVEX_ORIGIN=wss://%s\nCONVEX_SITE_ORIGIN=%s\n' "${url#https://}" "$site" >> "$GITHUB_ENV"
+  exit 0
+fi
 : "${WEB:?Set WEB to true or false}"
 [[ "$WEB" == true || "$WEB" == false ]] || { echo 'Invalid WEB value' >&2; exit 1; }
 if [[ "$WEB" == true ]]; then
@@ -41,8 +53,7 @@ else
     upload_mode=--no-prod
   fi
   bun run convex deploy --yes
-  url=$(bun run convex env get CONVEX_CLOUD_URL)
-  site=$(bun run convex env get CONVEX_SITE_URL)
+  origins
   [[ -z "${PR_NUMBER:-}" || "$url" == "$CONVEX_SELF_HOSTED_URL" ]] || { echo 'Preview target mismatch' >&2; exit 1; }
 fi
 [[ "$url" =~ ^https://[a-zA-Z0-9.-]+$ && "$site" =~ ^https://[a-zA-Z0-9.-]+$ ]] || { echo 'Invalid Convex origins' >&2; exit 1; }
@@ -52,6 +63,5 @@ if [[ "$WEB" == true ]]; then
   if [[ "${PREVIEW_BUILD_ONLY:-false}" != true ]]; then bun run static-hosting upload --dist ../../apps/apps/dist/convex "$upload_mode"; fi
 fi
 if [[ "${PREVIEW_BUILD_ONLY:-false}" != true ]]; then
-  [[ -z "${GITHUB_OUTPUT:-}" ]] || printf 'convex_origin=%s\nconvex_site_origin=%s\n' "$origin" "$site" >> "$GITHUB_OUTPUT"
   [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] || printf 'Convex site: %s\n' "$site" >> "$GITHUB_STEP_SUMMARY"
 fi

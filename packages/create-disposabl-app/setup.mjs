@@ -136,4 +136,7 @@ export async function setup(directory, name, config) {
     "--platforms", web, "--features", features,
   ]);
   await configureExact(directory, config.appId, deployment);
+  if (config.platforms.includes("android")) {
+    execFileSync("bash", [".github/ci/android-key.sh"], { cwd: directory, stdio: "inherit" });
+  }
 }

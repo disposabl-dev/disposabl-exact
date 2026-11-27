@@ -21,15 +21,24 @@ export EXACT="$exact_root/sdk"
 export CARGO_HOME="$exact_root/cargo" RUSTUP_HOME="$exact_root/rustup"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$exact_root/target}"
 export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3
-export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
 export ANDROID_HOME="$exact_root/android" ANDROID_SDK_ROOT="$exact_root/android"
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export GRADLE_USER_HOME="$exact_root/gradle"
-export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+exact_boat_path="$HOME/.local/bin:$CARGO_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+case "$PATH" in
+  "$exact_boat_path"|"$exact_boat_path":*) ;;
+  *) export PATH="$exact_boat_path:$PATH" ;;
+esac
 export CHROME=/usr/bin/google-chrome
-mkdir -p "$HOME/.cache"
+# Exact's browser profile lock requires real directories, separate from the SDK cache symlink.
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache/exact-boat}"
+mkdir -p "$HOME/.cache" "$XDG_CACHE_HOME"
 ln -sfnT "$exact_root/cache" "$HOME/.cache/exact"
 ENV
+  login_hook='[ ! -r "$HOME/.local/share/exact-boat/env.sh" ] || . "$HOME/.local/share/exact-boat/env.sh"'
+  for profile in "$HOME/.profile" "$HOME/.bashrc"; do
+    grep -Fqx "$login_hook" "$profile" || printf '\n%s\n' "$login_hook" >> "$profile"
+  done
   mkdir -p "$root/cache" "$root/cargo/bin"
   install -m 755 "$(command -v rustup)" "$root/cargo/bin/rustup"
   for tool in cargo rustc rustdoc rustfmt cargo-fmt cargo-clippy clippy-driver; do
@@ -134,7 +143,15 @@ wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "c
 started=$SECONDS
 sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 2400 --json "$producer" | ready_id)
 echo "Boat shell ready in $((SECONDS - started))s"
-boat exec --timeout 1800 --stream "$sandbox" -- bash /home/user/.local/share/exact-boat/boat-smoke.sh smoke "$ref" android
+boat exec --timeout 1800 --stream "$sandbox" -- bash -lc '
+  set -e
+  root="$HOME/.local/share/exact-boat"
+  test "$EXACT" = "$root/sdk"
+  test "$ANDROID_HOME" = "$root/android"
+  test "$RUSTUP_HOME" = "$root/rustup"
+  test "$(command -v rustup)" = "$root/cargo/bin/rustup"
+  exec bash "$root/boat-smoke.sh" smoke "$1" android
+' boat-smoke "$ref"
 wait_for "$sandbox" '.sandbox.hydrated == true'
 echo "Boat Android build, web smoke, and hydration verified by $((SECONDS - started))s"
 boat stop "$sandbox"
