@@ -14,8 +14,7 @@ fi
 mode=
 [[ "$platform" != web || ${CACHE_VERIFY:-} == 1 ]] || mode=keep-tools
 bash "$GITHUB_WORKSPACE/.github/ci/checkout.sh" "$EXACT_REF" "$EXACT" ${mode:+"$mode"}
-normalize=$(cd "$(dirname "$0")" && pwd)/normalize-sdk-mtimes.py
-(cd "$EXACT" && bun install --frozen-lockfile && python3 "$normalize")
+(cd "$EXACT" && bun install --frozen-lockfile && git ls-tree -rtz --name-only HEAD | xargs -0 touch -ch -t 202001010000)
 app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
