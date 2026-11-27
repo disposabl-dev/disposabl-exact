@@ -1,13 +1,13 @@
 name: Refresh shared Exact cache
 on:
   push:
-    branches: [main, ci/fresh-exact]
+    branches: [main]
     paths: ['.github/workflows/refresh.yml', '.github/ci/**']
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
 permissions: { contents: read }
-concurrency: { group: exact-cache-refresh, cancel-in-progress: false }
+concurrency: { group: 'exact-refresh-${{ github.ref }}', cancel-in-progress: false }
 jobs:
   resolve:
     if: github.repository == 'disposabl-dev/disposabl-exact'
@@ -23,7 +23,7 @@ jobs:
     strategy: &platforms
       fail-fast: false
       matrix: { platform: [web, android, ios, macos] }
-    runs-on: &runner ${{ (matrix.platform == 'ios' || matrix.platform == 'macos') && 'xcode-27' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env: &sdk { EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
     steps:
@@ -39,7 +39,7 @@ jobs:
   verify:
     needs: [resolve, build]
     strategy: *platforms
-    runs-on: *runner
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env: *sdk
     steps:
@@ -51,7 +51,7 @@ jobs:
         run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
   publish:
     needs: [resolve, verify]
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/ci/fresh-exact')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions: { contents: write }
     env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', REF: '${{ needs.resolve.outputs.ref }}' }
@@ -59,14 +59,14 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with: { path: caches, pattern: 'cache-*', merge-multiple: true }
       - run: |
-          tag="exact-ci-v1-$REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          tag="exact-ci-linux-v2-$REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           gh release create "$tag" --target "$GITHUB_SHA" --title "Exact cache $REF" --notes 'Verified web, Android, iOS and macOS compiler caches.' --latest caches/*
           # Keep the previous generation available to builds already downloading it.
-          gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false and (.tagName | startswith("exact-ci-v1-")))][2:][].tagName' |
+          gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false and (.tagName | startswith("exact-ci-linux-v2-")))][2:][].tagName' |
             while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
   boat:
     needs: resolve
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/ci/fresh-exact')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:

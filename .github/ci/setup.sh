@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 platform=${1:?Expected web, android, ios or macos}
-case "$platform:${RUNNER_OS:-}:$(uname -m)" in web:Linux:x86_64|android:Linux:x86_64|ios:macOS:arm64|macos:macOS:arm64) ;; *) exit 1 ;; esac
+case "$platform:${RUNNER_OS:-}:$(uname -m)" in web:Linux:x86_64|android:Linux:x86_64|ios:Linux:x86_64|macos:Linux:x86_64) ;; *) exit 1 ;; esac
 repo=disposabl-dev/disposabl-exact
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/exact-setup.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -9,9 +9,9 @@ ref=${EXACT_REF:?Expected upstream Exact commit}
 [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
 tag=
 if gh api "repos/$repo/releases/latest" > "$work/release.json" 2> "$work/error"; then
-  tag=$(jq -r --arg prefix "exact-ci-v1-$ref-" '.tag_name | select(startswith($prefix))' "$work/release.json")
+  tag=$(jq -r --arg prefix "exact-ci-linux-v2-$ref-" '.tag_name | select(startswith($prefix))' "$work/release.json")
 elif ! grep -q 'HTTP 404' "$work/error"; then cat "$work/error" >&2; exit 1; fi
-command -v zstd >/dev/null || { if [[ $(uname -s) == Darwin ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
+command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 bash "$(dirname "$0")/checkout.sh" "$ref" "$EXACT"
 (cd "$EXACT" && bun install --frozen-lockfile && git ls-files -z | xargs -0 touch -t 202001010000)
