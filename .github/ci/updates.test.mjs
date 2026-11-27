@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createPublicKey, verify } from 'node:crypto';
 import test from 'node:test';
-import { deliver, latestChannel, updateSigner } from './updates.mjs';
+import { appInputs, deliver, latestChannel, signerScope, updateSigner } from './updates.mjs';
 
 const key = Buffer.alloc(32, 9).toString('base64');
 const canonical = head => Buffer.from(JSON.stringify(head));
@@ -38,6 +38,7 @@ function fixture(platform, seed = false) {
   let preparations = 0;
   const sdk = {
     preparePublisher: () => { preparations++; },
+    cachedPublisherTools: () => null,
     streams: async (_origin, _app, wantedChannel, opts) => {
       assert.equal(wantedChannel, channel);
       assert.deepEqual(opts.platforms, [platform]);
@@ -57,7 +58,7 @@ function fixture(platform, seed = false) {
   };
   return { sdk, found, build, candidate, counts: () => [bakes, publishes], preparations: () => preparations,
     run: () => deliver({ sdk, app, origin: {}, platform, channel, signer, fingerprint, seed,
-      env: { GITHUB_SHA: 'a'.repeat(40) } }) };
+      env: { GITHUB_SHA: 'a'.repeat(40), EXACT_OTA_TOOLS_READY: '1' } }) };
 }
 
 for (const platform of ['android', 'ios', 'macos']) {
@@ -66,7 +67,7 @@ for (const platform of ['android', 'ios', 'macos']) {
       const state = fixture(platform, seed);
       assert.equal(await state.run(), 'published');
       assert.deepEqual(state.counts(), [1, 1]);
-      assert.equal(state.preparations(), seed ? 0 : 1);
+      assert.equal(state.preparations(), 1);
     }
   });
 }
@@ -117,4 +118,38 @@ test('an interrupted authenticated seed retries the same base and recovers its r
     return normal(...args);
   };
   assert.equal(await seed.run(), 'published');
+});
+
+test('a changed stream requests cached tools before baking', async () => {
+  const state = fixture('ios');
+  const sdk = state.sdk;
+  const app = { dir: '.', workspace: '.', target: '.' };
+  const outcome = await deliver({ sdk, app, origin: {}, platform: 'ios', channel: 'base-ios-1', signer,
+    fingerprint: 'a'.repeat(64), seed: false, env: { GITHUB_SHA: 'a'.repeat(40) } });
+  assert.equal(outcome, 'tools');
+  assert.deepEqual(state.counts(), [0, 0]);
+  assert.equal(state.preparations(), 0);
+});
+
+test('restored publisher tools are passed to Exact without rebuilding', async () => {
+  const state = fixture('ios');
+  const cached = { graph: '/cache/exact-bake', typescript: '/cache/exact-js-bake' };
+  state.sdk.cachedPublisherTools = () => cached;
+  const candidates = state.sdk.streamCandidates;
+  state.sdk.streamCandidates = async (...args) => {
+    assert.deepEqual(args[4], { tools: cached });
+    return candidates(...args);
+  };
+  assert.equal(await state.run(), 'published');
+  assert.equal(state.preparations(), 0);
+});
+
+test('an upstream revision changes the source fingerprint without rotating the signing key', () => {
+  const env = { ...process.env, GITHUB_REPOSITORY: 'owner/repo', CONVEX_ORIGIN: 'wss://example.invalid', CONVEX_SITE_ORIGIN: 'https://example.invalid' };
+  const first = appInputs(env, 'a'.repeat(40));
+  const second = appInputs(env, 'b'.repeat(40));
+  assert.notEqual(first.fingerprint, second.fingerprint);
+  assert.deepEqual(first.native, second.native);
+  assert.equal(updateSigner(key, signerScope({ ...env, EXACT_REF: 'a'.repeat(40) }, 'ios', first.native), canonical).publicKey,
+    updateSigner(key, signerScope({ ...env, EXACT_REF: 'b'.repeat(40) }, 'ios', second.native), canonical).publicKey);
 });

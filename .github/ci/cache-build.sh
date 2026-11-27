@@ -42,10 +42,27 @@ if [[ "$platform" == web ]]; then
       bun scripts/exact.mjs setup --platform web && \
       export PATH="$HOME/.cache/exact/binaryen/$(bun -p 'import { BINARYEN } from "./host/web/stages.mjs"; BINARYEN.replace(" ", "_")')/bin:$PATH" && \
       bun scripts/tools.mjs keep && git reset --mixed "$EXACT_REF")
+    (cd "$EXACT" && CARGO_TARGET_DIR="$RUNNER_TEMP/ota-tools-build" cargo build --locked --release -p exact-bake -p exact-js-bake)
+    ota="$HOME/.cache/exact/ota-tools/$EXACT_REF"
+    mkdir -p "$ota"
+    cp "$RUNNER_TEMP/ota-tools-build/release/"{exact-bake,exact-js-bake} "$ota/"
   fi
+  ota="$HOME/.cache/exact/ota-tools/$EXACT_REF"
+  for tool in "$ota/exact-bake" "$ota/exact-js-bake"; do
+    test -x "$tool"
+    ldd "$tool" | tee "$RUNNER_TEMP/ota-ldd.txt"
+    ! grep -q 'not found' "$RUNNER_TEMP/ota-ldd.txt"
+  done
+  "$ota/exact-bake" --help >/dev/null
+  (cd "$EXACT" && "$ota/exact-js-bake" "$app" --out "$RUNNER_TEMP/ota-smoke" > "$RUNNER_TEMP/ota-receipt.json")
+  test -s "$RUNNER_TEMP/ota-smoke/app.hbc"
+  "$ota/exact-bake" compat "$app" --platform android --json > "$RUNNER_TEMP/ota-compat.json"
+  "$ota/exact-bake" graph "$RUNNER_TEMP/ota-smoke/app.plan" "$RUNNER_TEMP/ota-compat.json" \
+    "$(jq -er .target "$RUNNER_TEMP/ota-compat.json")" "$app" > "$RUNNER_TEMP/ota-graph.json"
+  jq -e . "$RUNNER_TEMP/ota-graph.json" >/dev/null
   (cd "$app" && bun exact.mjs web-build --out "$RUNNER_TEMP/public-web")
   test -s "$RUNNER_TEMP/public-web/shell.html"
-  paths=(.cache/exact/tools)
+  paths=(.cache/exact/tools ".cache/exact/ota-tools/$EXACT_REF")
   while IFS= read -r file; do paths+=("$file"); done < <(cd "$HOME" && find .cargo/hermes-lean-sys -type f -name hermesc)
   (( ${#paths[@]} > 1 ))
 else

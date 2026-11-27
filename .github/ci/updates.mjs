@@ -1,7 +1,7 @@
 // Run from apps/apps on the same runner that will build and seed the native package.
 import { execFileSync } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -14,15 +14,20 @@ const sha256 = data => createHash('sha256').update(data).digest('hex');
 const docs = path => /^(?:AGENTS|CLAUDE|README)\.md$/i.test(path);
 const content = path => /^(?:[^/]+\.(?:ts|contract)|strings\/[^/]+\.json)$/.test(path);
 
-export function appInputs(env) {
+export function appInputs(env, exactRef) {
   const rows = execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', '.'], { env, encoding: 'utf8' })
     .split('\0').filter(Boolean);
   const path = row => row.slice(row.indexOf('\t') + 1);
   const sources = rows.filter(row => !docs(path(row)));
   return {
     native: sources.filter(row => !content(path(row))),
-    fingerprint: sha256(JSON.stringify(sources)),
+    fingerprint: sha256(JSON.stringify([exactRef, sources])),
   };
+}
+
+export function signerScope(env, platform, nativeInputs) {
+  return [env.GITHUB_REPOSITORY, platform, env.CONVEX_ORIGIN, env.CONVEX_SITE_ORIGIN,
+    env.EXACT_ANDROID_SKIP_R8 ?? 'true', nativeInputs];
 }
 
 export function updateSigner(seed, scope, canonicalBytes) {
@@ -66,6 +71,18 @@ export function preparePublisher(env) {
   { env, cwd: env.EXACT, stdio: 'inherit' });
 }
 
+export function cachedPublisherTools(env) {
+  const root = resolve(env.HOME, '.cache/exact/ota-tools', env.EXACT_REF);
+  const tools = { graph: resolve(root, 'exact-bake'), typescript: resolve(root, 'exact-js-bake') };
+  try {
+    for (const file of Object.values(tools)) accessSync(file, constants.X_OK);
+    return tools;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 export async function deliver({ origin, sdk, app, platform, channel, signer, env, fingerprint, seed }) {
   const builds = seed ? sdk.readBuilds(app, env).filter(build =>
     build.trust === 'production' && build.compat.inputs.platform === platform &&
@@ -94,6 +111,8 @@ export async function deliver({ origin, sdk, app, platform, channel, signer, env
     return 'current';
   }
 
+  if (!seed && env.EXACT_OTA_TOOLS_READY !== '1') return 'tools';
+
   // Materialize the same generated native workspace used by the build before
   // comparing inputs. Pass a plain view to avoid invoking unrelated getters.
   const candidateApp = Object.create(app, {
@@ -101,8 +120,9 @@ export async function deliver({ origin, sdk, app, platform, channel, signer, env
     workspace: { value: app.workspace, enumerable: true },
   });
   mkdirSync(app.target, { recursive: true });
-  if (!seed) await sdk.preparePublisher(env);
-  const [candidate] = await sdk.streamCandidates(candidateApp, origin, found, env);
+  const tools = sdk.cachedPublisherTools(env);
+  if (!tools) await sdk.preparePublisher(env);
+  const [candidate] = await sdk.streamCandidates(candidateApp, origin, found, env, { tools });
   if (candidate.note) throw Error(candidate.note);
   if (candidate.reason && !candidate.needsBinary) throw Error(candidate.reason);
   let incompatible = candidate.needsBinary;
@@ -146,13 +166,10 @@ async function main() {
   }
   const manifest = JSON.parse(readFileSync('app.json', 'utf8'));
   if (!/^\d+(?:\.\d+){1,2}$/.test(manifest.version)) throw Error('Set a numeric version in app.json');
-  const inputs = appInputs(env);
+  const inputs = appInputs(env, EXACT_REF);
   const [appApi, publisher, { openOrigin, appdropOrigin }, { canonicalBytes }] = await Promise.all(
     ['app', 'publisher', 'origin', 'deploy-signing'].map(name => import(resolve(EXACT, 'scripts', name + '.mjs'))));
-  const signer = updateSigner(seed, [
-    GITHUB_REPOSITORY, platform, EXACT_REF, CONVEX_ORIGIN, CONVEX_SITE_ORIGIN,
-    env.EXACT_ANDROID_SKIP_R8 ?? 'true', inputs.native,
-  ], canonicalBytes);
+  const signer = updateSigner(seed, signerScope(env, platform, inputs.native), canonicalBytes);
   manifest.deploy = { ...manifest.deploy, store: { ...manifest.deploy?.store, [platform]: 'A' },
     signing: { key: keyId, keys: { [keyId]: signer.publicKey } } };
   const origin = openOrigin(appdropOrigin(manifest)).useSigner(signer);
@@ -166,7 +183,7 @@ async function main() {
   const run = channel => {
     execFileSync(process.execPath, ['--no-env-file', 'scripts/locales.mjs'], { env: candidateEnv, stdio: 'inherit' });
     const app = appApi.resolveApp(process.cwd());
-    return deliver({ origin, sdk: { ...appApi, ...publisher, preparePublisher }, app, platform, channel, signer,
+    return deliver({ origin, sdk: { ...appApi, ...publisher, preparePublisher, cachedPublisherTools }, app, platform, channel, signer,
       env: candidateEnv, fingerprint: inputs.fingerprint, seed: phase === 'seed' });
   };
 
@@ -185,9 +202,13 @@ async function main() {
     const channel = `base-${platform}-${latest}`;
     writeFileSync('app.json', configure(channel));
     const outcome = await run(channel);
+    if (outcome === 'tools') {
+      appendFileSync(env.GITHUB_OUTPUT, 'tools=true\nnative=false\n');
+      return;
+    }
     retry = outcome === 'retry';
     if (outcome !== 'native' && !retry) {
-      appendFileSync(env.GITHUB_OUTPUT, 'native=false\n');
+      appendFileSync(env.GITHUB_OUTPUT, 'tools=false\nnative=false\n');
       return;
     }
   }
@@ -196,7 +217,7 @@ async function main() {
   if (!channelPattern.test(channel)) throw Error('CI update channel number exhausted');
   writeFileSync('app.json', configure(channel));
   appendFileSync(env.GITHUB_ENV, `EXACT_UPDATE_CHANNEL=${channel}\nEXACT_UPDATE_TRUST=production\nEXACT_VERSION=${manifest.version}\nEXACT_UPDATE_GENESIS=1\n`);
-  appendFileSync(env.GITHUB_OUTPUT, 'native=true\n');
+  appendFileSync(env.GITHUB_OUTPUT, 'tools=false\nnative=true\n');
   console.log(platform, 'requires a native base', channel);
 }
 
