@@ -19,33 +19,14 @@ jobs:
           run-id: 46040506760
           name: cache-ios
           path: ${{ runner.temp }}/restored-cache
-      - name: Capture Cargo's reasons for rebuilding on a fresh runner
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46038819874
+          name: cache-web
+          path: ${{ runner.temp }}/ota-cache
+      - env: { EXACT_OTA_TOOLS_READY: '1' }
         run: |
-          mkdir "$RUNNER_TEMP/probe"
-          cat > "$RUNNER_TEMP/probe/cargo" <<'SH'
-          #!/usr/bin/env bash
-          set -u
-          original=("$@")
-          args=()
-          compile=false
-          for arg in "$@"; do
-            case "$arg" in
-              --) args+=("$@"); break ;;
-              build|rustc) args+=("$arg" -vv); compile=true ;;
-              --quiet|-q) ;;
-              *) args+=("$arg") ;;
-            esac
-            shift
-          done
-          if ! "$compile"; then exec "$HOME/.cargo/bin/cargo" "${original[@]}"; fi
-          log=$(mktemp "$RUNNER_TEMP/cargo-reasons.XXXXXX")
-          "$HOME/.cargo/bin/cargo" "${args[@]}" 2>"$log"
-          result=$?
-          grep -E '^ *(Dirty |Compiling |Finished |error)' "$log" >&2 || :
-          exit "$result"
-          SH
-          chmod +x "$RUNNER_TEMP/probe/cargo"
-          export PATH="$RUNNER_TEMP/probe:$PATH"
+          cat "$RUNNER_TEMP"/ota-cache/cache-web.tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME" ".cache/exact/ota-tools/$EXACT_REF/exact-js-bake"
+          test -x "$HOME/.cache/exact/ota-tools/$EXACT_REF/exact-js-bake"
           bash .github/ci/cache-build.sh ios
-      - if: always()
-        run: grep -hE '^ *Dirty (libsqlite3-sys|exact-logic|apps-apple|exact-js)' "$RUNNER_TEMP"/cargo-reasons.* || true
