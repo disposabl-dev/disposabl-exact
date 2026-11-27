@@ -1,0 +1,132 @@
+name: Refresh shared Exact cache
+on:
+  push:
+    branches: [ci/fresh-exact]
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: exact-cache-refresh
+  cancel-in-progress: false
+jobs:
+  resolve:
+    if: github.repository == 'disposabl-dev/disposabl-exact'
+    runs-on: ubuntu-24.04
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+      missing: ${{ steps.ref.outputs.missing }}
+    steps:
+      - id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
+          [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          code=$(curl -sSL -o "$RUNNER_TEMP/release.json" -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/exact-ci-$ref")
+          case "$code" in 200) python3 -c 'import json,sys; sys.exit(bool(json.load(open(sys.argv[1]))["draft"]))' "$RUNNER_TEMP/release.json"; echo 'missing=false' >> "$GITHUB_OUTPUT" ;; 404) echo 'missing=true' >> "$GITHUB_OUTPUT" ;; *) exit 1 ;; esac
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.missing == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [web, android, ios, macos]
+    runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'macos') && 'xcode-27' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    env:
+      EXACT_REF: ${{ needs.resolve.outputs.ref }}
+      BUN_VERSION: '1.4.5'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: android-actions/setup-android@v4.0.4
+        if: matrix.platform == 'android'
+        with:
+          packages: platforms;android-37.2 build-tools;37.0.0 ndk;27.3.13750724
+      - run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: cache-${{ matrix.platform }}
+          path: ${{ runner.temp }}/cache-output/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+  publish:
+    needs: [resolve, build]
+    if: github.event_name != 'push' && always() && needs.resolve.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EXACT_REF: ${{ needs.resolve.outputs.ref }}
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        if: needs.resolve.outputs.missing == 'true'
+        with:
+          path: caches
+          pattern: cache-*
+          merge-multiple: true
+      - name: Publish complete cache and update pointer
+        run: |
+          set -euo pipefail
+          if [[ '${{ needs.resolve.outputs.missing }}' == true ]]; then
+            for platform in web android ios macos; do test -s "caches/cache-$platform.parts"; done
+            gh release create "exact-ci-$EXACT_REF" --target "$GITHUB_SHA" --title "Exact cache $EXACT_REF" --notes 'Public, app-independent build cache.' --prerelease --draft caches/*
+          fi
+          # Validate every asset before exposing this SHA to generated apps.
+          gh api "repos/$GH_REPO/releases/tags/exact-ci-$EXACT_REF" > release.json
+          mkdir indexes
+          gh release download "exact-ci-$EXACT_REF" --pattern '*.parts' --dir indexes
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+          data = json.load(open('release.json'))
+          assets = {a['name']: a for a in data['assets'] if a['state'] == 'uploaded'}
+          for platform in ('web', 'android', 'ios', 'macos'):
+              index = f'cache-{platform}.parts'
+              contents = (pathlib.Path('indexes') / index).read_bytes()
+              names = contents.decode().splitlines()
+              assert names and len(names) == len(set(names))
+              assert assets[index]['digest'] == 'sha256:' + hashlib.sha256(contents).hexdigest()
+              for name in names:
+                  assert re.fullmatch(rf'cache-{platform}\.tar\.zst\.part-[a-z]{{3}}', name)
+                  a = assets[name]
+                  assert a['size'] > 0 and re.fullmatch(r'sha256:[0-9a-f]{64}', a.get('digest') or '')
+          PY
+          if [[ '${{ needs.resolve.outputs.missing }}' == true ]]; then
+            gh release edit "exact-ci-$EXACT_REF" --draft=false
+          fi
+          if gh release view exact-ci-latest --json id >/dev/null 2>&1; then
+            id=$(gh api "repos/$GH_REPO/releases/tags/exact-ci-latest" --jq .id)
+            gh api --method PATCH "repos/$GH_REPO/releases/$id" -f body="$EXACT_REF" >/dev/null
+          else
+            gh release create exact-ci-latest --target "$GITHUB_SHA" --title 'Latest ready Exact cache' --notes "$EXACT_REF" --prerelease
+          fi
+  boat:
+    needs: resolve
+    if: github.event_name != 'push' && needs.resolve.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+      EXACT_REF: ${{ needs.resolve.outputs.ref }}
+      BUN_VERSION: '1.4.5'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Boat CLI
+        run: |
+          curl -fsSL --retry 3 'https://boat.dev/api/boat/cli/download?platform=linux-x64&channel=prod' -o "$RUNNER_TEMP/boat"
+          chmod +x "$RUNNER_TEMP/boat"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: bash .github/ci/boat.sh

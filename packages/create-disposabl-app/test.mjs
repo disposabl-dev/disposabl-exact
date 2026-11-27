@@ -159,10 +159,14 @@ test("the packed generator defaults to web and preserves selections through prov
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
-  assert.deepEqual(deploy.getIn(["jobs", "tools", "needs"]).toJSON(), ["config"]);
-  assert.equal(deploy.hasIn(["jobs", "native"]), true);
-  assert.equal(deploy.hasIn(["jobs", "provision-signing"]), true);
-  await access(join(directory, ".github/actions/exact-setup/scripts/publish-installer.sh"));
+  assert.equal(deploy.hasIn(["jobs", "web"]), true);
+  assert.match(deploy.getIn(["jobs", "native", "if"]), /github.event_name == 'push'/);
+  for (const script of ["checkout", "setup", "native", "web", "android-key"]) {
+    await access(join(directory, `.github/ci/${script}.sh`));
+  }
+  for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh"]) {
+    await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
+  }
   await access(join(directory, "apps/apps/.gitignore"));
 
   const priorCalls = calls.length;
