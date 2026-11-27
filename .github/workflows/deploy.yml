@@ -91,26 +91,33 @@ jobs:
           mkdir -p .exact
           ln -s "$EXACT" .exact/checkout
           bun install --frozen-lockfile
-      - id: plan
+      - id: probe
         working-directory: apps/apps
-        env:
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
-      - if: steps.plan.outputs.native == 'true'
+        env: &update-key { EXACT_UPDATE_SEED: '${{ secrets.EXACT_UPDATE_SEED }}' }
+        run: &plan bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+      - if: steps.probe.outputs.tools == 'true' || steps.probe.outputs.native == 'true'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" web ota
+      - id: plan
+        if: steps.probe.outputs.tools == 'true'
+        working-directory: apps/apps
+        env: *update-key
+        run: *plan
+      - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
         run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" restore
-      - if: steps.plan.outputs.native == 'true'
+      - if: *native
         working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
-      - if: steps.plan.outputs.native == 'true'
+      - if: *native
         working-directory: apps/apps
         env:
           ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
-      - if: steps.plan.outputs.native == 'true'
+      - if: *native
         working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
-      - if: steps.plan.outputs.native == 'true'
+      - if: *native
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -118,8 +125,7 @@ jobs:
           name=$(echo "$PLATFORM" | tr '[:lower:]' '[:upper:]')
           bun run convex env set "EXACT_INSTALL_$name" --from-file "$RUNNER_TEMP/installer-$PLATFORM.json"
           printf '[Install %s](%s)\n' "$PLATFORM" "$(jq -er .url "$RUNNER_TEMP/installer-$PLATFORM.json")" >> "$GITHUB_STEP_SUMMARY"
-      - if: steps.plan.outputs.native == 'true'
+      - if: *native
         working-directory: apps/apps
-        env:
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        env: *update-key
         run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"

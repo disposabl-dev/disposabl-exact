@@ -3,11 +3,11 @@ set -euo pipefail
 platform=${1:?Expected web, android, ios or macos}
 case "$platform:${RUNNER_OS:-}:$(uname -m)" in web:Linux:x86_64|android:Linux:x86_64|ios:Linux:x86_64|macos:Linux:x86_64) ;; *) exit 1 ;; esac
 phase=${2:-all}
-case "$phase" in all|checkout|restore) ;; *) echo "Unknown setup phase $phase" >&2; exit 2 ;; esac
+case "$phase" in all|checkout|restore|ota) ;; *) echo "Unknown setup phase $phase" >&2; exit 2 ;; esac
 ref=${EXACT_REF:?Expected upstream Exact commit}
 [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
-if [[ "$phase" != restore ]]; then
+if [[ "$phase" == all || "$phase" == checkout ]]; then
   bash "$(dirname "$0")/checkout.sh" "$ref" "$EXACT"
   (cd "$EXACT" && bun install --frozen-lockfile && git ls-files -z | xargs -0 touch -t 202001010000)
   printf 'EXACT=%s\nEXACT_REF=%s\nCARGO_TARGET_DIR=%s\n' "$EXACT" "$ref" "$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
@@ -31,5 +31,6 @@ if [[ -n "$tag" ]]; then
   cut -d ' ' -f 3 checksums | LC_ALL=C sort | while read -r part; do cat "$part"; done | zstd -dc | tar -xf - -C "$HOME"
 else
   echo "No shared cache published yet; bootstrapping $ref."
-  [[ "$platform" != web ]] || (cd "$EXACT" && cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target x86_64-unknown-linux-gnu && bun scripts/exact.mjs setup --platform web)
+  [[ "$phase" == ota || "$platform" != web ]] || (cd "$EXACT" && cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml -- --target x86_64-unknown-linux-gnu && bun scripts/exact.mjs setup --platform web)
 fi
+if [[ "$phase" == ota ]]; then echo "EXACT_OTA_TOOLS_READY=1" >> "$GITHUB_ENV"; fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 platform=${1:?Expected platform}
-command -v zstd >/dev/null || { if [[ $(uname -s) == Darwin ]]; then brew install zstd; else sudo apt-get update && sudo apt-get install -y zstd; fi; }
+command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 [[ "$GITHUB_REPOSITORY" == disposabl-dev/disposabl-exact && "$EXACT_REF" =~ ^[0-9a-f]{40}$ ]]
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 mkdir -p "$RUNNER_TEMP/cache-output" "$CARGO_TARGET_DIR"
@@ -64,7 +64,7 @@ if [[ "$platform" == web ]]; then
   test -s "$RUNNER_TEMP/public-web/shell.html"
   paths=(.cache/exact/tools ".cache/exact/ota-tools/$EXACT_REF")
   while IFS= read -r file; do paths+=("$file"); done < <(cd "$HOME" && find .cargo/hermes-lean-sys -type f -name hermesc)
-  (( ${#paths[@]} > 1 ))
+  (( ${#paths[@]} > 2 ))
 else
   cd "$app"
   export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1 EXACT_MOBILE_CHANNEL=base-1 EXACT_BUILD_NUMBER=1
