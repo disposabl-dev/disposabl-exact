@@ -12,8 +12,6 @@ if (!site || !cloud || [site, cloud].some(url => new URL(url).hostname !== "127.
 const client = new ConvexHttpClient(cloud, { logger: false });
 const auth = "/api/auth/web";
 const credentials = "/api/dashboard/api-keys";
-const counter = "/api/counter/current";
-const bearer = (key: string) => ({ Authorization: `Bearer ${key}` });
 
 function post(path: string, body: object, headers: Record<string, string> = {}) {
   return fetch(new URL(path, site), {
@@ -23,18 +21,9 @@ function post(path: string, body: object, headers: Record<string, string> = {}) 
   });
 }
 
-function mcp(key?: string) {
-  return post("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "counter_current" } }, {
-    Accept: "application/json, text/event-stream",
-    ...(key ? bearer(key) : {}),
-  });
-}
-
 test("the deployed configuration controls feature flags and route access", async () => {
   const { authentication, payments, consent } = platform;
   expect(await client.query(api.app.features, {})).toEqual({ authentication, payments, consent, credentials: platform.credentials });
-  expect((await fetch(new URL(counter, site))).status).toBe(platform.api ? 401 : 404);
-  expect((await mcp()).status).toBe(platform.mcp ? 401 : 404);
 
   const headers = { Origin: site, "X-Exact-Auth": "1" };
   const keys = await fetch(new URL(credentials, site), { headers });
@@ -61,28 +50,11 @@ test.skipIf(!platform.web || !platform.authentication)("web sessions and issued 
   if (platform.credentials) {
     const issued = await post(credentials, { operation: "create", name: "Access test", write: false }, session);
     expect(issued.status).toBe(200);
-    const { key } = await issued.json();
-    const expected = await client.query(api.counter.get, {});
-    const callRest = () => fetch(new URL(counter, site), { headers: bearer(key) });
-
-    if (platform.api) {
-      const response = await callRest();
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual(expected);
-    }
-    if (platform.mcp) {
-      const response = await mcp(key);
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ result: { structuredContent: expected } });
-    }
-
     const listed = await fetch(new URL(credentials, site), { headers: session });
     expect(listed.status).toBe(200);
     const { connections } = await listed.json();
     const revoked = await post(credentials, { operation: "revoke", id: connections[0].id }, session);
     expect(revoked.status).toBe(200);
-    if (platform.api) expect((await callRest()).status).toBe(401);
-    if (platform.mcp) expect((await mcp(key)).status).toBe(401);
   }
 
   expect((await post(auth, { operation: "signOut" }, session)).status).toBe(200);

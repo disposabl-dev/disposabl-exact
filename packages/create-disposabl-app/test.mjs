@@ -127,8 +127,10 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   const pinned = file => execFileSync("git", ["show", starterRef + ":" + file], {
     cwd: packageDir, encoding: "utf8",
   });
-  assert.equal(await read("packages/backend/convex/schema.ts"), pinned("packages/backend/convex/schema.ts"));
-  assert.equal(await read("apps/apps/app.contract"), pinned("apps/apps/app.contract"));
+  const generatedSchema = await read("packages/backend/convex/schema.ts");
+  assert.deepEqual([...generatedSchema.matchAll(/^\s*(\w+): defineTable\(/gm)].map(match => match[1]), ["users"]);
+  assert.doesNotMatch(await read("apps/apps/app.contract"), /counter|convex-count|convex-increment/);
+  assert.doesNotMatch(await read("apps/apps/app.ts"), /counter:/);
   assert.equal(await read("packages/bun.lock"), pinned("packages/bun.lock"));
 
   const app = JSON.parse(await read("apps/apps/app.json"));
@@ -153,7 +155,8 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   assert.equal(deploy.hasIn(["jobs", "provision-signing"]), true);
   for (const excluded of ["apps/web", "apps/mobile", ".github/workflows/publish.yml",
     ".github/workflows/create-disposabl-app.yml", ".github/actions/exact-setup/scripts/publish-inputs.sh",
-    "packages/create-disposabl-app"]) {
+    "packages/create-disposabl-app", "apps/apps/app.test.contract",
+    "packages/backend/convex/counter.ts", "packages/backend/convex/myFunctions.ts"]) {
     await assert.rejects(access(join(directory, excluded)), { code: "ENOENT" });
   }
   await access(join(directory, ".github/actions/exact-setup/scripts/publish-installer.sh"));
