@@ -28,8 +28,7 @@ jobs:
       - if: github.event_name != 'pull_request'
         working-directory: packages/create-disposabl-app
         run: |
-          base=$(node -p 'require("./package.json").version')
-          version="${base%.*}.$(( ${base##*.} + GITHUB_RUN_NUMBER ))"
+          version=$(node release-version.mjs)
           npm pkg set "version=$version" "gitHead=$GITHUB_SHA"
           bun pm pack --ignore-scripts --filename "$RUNNER_TEMP/generator.tgz"
       - if: github.event_name != 'pull_request'

@@ -26,4 +26,6 @@ The generator takes `apps/apps`, `packages/backend`, and the backend workspace m
 
 ## Release from Exact
 
-Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack the starter and test it with the published CLI. The repository's **Exact app generator** workflow tests each push to `main` and publishes a stable version under npm’s default `latest` tag using npm Trusted Publishing. The workflow adds its run number to the package’s patch version so retries produce the same version. The trusted GitHub publisher is `disposabl-dev/disposabl-exact` with workflow filename `create-disposabl-app.yml`.
+Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack and test the starter with the published CLI. The **Exact app generator** workflow tests each push to `main` and publishes to npm’s default `latest` tag using the trusted publisher `disposabl-dev/disposabl-exact` and workflow `create-disposabl-app.yml`.
+
+The Exact generator starts at `1.0.0`. Subsequent releases use the highest change since the last published commit. A Conventional Commit with `!` or a `BREAKING CHANGE:` footer bumps the major version, `feat:` bumps the minor version, and all other changes bump the patch version. Scopes such as `feat(cli):` are supported.
