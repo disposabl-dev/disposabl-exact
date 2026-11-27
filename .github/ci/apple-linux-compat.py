@@ -35,8 +35,10 @@ if platform == "ios" and os.environ.get("EXACT_OTA_TOOLS_READY") == "1":
         "scripts/linked-plan.mjs",
         "export function appleBakeTool(env, cargoArgs) {",
         """export function appleBakeTool(env, cargoArgs) {
-  const cached = resolve(process.env.HOME, '.cache/exact/ota-tools', process.env.EXACT_REF, 'exact-js-bake');
-  if (existsSync(cached)) return cached;""",
+  if (process.env.EXACT_OTA_TOOLS_READY === '1' && process.env.EXACT_REF) {
+    const cached = resolve(process.env.HOME, '.cache/exact/ota-tools', process.env.EXACT_REF, 'exact-js-bake');
+    if (existsSync(cached)) return cached;
+  }""",
     )
 if platform == "macos":
     edit(
