@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Adapt the upstream Apple host for CI's Apple Silicon preview targets."""
 
+import os
 from pathlib import Path
 import sys
 
 
-def edit(path, old, new):
+def edit(path, old, new, *, mtime=None):
     file = exact / path
     source = file.read_text()
     if new in source:
@@ -13,6 +14,8 @@ def edit(path, old, new):
     if source.count(old) != 1:
         raise SystemExit(f"Exact Apple cross-build compatibility changed in {path}")
     file.write_text(source.replace(old, new))
+    if mtime is not None:
+        os.utime(file, (mtime, mtime))
 
 
 exact = Path(sys.argv[1])
@@ -22,7 +25,21 @@ edit(
     "    @State private var shown = true",
     "    private typealias PickerState = SwiftUI.State<Bool>\n"
     "    @PickerState private var shown = true",
+    # This iOS patch runs after the checkout stamps SDK inputs for cache reuse.
+    mtime=1577836800 if platform == "ios" else None,  # 2020-01-01 00:00:00 UTC
 )
+# The native workflow already restores the host baker from this exact SDK revision.
+# Let the iOS target keep its SQLite flags while the Linux baker runs independently.
+if platform == "ios" and os.environ.get("EXACT_OTA_TOOLS_READY") == "1":
+    edit(
+        "scripts/linked-plan.mjs",
+        "export function appleBakeTool(env, cargoArgs) {",
+        """export function appleBakeTool(env, cargoArgs) {
+  if (process.env.EXACT_OTA_TOOLS_READY === '1' && process.env.EXACT_REF) {
+    const cached = resolve(process.env.HOME, '.cache/exact/ota-tools', process.env.EXACT_REF, 'exact-js-bake');
+    if (existsSync(cached)) return cached;
+  }""",
+    )
 if platform == "macos":
     edit(
         "scripts/app.mjs",

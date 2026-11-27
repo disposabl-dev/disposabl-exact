@@ -26,26 +26,11 @@ jobs:
       web: ${{ steps.platforms.outputs.web }}
       native: ${{ steps.platforms.outputs.native }}
       exact: ${{ steps.platforms.outputs.exact }}
+      cache: ${{ steps.platforms.outputs.cache }}
     steps:
       - &checkout
         uses: actions/checkout@v7.0.1
         with: { persist-credentials: false }
-      - &bun
-        uses: oven-sh/setup-bun@v2.2.0
-        with: { bun-version: '1.4.5' }
-      - id: platforms
-        run: |
-          set -euo pipefail
-          ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
-          [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
-          echo "exact=$ref" >> "$GITHUB_OUTPUT"
-          bun -e 'import {platform as p} from "./packages/disposabl-kit/server/platform.ts"; console.log("web="+p.web); console.log("native="+JSON.stringify([...p.mobile,...(p.macos?["macos"]:[])]))' >> "$GITHUB_OUTPUT"
-  web:
-    needs: config
-    if: github.event_name == 'push' || needs.config.outputs.web == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - *checkout
       - &shared
         if: github.repository != 'disposabl-dev/disposabl-exact'
         uses: actions/checkout@v7.0.1
@@ -55,6 +40,25 @@ jobs:
           path: .disposabl-ci
           sparse-checkout: .github/ci
           persist-credentials: false
+      - &bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with: { bun-version: '1.4.5' }
+      - id: platforms
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          set -euo pipefail
+          repo=disposabl-dev/disposabl-exact
+          gh api --paginate --slurp "repos/$repo/releases?per_page=100" | jq -f "$CI_SCRIPTS/cache-sets.jq" |
+            jq -er 'first // error("No four-platform Exact cache has passed refresh") | "exact=\(.exact)\ncache=\(.tags|tojson)"' >> "$GITHUB_OUTPUT"
+          bun -e 'import {platform as p} from "./packages/disposabl-kit/server/platform.ts"; console.log("web="+p.web); console.log("native="+JSON.stringify([...p.mobile,...(p.macos?["macos"]:[])]))' >> "$GITHUB_OUTPUT"
+  web:
+    needs: config
+    if: github.event_name == 'push' || needs.config.outputs.web == 'true'
+    env: { EXACT_CACHE_TAGS: '${{ needs.config.outputs.cache }}' }
+    runs-on: ubuntu-24.04
+    steps:
+      - *checkout
+      - *shared
       - *bun
       - if: needs.config.outputs.web == 'true'
         env: { GH_TOKEN: '${{ github.token }}', EXACT_REF: '${{ needs.config.outputs.exact }}' }
@@ -76,6 +80,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: { name: android-production, deployment: false }
     env:
+      EXACT_CACHE_TAGS: ${{ needs.config.outputs.cache }}
       PLATFORM: ${{ matrix.platform }}
       EXACT_BUILD_NUMBER: ${{ github.run_number }}
     steps:
@@ -107,10 +112,8 @@ jobs:
         run: *plan
       - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
-        run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" restore
-      - if: *native
         working-directory: apps/apps
-        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM" restore
       - if: *native
         working-directory: apps/apps
         env:

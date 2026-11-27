@@ -5,6 +5,12 @@ phase=${1:?expected prepare, build, or publish}; platform=${2:?expected android,
 : "${RUNNER_TEMP:?}"
 case "$platform" in android|ios|macos) ;; *) exit 2 ;; esac
 out="$RUNNER_TEMP/$platform-artifacts"
+restore=
+if [[ "$phase" == prepare && ${3:-} == restore ]]; then
+  bash "$(dirname "$0")/setup.sh" "$platform" restore & restore=$!
+  unset GH_TOKEN
+  trap 'wait "$restore" || true' EXIT
+fi
 if [[ "$platform" != android && "$phase" != publish ]]; then
   ci_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   source "$ci_dir/apple-linux.sh"
@@ -12,6 +18,13 @@ if [[ "$platform" != android && "$phase" != publish ]]; then
   apple_root=${EXACT_APPLE_ROOT:-$RUNNER_TEMP/exact-apple}
   export EXACT_APPLE_SDK="$apple_root/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
   export PATH="$apple_root/bin:$apple_root/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
+  if [[ "$phase" == build && -f "$CARGO_TARGET_DIR/GeneratedBatch.swift" && -f "$EXACT/kernel/build/apple-batch.mjs" ]]; then
+    bun "$EXACT/kernel/build/apple-batch.mjs"
+    generated="$EXACT/host/apple/Sources/ExactCore/GeneratedBatch.swift"
+    if cmp -s "$generated" "$CARGO_TARGET_DIR/GeneratedBatch.swift"; then
+      touch -r "$CARGO_TARGET_DIR/GeneratedBatch.swift" "$generated"
+    fi
+  fi
 fi
 # These local artifacts use per-crate optimization. Exact's store profile
 # enables whole-program LTO, which stalled before Gradle on both 8 GB trials.
@@ -21,9 +34,10 @@ from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 source = path.read_text()
-flag = """'profile.release.lto="fat"'"""
-assert source.count(flag) == 1
-path.write_text(source.replace(flag, """'profile.release.lto="off"','--config','profile.release.codegen-units=16'"""))
+old = """profile === 'release' ? ['--config','profile.release.lto="fat"']"""
+new = """['release','balanced'].includes(profile) ? ['--config',`profile.${profile}.lto="off"`,'--config',`profile.${profile}.codegen-units=16`]"""
+assert source.count(old) == 1
+path.write_text(source.replace(old, new))
 PYCODE
 fi
 case "$phase" in
@@ -40,6 +54,8 @@ case "$phase" in
       ios) target=aarch64-apple-ios ;;
       macos) target=aarch64-apple-darwin ;;
     esac
+    # The SDK installers and cache transfer are independent. Rust uses the restored tree.
+    if [[ -n "$restore" ]]; then wait "$restore"; trap - EXIT; fi
     pin=$(bun -e 'console.log(Bun.TOML.parse(await Bun.file(process.env.EXACT + "/rust-toolchain.toml").text()).toolchain.channel)')
     rustup toolchain install "$pin" --profile minimal --target "$target"
     host=$(rustc +"$pin" -vV | awk '/^host:/ {print $2}')
@@ -57,7 +73,12 @@ case "$phase" in
         echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
         export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
         jq -er '.keystore | select(type == "string" and length > 0)' <<< "$ANDROID_APK_SIGNING" | base64 --decode > "$EXACT_KEYSTORE"
-        bun exact.mjs android --release --no-install --json > "$out/build.json"
+        for attempt in 1 2; do
+          if { bun exact.mjs android --release --no-install --json > "$out/build.json"; } 2>&1 | tee "$signing/build.log" >&2; then break; fi
+          [[ "$attempt" == 1 ]] && grep -Fq 'Received status code 429 from server' "$signing/build.log" || exit 1
+          echo 'Gradle dependency download was rate-limited. Retrying on this runner in 15 seconds.' >&2
+          sleep 15
+        done
         cp "$(jq -er '.path' "$out/build.json")" "$out/app.apk"
         apksigner=$(bash "$(dirname "$0")/android-tools.sh" path)
         "$apksigner" verify --print-certs "$out/app.apk" > "$signing/cert.txt"

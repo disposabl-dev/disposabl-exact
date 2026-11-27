@@ -14,29 +14,27 @@ fi
 mode=
 [[ "$platform" != web || ${CACHE_VERIFY:-} == 1 ]] || mode=keep-tools
 bash "$GITHUB_WORKSPACE/.github/ci/checkout.sh" "$EXACT_REF" "$EXACT" ${mode:+"$mode"}
-(cd "$EXACT" && bun install --frozen-lockfile && git ls-files -z | xargs -0 touch -t 202001010000)
+(cd "$EXACT" && bun install --frozen-lockfile && git ls-tree -rtz --name-only HEAD | xargs -0 touch -ch -t 202001010000)
 app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   app="$RUNNER_TEMP/exact-cache-fixture"
-  platforms=()
-  if [[ "$platform" == ios || "$platform" == macos ]]; then platforms=(--with "$platform"); fi
-  (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed "${platforms[@]}")
-  mkdir -p "$app/assets"
-  if [[ "$platform" == ios || "$platform" == macos ]]; then
-    # A simple SVG draws natively. A masked SVG reaches Exact’s SVG raster module.
-    cat > "$app/assets/masked.svg" <<'SVG'
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <mask id="m" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
-    <path d="M 0 0 H 32 V 32 H 0 Z" fill="white"/>
-  </mask>
-  <path d="M 0 0 L 32 0 L 0 32 Z" fill="#0066cc" mask="url(#m)"/>
-</svg>
-SVG
-    printf '%s\n' '            image "assets/masked.svg" width=32 height=32' >> "$app/app.contract"
-  fi
-  cp "$GITHUB_WORKSPACE/apps/apps/assets/icon.png" "$app/assets/icon.png"
-  (cd "$app" && jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}] | .deploy.store.ios="0" | .deploy.store.macos="0"' app.json > manifest.tmp && mv manifest.tmp app.json)
+  # Seed the same native capabilities as a generated app, under another identity.
+  starter=$(cat "$GITHUB_WORKSPACE/packages/create-disposabl-app/starter.ref")
+  git fetch --quiet --depth=1 origin "$starter"
+  mkdir -p "$app"
+  git archive "$starter:apps/apps" | tar -x -C "$app"
+  (cd "$app" && jq '.id="dev.disposabl.exactcacheseed" | .app.id=.id | .app.name="ExactCacheSeed" | .name=.app.name | .short_name=.name' app.json > manifest.tmp && mv manifest.tmp app.json)
+  sed -i 's/dev\.disposabl\.exact:\/oauth\/google/dev.disposabl.exactcacheseed:\/oauth\/google/g' "$app/auth.ts"
+fi
+if [[ "$platform" != web ]]; then
+  export EXACT_UPDATE_CHANNEL="base-$platform-1"
+  # Main ships updatable (level A) binaries. A fixed-plan fixture omits their host modules.
+  key=$(node -p 'require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({format:"der", type:"spki"}).subarray(-32).toString("base64")')
+  (cd "$app" && jq --arg platform "$platform" --arg key "$key" '
+    .deploy.store[$platform]="A" | .deploy.signing={key:"ci",keys:{ci:$key}} |
+    .deploy.channel=("base-"+$platform+"-1") | .deploy.channels={(.deploy.channel):"appdrop"}
+  ' app.json > manifest.tmp && mv manifest.tmp app.json)
 fi
 mkdir -p "$app/.exact"
 ln -sfn "$EXACT" "$app/.exact/checkout"
@@ -59,8 +57,8 @@ if [[ "$platform" == web ]]; then
     ! grep -q 'not found' "$RUNNER_TEMP/ota-ldd.txt"
   done
   "$ota/exact-bake" --help >/dev/null
-  # Direct compiler calls bypass Exact's before_build hook on the restored app.
-  if [[ ${CACHE_VERIFY:-} == 1 ]]; then (cd "$app" && bun --no-env-file scripts/locales.mjs); fi
+  # Direct compiler calls bypass the starter's before_build hook.
+  (cd "$app" && bun --no-env-file scripts/locales.mjs)
   (cd "$EXACT" && "$ota/exact-js-bake" "$app" --out "$RUNNER_TEMP/ota-smoke" > "$RUNNER_TEMP/ota-receipt.json")
   test -s "$RUNNER_TEMP/ota-smoke/app.hbc"
   "$ota/exact-bake" compat "$app" --platform android --json > "$RUNNER_TEMP/ota-compat.json"
@@ -83,15 +81,24 @@ else
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
   paths=()
-  for file in .cargo/registry/cache .cargo/registry/index .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
+  for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
     [[ ! -e "$HOME/$file" ]] || paths+=("$file")
   done
 fi
 [[ "${CACHE_VERIFY:-}" != 1 ]] || exit 0
 if [[ "$platform" == ios || "$platform" == macos ]]; then
+  generated="$EXACT/host/apple/Sources/ExactCore/GeneratedBatch.swift"
+  if [[ -f "$generated" ]]; then cp -p "$generated" "$CARGO_TARGET_DIR/GeneratedBatch.swift"; fi
   [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]] || {
     echo 'The Apple cache fixture did not compile the SVG raster module.' >&2
     exit 1
   }
 fi
-COPYFILE_DISABLE=1 tar --format pax -C "$HOME" -cf - --exclude=incremental --exclude='*.lock' --exclude='*.lck' --exclude='*.part' --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
+# Production relinks the app executable and symbols. SDK module caches are local.
+tar --format pax -C "$HOME" -cf - \
+  --exclude=incremental --exclude='.gradle/*.lock' --exclude=.cargo-lock --exclude='*.lck' --exclude='*.part' \
+  --exclude='*.sdk' --exclude='ModuleCache*' --exclude='*-module-cache' --exclude='*.dSYM' \
+  --exclude='*/release/ExactIOS' --exclude='*/release/ExactMac' --exclude='*.linked' \
+  --exclude='*.ipa' --exclude='*.apk' --exclude='*.aab' --exclude='*.app' \
+  --exclude='*.receipt.json' --exclude='*.build.json' --exclude='*exactcacheseed*' --exclude='*exact-cache-seed*' --exclude='bake-*' \
+  "${paths[@]}" | zstd -T0 -3 | split -b 1500000000 -a 3 - "$RUNNER_TEMP/cache-output/cache-$platform.tar.zst.part-"
