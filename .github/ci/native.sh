@@ -5,6 +5,12 @@ phase=${1:?expected prepare, build, or publish}; platform=${2:?expected android,
 : "${RUNNER_TEMP:?}"
 case "$platform" in android|ios|macos) ;; *) exit 2 ;; esac
 out="$RUNNER_TEMP/$platform-artifacts"
+restore=
+if [[ "$phase" == prepare && ${3:-} == restore ]]; then
+  bash "$(dirname "$0")/setup.sh" "$platform" restore & restore=$!
+  unset GH_TOKEN
+  trap 'wait "$restore" || true' EXIT
+fi
 if [[ "$platform" != android && "$phase" != publish ]]; then
   ci_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   source "$ci_dir/apple-linux.sh"
@@ -41,6 +47,8 @@ case "$phase" in
       ios) target=aarch64-apple-ios ;;
       macos) target=aarch64-apple-darwin ;;
     esac
+    # The SDK installers and cache transfer are independent. Rust uses the restored tree.
+    if [[ -n "$restore" ]]; then wait "$restore"; trap - EXIT; fi
     pin=$(bun -e 'console.log(Bun.TOML.parse(await Bun.file(process.env.EXACT + "/rust-toolchain.toml").text()).toolchain.channel)')
     rustup toolchain install "$pin" --profile minimal --target "$target"
     host=$(rustc +"$pin" -vV | awk '/^host:/ {print $2}')

@@ -119,10 +119,8 @@ jobs:
         run: *plan
       - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
-        run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" restore
-      - if: *native
         working-directory: apps/apps
-        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM" restore
       - if: *native
         working-directory: apps/apps
         env:
