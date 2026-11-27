@@ -22,7 +22,7 @@ Run the same command with `--resume` and the app name if setup stops partway. Ed
 
 Run `bun run reset-app` from this package directory in the Exact source checkout to export the clean app and backend to a temporary directory. The command prints the directory path. The package build uses the same reset automatically.
 
-The generator takes `apps/apps`, `packages/backend`, and the backend workspace manifest and lockfile from the clean commit in [starter.ref](starter.ref). Product files and edits in those directories stay in the Disposabl checkout. To ship an intentional starter change, commit it on a clean starter branch, keep that commit reachable on GitHub, and update `starter.ref`. Keep the shared kit and workflows compatible with the pinned starter.
+The generator takes `apps/apps`, `packages/backend`, and the backend workspace manifest and lockfile from the commit in [starter.ref](starter.ref). Product files and edits in those directories stay in the Disposabl checkout. To change the starter, commit and push the change on `starter/exact`, then update `starter.ref`. Keep the shared kit and workflows compatible with the pinned starter.
 
 ## Release from Exact
 

@@ -162,9 +162,6 @@ test("the packed generator defaults to web and preserves selections through prov
   assert.deepEqual(deploy.getIn(["jobs", "tools", "needs"]).toJSON(), ["config"]);
   assert.equal(deploy.hasIn(["jobs", "native"]), true);
   assert.equal(deploy.hasIn(["jobs", "provision-signing"]), true);
-  for (const excluded of ["packages/backend/convex/counter.ts", "packages/backend/convex/myFunctions.ts"]) {
-    await assert.rejects(access(join(directory, excluded)), { code: "ENOENT" });
-  }
   await access(join(directory, ".github/actions/exact-setup/scripts/publish-installer.sh"));
   await access(join(directory, "apps/apps/.gitignore"));
 

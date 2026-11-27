@@ -7,13 +7,6 @@ import { extract } from "tar";
 export const starterRef = (await readFile(new URL("./starter.ref", import.meta.url), "utf8")).trim();
 const root = join(import.meta.dirname, "../..");
 const starterPaths = ["apps/apps", "packages/backend", "packages/package.json", "packages/bun.lock"];
-const removedDemoFiles = new Set([
-  "apps/apps/app.test.contract",
-  "packages/backend/convex/README.md",
-  "packages/backend/convex/counter.ts",
-  "packages/backend/convex/myFunctions.ts",
-]);
-const cleanupPatch = join(import.meta.dirname, "starter-cleanup.patch");
 
 export async function resetApp(directory) {
   if (!/^[a-f0-9]{40}$/.test(starterRef)) {
@@ -25,11 +18,10 @@ export async function resetApp(directory) {
     execFileSync("git", ["archive", "--format=tar", "--output", archive, starterRef, "--", ...starterPaths], {
       cwd: root, stdio: "inherit",
     });
-    await extract({ file: archive, cwd: directory, strict: true, filter: file => !removedDemoFiles.has(file) });
-    execFileSync("git", ["apply", "--unidiff-zero", cleanupPatch], { cwd: directory, stdio: "inherit" });
+    await extract({ file: archive, cwd: directory, strict: true });
     return execFileSync("git", ["ls-tree", "-r", "-z", "--name-only", starterRef, "--", ...starterPaths], {
       cwd: root, encoding: "utf8",
-    }).split("\0").filter(file => file && !removedDemoFiles.has(file));
+    }).split("\0").filter(Boolean);
   } finally {
     await rm(archive, { force: true });
   }
