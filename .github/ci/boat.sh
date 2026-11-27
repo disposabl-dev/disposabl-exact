@@ -58,6 +58,14 @@ source "$HOME/.local/share/exact-boat/env.sh"
 case "${1:-}" in
   ios|mac)
     [[ -f exact.mjs ]] || { echo 'Run this command from an Exact app directory.' >&2; exit 1; }
+    if [[ $(findmnt -n -o SOURCE -T "$HOME") == ascii-lazyfs ]]; then
+      echo 'Boat is restoring the compiler cache before this build.' >&2
+      deadline=$((SECONDS + 900))
+      while [[ $(findmnt -n -o SOURCE -T "$HOME") == ascii-lazyfs ]]; do
+        (( SECONDS < deadline )) || { echo 'Boat restore timed out. Check the sandbox with boat info.' >&2; exit 1; }
+        sleep 2
+      done
+    fi
     [[ $1 != mac ]] || export EXACT_IDENTITY="${EXACT_IDENTITY:--}"
     exec bun exact.mjs "$@" ;;
   *) exec bun "$EXACT/scripts/exact.mjs" "$@" ;;
@@ -196,6 +204,7 @@ producer=$(boat new --type default --no-env --ttl 10800 --name exact-snapshot-pr
   --file "/tmp/exact-boat.sh=$script_dir/boat.sh" --file "/tmp/checkout.sh=$script_dir/checkout.sh" --file "/tmp/android-tools.sh=$script_dir/android-tools.sh" \
   --file "/tmp/native.sh=$script_dir/native.sh" --file "/tmp/apple-linux.sh=$script_dir/apple-linux.sh" \
   --file "/tmp/apple-linux-compat.py=$script_dir/apple-linux-compat.py" --file "/tmp/swift-6-release.asc=$script_dir/swift-6-release.asc" | ready_id)
+wait_for "$producer" '.sandbox.hydrated == true'
 boat exec --timeout 7200 --stream "$producer" -- bash /tmp/exact-boat.sh prepare "$ref" "$bun_version"
 boat stop "$producer"
 wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "completed" and .sandbox.holdsCreatorLogins == false'
@@ -203,6 +212,7 @@ wait_for "$producer" '.sandbox.state == "stopped" and .sandbox.stop.status == "c
 started=$SECONDS
 sandbox=$(boat fork --wait --no-env --no-snapshots --type default --ttl 7200 --json "$producer" | ready_id)
 echo "Boat shell ready in $((SECONDS - started))s"
+wait_for "$sandbox" '.sandbox.hydrated == true'
 boat exec --timeout 5400 --stream "$sandbox" -- bash -lc '
   set -e
   root="$HOME/.local/share/exact-boat"
@@ -216,7 +226,6 @@ boat exec --timeout 5400 --stream "$sandbox" -- bash -lc '
   test "$(command -v xcrun)" = "$EXACT_APPLE_ROOT/bin/xcrun"
   exec bash "$root/boat-smoke.sh" smoke "$1" all
 ' boat-smoke "$ref"
-wait_for "$sandbox" '.sandbox.hydrated == true'
 echo "Boat Android, Apple, and web builds and hydration verified by $((SECONDS - started))s"
 boat stop "$sandbox"
 sandbox=
