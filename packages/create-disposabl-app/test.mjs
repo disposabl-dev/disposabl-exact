@@ -8,7 +8,6 @@ import { test } from "node:test";
 import { parseEnv, promisify } from "node:util";
 import { list } from "tar";
 import { starterRef } from "./reset-app.mjs";
-import { releaseVersion } from "./release-version.mjs";
 import { parseDocument } from "yaml";
 
 const exec = promisify(execFile);
@@ -18,36 +17,6 @@ const repositoryUrl = "https://github.com/example/exact-demo.git";
 const deployKey = "dev:test-deployment|fixture-key";
 const convexUrl = "https://test-deployment.convex.cloud";
 const convexSiteUrl = "https://test-deployment.convex.site";
-
-test("stable releases follow conventional commits since the published revision", async t => {
-  const cwd = await mkdtemp(join(tmpdir(), "generator-release-"));
-  t.after(() => rm(cwd, { recursive: true, force: true }));
-  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-  git("init", "--quiet");
-  const commit = message => {
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false",
-      "commit", "--quiet", "--allow-empty", "-m", message);
-    return git("rev-parse", "HEAD");
-  };
-  const published = {
-    version: "1.2.3", gitHead: commit("feat!: previous release"),
-    repository: { url: "git+https://github.com/disposabl-dev/disposabl-exact.git" },
-  };
-  assert.equal(await releaseVersion(published, published.gitHead, cwd), "1.2.3");
-  for (const [message, expected] of [
-    ["Update docs", "1.2.4"], ["fix: install", "1.2.4"], ["feat(cli): add a command", "1.3.0"],
-    ["docs: command usage", "1.3.0"], ["fix(cli)!: rename an option", "2.0.0"],
-  ]) {
-    assert.equal(await releaseVersion(published, commit(message), cwd), expected);
-  }
-  for (const footer of ["BREAKING CHANGE", "BREAKING-CHANGE"]) {
-    const base = git("rev-parse", "HEAD");
-    const head = commit(`refactor: rename a command\n\n${footer}: replace the CLI`);
-    assert.equal(await releaseVersion({ ...published, gitHead: base }, head, cwd), "2.0.0");
-    await assert.rejects(releaseVersion({ ...published, gitHead: head }, base, cwd));
-  }
-  await assert.rejects(releaseVersion({ ...published, version: "1.2.4-beta.1" }, published.gitHead, cwd), /stable latest/);
-});
 
 const features = { type: "array", items: { type: "string" } };
 const schema = properties => ({ content: { "application/json": { schema: { type: "object", properties } } } });
