@@ -7,7 +7,7 @@ import { resetApp } from "./reset-app.mjs";
 
 const root = join(import.meta.dirname, "../..");
 const templatePaths = [
-  ".gitignore", "package.json", "bun.lock", "scripts/dev.mjs", "scripts/exact.mjs",
+  ".gitignore", "package.json", "bun.lock", "scripts/dev.mjs", "scripts/dev-web.mjs", "scripts/exact.mjs",
   "README.md", "packages/.gitignore", "packages/disposabl-kit", "packages/cli", "packages/sdk",
   ".github/ci/android-key.sh",
 ];

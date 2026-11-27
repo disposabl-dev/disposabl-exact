@@ -124,7 +124,7 @@ esac
   assert.equal((await config()).appId, appId);
   assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "4.1.0");
   await access(join(directory, "node_modules/.bin/disposabl"));
-  await access(join(directory, "scripts/exact.mjs"));
+  for (const script of ["dev.mjs", "dev-web.mjs", "exact.mjs"]) await access(join(directory, "scripts", script));
   assert.equal(creations, 1);
   const callsBeforeRejectedOrigin = calls.length;
   await assert.rejects(scaffold("exact-demo", ["--resume"], {
