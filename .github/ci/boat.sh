@@ -118,7 +118,7 @@ if [[ ${1:-} == smoke ]]; then
   done
   fixture=$(mktemp -d)
   trap 'rm -rf "$fixture"' EXIT
-  exact new "$fixture/app" --name BoatSmoke --bundle-id dev.boat.exact.smoke
+  exact new "$fixture/app" --with ios,mac,android --name BoatSmoke --bundle-id dev.boat.exact.smoke
   cd "$fixture/app"
   mkdir -p assets
   cp "$EXACT/apps/spark/assets/icon.png" assets/icon.png

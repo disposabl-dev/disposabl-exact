@@ -13,6 +13,19 @@ if [[ "$platform" != android && "$phase" != publish ]]; then
   export EXACT_APPLE_SDK="$apple_root/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
   export PATH="$apple_root/bin:$apple_root/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
 fi
+# These local artifacts use per-crate optimization. Exact's store profile
+# enables whole-program LTO, which stalled before Gradle on both 8 GB trials.
+if [[ "$phase" == prepare && $(git hash-object "$EXACT/scripts/cargo-check.mjs") == d7768e7b031d561b831ea64c08905887088d2f06 ]]; then
+  python3 - "$EXACT/scripts/cargo-check.mjs" <<'PYCODE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+source = path.read_text()
+flag = """'profile.release.lto="fat"'"""
+assert source.count(flag) == 1
+path.write_text(source.replace(flag, """'profile.release.lto="off"','--config','profile.release.codegen-units=16'"""))
+PYCODE
+fi
 case "$phase" in
   prepare)
     : "${EXACT:?}"
