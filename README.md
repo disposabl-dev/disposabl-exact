@@ -13,7 +13,7 @@ Starter kit for building apps and agents with Exact and Convex.
 }
 ```
 
-- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. A merge to main deploys the backend and builds the selected web and native apps. API, MCP, CLI and SDK have no separate deployment jobs.
+- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. A merge to main deploys the backend and delivers updates for the selected apps. API, MCP, CLI and SDK have no separate deployment jobs.
 - Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
 - Commit and deploy a configuration change to enable or disable a selection. Connected clients receive the updated feature settings. Deploy App always requires the Convex deployment key. With an empty platform list, it deploys the backend to turn off the previously published endpoints and skips every client build. Existing accounts, billing records, API keys, and installers are retained.
 
@@ -25,13 +25,9 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses two repository secrets, `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
 
-Android requires a signed APK for installation. When Android is selected, generator setup uses GitHub CLI and a JDK to provision a random key in the repository’s `android-production` environment. It reuses an existing key. To enable Android in an existing project, run this once from the app repository.
+For any native platform, the generator provisions `EXACT_UPDATE_SEED` in the repository’s `android-production` GitHub environment. Android also gets a persistent APK signing key for direct installation. To add native delivery after creating a project, run `bash .github/ci/android-key.sh android` for Android or `bash .github/ci/android-key.sh update` for Apple platforms only. Running these commands again reuses the existing keys.
 
-```sh
-bash .github/ci/android-key.sh
-```
-
-On main, the workflow builds each selected native app and puts its unlisted AppDrop link in the job summary. Android uses the same APK key across builds. iOS produces a device IPA for re-signing through AppDrop. macOS produces a non-notarized app ZIP. Web and its backend share the Convex site URL. Native builds stay off pull requests. To pick up a change on an existing native installation, install the new build from its AppDrop link.
+On the first deployment, CI builds each selected native app on Ubuntu and writes its AppDrop link to the job summary. Android produces a signed APK, iOS produces a device IPA for re-signing, and macOS produces an ad-hoc-signed, non-notarized app ZIP. Subsequent deployments publish compatible app changes as signed over-the-air updates. Changes that require a new native binary or include changed static assets produce a new installer link. Web and its backend share a Convex site URL. Pull requests preview web only.
 
 ## Exact updates
 
@@ -39,21 +35,20 @@ Generated repositories call Disposabl's shared deployment workflow on `main`. Ea
 
 ### Run the app locally
 
-Set `EXACT` to an up-to-date checkout of [expo/exact](https://github.com/expo/exact). The shared Boat sandbox includes web, Android and Apple cross-build tools on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox, then load its toolchain inside the new shell.
+Set `EXACT` to an up-to-date checkout of [expo/exact](https://github.com/expo/exact). The shared Boat sandbox includes web, Android and Apple cross-build tools on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox with the command below. A login shell loads the toolchain automatically.
 
 ```sh
 boat new --type default --no-env --from bsh_hvAwp0phMPSKIjvJPxpHipEdJCa3iQQ1wyXzS465pzi
-source ~/.local/share/exact-boat/env.sh
 ```
 
-From an Exact app directory, build an unsigned iPhone IPA or an ad hoc signed macOS app:
+From an Exact app directory, build an unsigned iPhone IPA or an ad-hoc-signed macOS app.
 
 ```sh
 exact ios --device --release --unsigned --archive app.ipa
 exact mac --release
 ```
 
-The first command for each Apple platform downloads its SDK into the sandbox; later builds reuse it. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
+The first command for each Apple platform downloads its SDK into the sandbox. Later builds reuse it. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
 
 Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
 
