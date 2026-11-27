@@ -29,6 +29,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
+    "reset-app": "node reset-app.mjs",
     "prepack": "bun run build",
     "test": "bun run build && node --test test.mjs"
   }

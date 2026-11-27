@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { create } from "tar";
 import { parseDocument } from "yaml";
+import { resetApp } from "./reset-app.mjs";
 
 const root = join(import.meta.dirname, "../..");
 const deployPath = ".github/workflows/deploy.yml";
 const actionPath = ".github/actions/exact-setup/action.yml";
 const templatePaths = [
-  "README.md", "disposabl.json", "apps/apps", "packages/.gitignore",
-  "packages/package.json", "packages/bun.lock", "packages/backend",
+  "README.md", "disposabl.json", "packages/.gitignore",
   "packages/disposabl-kit", "packages/cli", "packages/sdk",
   ".github/workflows/app-config.yml", ".github/workflows/clients.yml", deployPath,
   ".github/actions/exact-setup",
@@ -73,14 +73,22 @@ function appSetupAction(source) {
   return output;
 }
 
-const stage = await mkdtemp(join(tmpdir(), "exact-starter-"));
+const temporary = await realpath(await mkdtemp(join(tmpdir(), "exact-starter-")));
+const stage = join(temporary, "template");
 try {
-  const files = execFileSync("git", ["ls-files", "-z", "--", ...templatePaths], { cwd: root, encoding: "utf8" })
+  const restored = join(temporary, "starter");
+  const appFiles = await resetApp(restored);
+  const sharedFiles = execFileSync("git", ["ls-files", "-z", "--", ...templatePaths], { cwd: root, encoding: "utf8" })
     .split("\0").filter(Boolean).filter(file =>
       !file.startsWith(".github/actions/exact-setup/scripts/") || !publisherScripts.has(file.split("/").at(-1)));
-  const selected = new Set(files.map(file => join(root, file)));
+  const sources = new Map([
+    ...sharedFiles.map(file => [file, join(root, file)]),
+    ...appFiles.map(file => [file, join(restored, file)]),
+  ]);
+  const selected = new Set(sources.values());
+  const files = [...sources.keys()].sort();
   for (const file of files) {
-    const source = await realpath(join(root, file));
+    const source = await realpath(sources.get(file));
     if (!selected.has(source)) throw new Error(`Template file references an excluded path: ${file}`);
     const destination = join(stage, file);
     if (!(await stat(source)).isFile()) throw new Error(`Template entry must be a regular file: ${file}`);
@@ -103,5 +111,5 @@ try {
     portable: true, noMtime: true, strict: true,
   }, files);
 } finally {
-  await rm(stage, { recursive: true, force: true });
+  await rm(temporary, { recursive: true, force: true });
 }

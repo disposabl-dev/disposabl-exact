@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { parseEnv, promisify } from "node:util";
 import { list } from "tar";
+import { starterRef } from "./reset-app.mjs";
 import { parseDocument } from "yaml";
 
 const exec = promisify(execFile);
@@ -38,6 +39,8 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   assert.ok(files.has("package/template.tar.gz"));
   assert.ok(!files.has("package/build.mjs"));
   assert.ok(!files.has("package/bun.lock"));
+  assert.ok(!files.has("package/reset-app.mjs"));
+  assert.ok(!files.has("package/starter.ref"));
   execFileSync("bun", ["add", "--ignore-scripts", archive], { cwd: work });
 
   const cli = join(work, "node_modules/create-disposabl-app/index.mjs");
@@ -120,6 +123,13 @@ test("the packed generator uses the published CLI for web setup and enables Exac
     "/api/users/current", "/api/connections/status", "/api/apps/create", "/api/previews/token/create",
     "/api/users/current", "/api/connections/status", "/api/previews/token/create",
   ]);
+
+  const pinned = file => execFileSync("git", ["show", starterRef + ":" + file], {
+    cwd: packageDir, encoding: "utf8",
+  });
+  assert.equal(await read("packages/backend/convex/schema.ts"), pinned("packages/backend/convex/schema.ts"));
+  assert.equal(await read("apps/apps/app.contract"), pinned("apps/apps/app.contract"));
+  assert.equal(await read("packages/bun.lock"), pinned("packages/bun.lock"));
 
   const app = JSON.parse(await read("apps/apps/app.json"));
   assert.equal(app.name, "exact-demo");
