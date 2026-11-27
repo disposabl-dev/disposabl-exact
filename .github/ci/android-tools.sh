@@ -8,9 +8,11 @@ case "$action" in
     sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
     [[ -x "$sdk" ]] || { echo "Missing sdkmanager: $sdk" >&2; exit 1; }
     # Ignore preview packages (e.g. 37.0.0-rc1) and repository headings.
-    version=$("$sdk" --sdk_root="$ANDROID_HOME" --list | awk -F '|' '
-      { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
-        if ($1 ~ /^build-tools;[0-9]+\.[0-9]+\.[0-9]+$/) { sub(/^build-tools;/, "", $1); print $1 } }
+    version=$("$sdk" --sdk_root="$ANDROID_HOME" --list | awk '
+      { package = $1
+        if (package ~ /^build-tools[;\/][0-9]+\.[0-9]+\.[0-9]+$/) {
+          sub(/^build-tools[;\/]/, "", package); print package
+        } }
     ' | sort -Vu | tail -n 1)
     [[ -n "$version" ]] || { echo 'No stable Android Build Tools found in SDK repository' >&2; exit 1; }
     "$sdk" --sdk_root="$ANDROID_HOME" "build-tools;$version" >&2
