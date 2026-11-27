@@ -43,11 +43,11 @@ apple_linux() (
     }
     if [[ -f "$swift_ready" ]] && ! valid_swift "$root/swift"; then rm -f "$swift_ready"; fi
     if [[ ! -f "$swift_ready" ]]; then
-      if valid_swift /usr/share/swift; then
-        ln -s /usr/share/swift "$work/swift"
-        echo 'Using runner Swift 6.4.3 toolchain'
-      else
-        (
+      (
+        if valid_swift /usr/share/swift; then
+          ln -s /usr/share/swift "$work/swift"
+          echo 'Using runner Swift 6.4.3 toolchain'
+        else
           download "$swift_url" "$work/swift.tar.gz"
           download "$swift_url.sig" "$work/swift.tar.gz.sig"
           mkdir -m 700 "$work/swift-gpg"
@@ -57,8 +57,8 @@ apple_linux() (
           mkdir "$work/swift"
           tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
           rm "$work/swift.tar.gz"
-        ) & jobs+=("$!")
-      fi
+        fi
+      ) & jobs+=("$!")
       download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage "$work/xtool.AppImage" \
         512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd & jobs+=("$!")
       download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz "$work/rcodesign.tgz" \
