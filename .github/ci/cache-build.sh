@@ -59,6 +59,8 @@ if [[ "$platform" == web ]]; then
     ! grep -q 'not found' "$RUNNER_TEMP/ota-ldd.txt"
   done
   "$ota/exact-bake" --help >/dev/null
+  # Direct compiler calls bypass Exact's before_build hook on the restored app.
+  if [[ ${CACHE_VERIFY:-} == 1 ]]; then (cd "$app" && bun --no-env-file scripts/locales.mjs); fi
   (cd "$EXACT" && "$ota/exact-js-bake" "$app" --out "$RUNNER_TEMP/ota-smoke" > "$RUNNER_TEMP/ota-receipt.json")
   test -s "$RUNNER_TEMP/ota-smoke/app.hbc"
   "$ota/exact-bake" compat "$app" --platform android --json > "$RUNNER_TEMP/ota-compat.json"
