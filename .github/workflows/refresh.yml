@@ -1,50 +1,19 @@
-name: Refresh shared Exact cache
-on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/refresh.yml', '.github/workflows/cache-platform.yml', '.github/ci/**']
-  schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: Qualify a single platform (default runs all four)
-        type: choice
-        options: [all, web, android, ios, macos]
+name: Diagnose iOS cache reuse
+on: workflow_dispatch
 permissions: { contents: read }
-concurrency: { group: 'exact-refresh-${{ github.ref }}', cancel-in-progress: false }
 jobs:
-  resolve:
-    if: github.repository == 'disposabl-dev/disposabl-exact'
+  restore:
     runs-on: ubuntu-24.04
-    outputs: { ref: '${{ steps.version.outputs.ref }}' }
-    steps:
-      - id: version
-        run: |
-          ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
-          [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && echo "ref=$ref" >> "$GITHUB_OUTPUT"
-  cache:
-    needs: resolve
-    permissions: { contents: write }
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: ${{ fromJSON(inputs.platform && inputs.platform != 'all' && format('["{0}"]', inputs.platform) || '["web","android","ios","macos"]') }}
-    uses: ./.github/workflows/cache-platform.yml
-    with:
-      platform: ${{ matrix.platform }}
-      exact: ${{ needs.resolve.outputs.ref }}
-  boat:
-    needs: resolve
-    if: github.ref == 'refs/heads/main' && (!inputs.platform || inputs.platform == 'all')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 45
+    env:
+      EXACT_REF: d236579d166c4b4eb9df3b6a055d63c4ee82cb58
+      CACHE_VERIFY: '1'
     steps:
       - uses: actions/checkout@v7.0.1
         with: { persist-credentials: false }
-      - run: |
-          curl -fsSL --retry 3 'https://boat.dev/api/boat/cli/download?platform=linux-x64&channel=prod' -o "$RUNNER_TEMP/boat"
-          chmod +x "$RUNNER_TEMP/boat"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - env: { BOAT_API_KEY: '${{ secrets.BOAT_API_KEY }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}', BUN_VERSION: '1.4.5' }
-        run: bash .github/ci/boat.sh
+      - uses: oven-sh/setup-bun@v2.2.0
+        with: { bun-version: '1.4.5' }
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release download exact-ci-linux-v2-ios-$EXACT_REF-46031837045-1 --pattern 'cache-ios.tar.zst.part-*' --dir "$RUNNER_TEMP/restored-cache"
+      - env: { CARGO_LOG: 'cargo::core::compiler::fingerprint=info' }
+        run: bash .github/ci/cache-build.sh ios
