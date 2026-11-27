@@ -120,6 +120,10 @@ if [[ ${1:-} == smoke ]]; then
   trap 'rm -rf "$fixture"' EXIT
   exact new "$fixture/app" --name BoatSmoke --bundle-id dev.boat.exact.smoke
   cd "$fixture/app"
+  mkdir -p assets
+  cp "$EXACT/apps/spark/assets/icon.png" assets/icon.png
+  jq '.icons=[{src:"assets/icon.png",type:"image/png",sizes:"1024x1024"}] | .deploy.store.ios="0" | .deploy.store.macos="0"' app.json > "$fixture/manifest"
+  mv "$fixture/manifest" app.json
   if [[ ${3:-} == android || ${3:-} == all ]]; then
     test ! -e "$ANDROID_HOME/emulator"
     test ! -e "$ANDROID_HOME/system-images"
