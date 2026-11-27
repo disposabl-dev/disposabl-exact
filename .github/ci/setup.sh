@@ -16,10 +16,9 @@ fi
 repo=disposabl-dev/disposabl-exact
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/exact-setup.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
-tag=
-if gh api "repos/$repo/releases/latest" > "$work/release.json" 2> "$work/error"; then
-  tag=$(jq -r --arg prefix "exact-ci-linux-v2-$ref-" '.tag_name | select(startswith($prefix))' "$work/release.json")
-elif ! grep -q 'HTTP 404' "$work/error"; then cat "$work/error" >&2; exit 1; fi
+gh api "repos/$repo/releases?per_page=100" | jq --arg prefix "exact-ci-linux-v2-$platform-$ref-" \
+  'first(.[] | select(.draft == false and (.tag_name | startswith($prefix)))) // {}' > "$work/release.json"
+tag=$(jq -r '.tag_name // empty' "$work/release.json")
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 if [[ -n "$tag" ]]; then
   gh release download "$tag" -R "$repo" --pattern "cache-$platform.tar.zst.part-*" --dir "$work"

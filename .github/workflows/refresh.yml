@@ -2,7 +2,7 @@ name: Refresh shared Exact cache
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/refresh.yml', '.github/ci/**']
+    paths: ['.github/workflows/refresh.yml', '.github/workflows/cache-platform.yml', '.github/ci/**']
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -18,59 +18,24 @@ jobs:
         run: |
           ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
           [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && echo "ref=$ref" >> "$GITHUB_OUTPUT"
-  build:
+  cache:
     needs: resolve
-    strategy: &platforms
+    permissions: { contents: write }
+    strategy:
       fail-fast: false
       matrix: { platform: [web, android, ios, macos] }
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    env: &sdk { EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
-    steps:
-      - &checkout
-        uses: actions/checkout@v7.0.1
-        with: { persist-credentials: false }
-      - &bun
-        uses: oven-sh/setup-bun@v2.2.0
-        with: { bun-version: '1.4.5' }
-      - run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
-      - uses: actions/upload-artifact@v7.0.2
-        with: { name: 'cache-${{ matrix.platform }}', path: '${{ runner.temp }}/cache-output/', if-no-files-found: error, retention-days: 1, compression-level: 0 }
-  verify:
-    needs: [resolve, build]
-    strategy: *platforms
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    env: *sdk
-    steps:
-      - *checkout
-      - *bun
-      - uses: actions/download-artifact@v8.0.2
-        with: { name: 'cache-${{ matrix.platform }}', path: '${{ runner.temp }}/restored-cache' }
-      - env: { CACHE_VERIFY: '1' }
-        run: bash .github/ci/cache-build.sh '${{ matrix.platform }}'
-  publish:
-    needs: [resolve, verify]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions: { contents: write }
-    env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', REF: '${{ needs.resolve.outputs.ref }}' }
-    steps:
-      - uses: actions/download-artifact@v8.0.2
-        with: { path: caches, pattern: 'cache-*', merge-multiple: true }
-      - run: |
-          tag="exact-ci-linux-v2-$REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          gh release create "$tag" --target "$GITHUB_SHA" --title "Exact cache $REF" --notes 'Verified web, Android, iOS and macOS compiler caches.' --latest caches/*
-          # Keep the previous generation available to builds already downloading it.
-          gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false and (.tagName | startswith("exact-ci-linux-v2-")))][2:][].tagName' |
-            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
+    uses: ./.github/workflows/cache-platform.yml
+    with:
+      platform: ${{ matrix.platform }}
+      exact: ${{ needs.resolve.outputs.ref }}
   boat:
     needs: resolve
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - *checkout
+      - uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false }
       - run: |
           curl -fsSL --retry 3 'https://boat.dev/api/boat/cli/download?platform=linux-x64&channel=prod' -o "$RUNNER_TEMP/boat"
           chmod +x "$RUNNER_TEMP/boat"
