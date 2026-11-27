@@ -9,7 +9,8 @@ ref=${EXACT_REF:?Expected upstream Exact commit}
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 if [[ "$phase" == all || "$phase" == checkout ]]; then
   bash "$(dirname "$0")/checkout.sh" "$ref" "$EXACT"
-  (cd "$EXACT" && bun install --frozen-lockfile && git ls-tree -rtz --name-only HEAD | xargs -0 touch -ch -t 202001010000)
+  (cd "$EXACT" && bun install --frozen-lockfile && git ls-tree -rtz --name-only HEAD | xargs -0 touch -ch -t 202001010000 &&
+    git ls-files -z -- ':(glob)**/Cargo.toml' | xargs -0r touch -ch -t 202001010000.01)
   printf 'EXACT=%s\nEXACT_REF=%s\nCARGO_TARGET_DIR=%s\n' "$EXACT" "$ref" "$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
 fi
 [[ "$phase" != checkout ]] || exit 0
