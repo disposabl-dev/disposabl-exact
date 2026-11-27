@@ -1,395 +1,131 @@
 name: Deploy app
-
 on:
+  workflow_call:
+    secrets:
+      ANDROID_APK_SIGNING: { required: false }
+      EXACT_UPDATE_SEED: { required: false }
+      CONVEX_DEPLOY_KEY: { required: false }
+      CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
+  pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      recipients:
-        description: Public keys supplied by the signing setup command
-        type: string
-
 permissions:
   contents: read
-
 concurrency:
-  group: convex-web-${{ github.event_name }}-main
-  queue: max
-
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
-  EXACT_TOOLS_ORIGIN: none
-
-  BUILD_WEB: >-
-    test "wss://${VITE_CONVEX_URL#https://}" = "${EXPECTED_ORIGIN:-wss://${VITE_CONVEX_URL#https://}}" &&
-    cd ../../apps/apps &&
-    rm -rf dist/convex &&
-    env -u CONVEX_DEPLOY_KEY CONVEX_ORIGIN="wss://${VITE_CONVEX_URL#https://}" CONVEX_SITE_ORIGIN="$CONVEX_SITE_ORIGIN" bun exact.mjs web-build --out dist/convex &&
-    rm -f dist/convex/.exact-build.json
-
+  EXACT_FEEDBACK: '0'
+  CI_SCRIPTS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && '.github/ci' || '.disposabl-ci/.github/ci' }}
 jobs:
   config:
-    name: Select app platforms
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
-      web: ${{ steps.plan.outputs.web }}
-      frontend: ${{ steps.plan.outputs.frontend }}
-      mobile: ${{ steps.plan.outputs.mobile }}
-      mobile-platforms: ${{ steps.plan.outputs.mobile-platforms }}
-      macos: ${{ steps.plan.outputs.macos }}
-      matrix: ${{ steps.plan.outputs.matrix }}
-      public_android: ${{ steps.plan.outputs.public_android }}
-      exact-ref: ${{ steps.pin.outputs.exact-ref }}
-      bun-version: ${{ steps.pin.outputs.bun-version }}
-      bundle-version: ${{ steps.pin.outputs.bundle-version }}
+      web: ${{ steps.platforms.outputs.web }}
+      native: ${{ steps.platforms.outputs.native }}
+      exact: ${{ steps.platforms.outputs.exact }}
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: ${{ steps.pin.outputs.bun-version }}
-      - id: plan
-        env:
-          PUBLIC_REPO: ${{ github.event.repository.visibility == 'public' }}
+      - &checkout
+        uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false }
+      - &bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with: { bun-version: '1.4.5' }
+      - id: platforms
         run: |
-          bun run - <<'TS' >> "$GITHUB_OUTPUT"
-          import { deploymentOutputs, platform } from "./packages/disposabl-kit/server/platform.ts";
-          const outputs = deploymentOutputs(platform, process.env.PUBLIC_REPO === "true");
-          for (const [name, value] of Object.entries(outputs)) console.log(`${name}=${JSON.stringify(value)}`);
-          TS
-
-  publish:
-    name: Publish shared Exact tools
+          set -euo pipefail
+          ref=$(git ls-remote https://github.com/expo/exact.git refs/heads/main | cut -f1)
+          [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "exact=$ref" >> "$GITHUB_OUTPUT"
+          bun -e 'import {platform as p} from "./packages/disposabl-kit/server/platform.ts"; console.log("web="+p.web); console.log("native="+JSON.stringify([...p.mobile,...(p.macos?["macos"]:[])]))' >> "$GITHUB_OUTPUT"
+  web:
     needs: config
-    if: github.repository == 'disposabl-dev/disposabl-exact'
-    permissions:
-      contents: write
-    uses: ./.github/workflows/publish.yml
-
-  tools:
-    name: Verify the pinned Exact release
-    needs: [config, publish]
-    if: >-
-      !cancelled() && needs.config.result == 'success' &&
-      ((github.repository == 'disposabl-dev/disposabl-exact' && needs.publish.result == 'success') ||
-       (github.repository != 'disposabl-dev/disposabl-exact' && needs.config.outputs.frontend == 'true'))
-    runs-on: blacksmith-2vcpu-ubuntu-2604
+    if: github.event_name == 'push' || needs.config.outputs.web == 'true'
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
+      - *checkout
+      - &shared
+        if: github.repository != 'disposabl-dev/disposabl-exact'
+        uses: actions/checkout@v7.0.1
         with:
+          repository: disposabl-dev/disposabl-exact
+          ref: main
+          path: .disposabl-ci
+          sparse-checkout: .github/ci
           persist-credentials: false
-      - name: Verify the matching setup and compiler caches
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXACT_REF: ${{ needs.config.outputs.exact-ref }}
-          BUN_VERSION: ${{ needs.config.outputs.bun-version }}
-          BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
-          # Allow the release API to expose asset digests after the publisher succeeds.
-          WAIT_SECONDS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && 60 || 0 }}
-        run: |
-          python3 .github/actions/exact-setup/scripts/release-manifest.py \
-            "$BUNDLE_VERSION" "$EXACT_REF" "$BUN_VERSION" "$RUNNER_TEMP/exact-inputs.json" \
-            --wait "$WAIT_SECONDS"
-
-  deploy:
-    needs: [config, tools]
-    if: >-
-      !cancelled() && needs.config.result == 'success' &&
-      (needs.tools.result == 'success' ||
-       (github.repository != 'disposabl-dev/disposabl-exact' && needs.config.outputs.frontend != 'true' &&
-        needs.tools.result == 'skipped'))
-    runs-on: ${{ needs.config.outputs.frontend == 'true' && 'blacksmith-8vcpu-ubuntu-2604' || 'ubuntu-latest' }}
-    timeout-minutes: 45
-    environment:
-      name: android-production
-      deployment: false
-    env:
-      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
-      BUN_VERSION: ${{ needs.config.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
-    outputs:
-      convex_origin: ${{ steps.origin.outputs.convex_origin }}
-      convex_site_origin: ${{ steps.origin.outputs.convex_site_origin }}
-      public_android: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.public_android || steps.updates.outputs.public_android || '[]' }}
-      native_matrix: ${{ steps.first.outputs.first == 'true' && needs.config.outputs.matrix || steps.updates.outputs.matrix || '[]' }}
-    steps:
-      - name: Check the Convex deployment key
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: ': "${CONVEX_DEPLOY_KEY:?Set CONVEX_DEPLOY_KEY to deploy platform selections, including an empty list.}"'
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Install backend dependencies
-        working-directory: packages/backend
-        run: bun install --frozen-lockfile && bun run generate:platforms
-      - name: Resolve production backend
-        if: needs.config.outputs.frontend == 'true'
-        id: origin
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: |
-          : "${CONVEX_DEPLOY_KEY:?Set the production CONVEX_DEPLOY_KEY Actions secret}"
-          url=$(bun run convex env get CONVEX_CLOUD_URL --prod)
-          site=$(bun run convex env get CONVEX_SITE_URL --prod)
-          [[ "$url" =~ ^https://[a-zA-Z0-9.-]+$ && "$site" =~ ^https://[a-zA-Z0-9.-]+$ ]]
-          echo "convex_site_origin=$site" >> "$GITHUB_OUTPUT"
-          echo "CONVEX_SITE_ORIGIN=$site" >> "$GITHUB_ENV"
-          echo "convex_origin=wss://${url#https://}" >> "$GITHUB_OUTPUT"
-          echo "CONVEX_ORIGIN=wss://${url#https://}" >> "$GITHUB_ENV"
-      - name: Read existing installer links
-        if: needs.config.outputs.mobile == 'true'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          MOBILE_PLATFORMS: ${{ needs.config.outputs.mobile-platforms }}
-        run: |
-          for platform in $(jq -r '.[]' <<< "$MOBILE_PLATFORMS"); do
-            (bun run convex env get "EXACT_INSTALL_${platform^^}" --prod > "$RUNNER_TEMP/installer-$platform.json" 2>/dev/null || true) &
-          done
-          wait
-      - name: Check for first mobile installs
-        if: needs.config.outputs.mobile == 'true'
-        id: first
-        working-directory: apps/apps
-        env:
-          CONVEX_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" first
-      - uses: ./.github/actions/exact-setup
-        if: steps.first.outputs.first != 'true' && (needs.config.outputs.web == 'true' || needs.config.outputs.mobile == 'true')
-        with:
-          platform: web
-          bun-ready: 'true'
-          exact-ref: ${{ env.EXACT_REF }}
-          bun-version: ${{ env.BUN_VERSION }}
-          bundle-version: ${{ env.BUNDLE_VERSION }}
-      - name: Install app dependencies
-        if: steps.first.outputs.first != 'true' && (needs.config.outputs.web == 'true' || needs.config.outputs.mobile == 'true')
-        working-directory: apps/apps
-        run: &install-app |
-          mkdir -p .exact
-          ln -s "$EXACT" .exact/checkout
-          bun install --frozen-lockfile
-      - name: Deploy web
-        if: needs.config.outputs.web == 'true' && steps.first.outputs.first != 'true'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          EXPECTED_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
-        run: &deploy-web |
-          bun run static-hosting deploy --dist ../../apps/apps/dist/convex --build-command "$BUILD_WEB"
-      - name: Deploy backend without web
-        if: needs.config.outputs.web != 'true'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: |
-          bun run deploy
-      - name: Publish compatible mobile updates
-        id: updates
-        if: needs.config.outputs.mobile == 'true' && steps.first.outputs.first != 'true'
-        env:
-          CONVEX_ORIGIN: ${{ steps.origin.outputs.convex_origin }}
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-          PUBLIC_REPO: ${{ github.event.repository.visibility == 'public' }}
-        working-directory: apps/apps
-        run: bun "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/mobile-updates.mjs" plan
+      - *bun
+      - if: needs.config.outputs.web == 'true'
+        env: { GH_TOKEN: '${{ github.token }}', EXACT_REF: '${{ needs.config.outputs.exact }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" web
+      - env:
+          WEB: ${{ needs.config.outputs.web }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PREVIEW_BUILD_ONLY: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
+          CONVEX_DEPLOY_KEY: ${{ secrets[github.event_name == 'pull_request' && 'CONVEX_DEPLOY_KEY_PREVIEW' || 'CONVEX_DEPLOY_KEY'] }}
+        run: bash "$CI_SCRIPTS/web.sh"
 
   native:
-    name: Build ${{ matrix.platform }} production
-    needs: [config, tools, deploy]
-    if: >-
-      !cancelled() && needs.tools.result == 'success' &&
-      needs.deploy.result == 'success' && needs.deploy.outputs.native_matrix != '[]'
+    needs: config
+    if: github.event_name == 'push' && needs.config.outputs.native != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.deploy.outputs.native_matrix || '[]') }}
-    runs-on: ${{ matrix.platform == 'ios' && 'blacksmith-6vcpu-macos-27' || matrix.platform == 'android' && 'blacksmith-16vcpu-ubuntu-2604' || 'blacksmith-8vcpu-ubuntu-2604' }}
-    timeout-minutes: 90
-    environment: &native-environment
-      name: android-production
-      deployment: false
-    defaults: &native-defaults
-      run:
-        shell: bash
-    env: &native-env
-      EXACT_REF: ${{ needs.config.outputs.exact-ref }}
-      BUN_VERSION: ${{ needs.config.outputs.bun-version }}
-      BUNDLE_VERSION: ${{ needs.config.outputs.bundle-version }}
-      CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
-      CONVEX_SITE_ORIGIN: ${{ needs.deploy.outputs.convex_site_origin }}
-      EXACT_MOBILE_CHANNEL: ${{ matrix.channel }}
-      EXACT_UPDATE_TRUST: production
-      EXACT_UPDATE_GENESIS: '1'
+        platform: ${{ fromJSON(needs.config.outputs.native) }}
+    runs-on: ubuntu-24.04
+    environment: { name: android-production, deployment: false }
+    env:
+      PLATFORM: ${{ matrix.platform }}
       EXACT_BUILD_NUMBER: ${{ github.run_number }}
-    steps: &native-steps
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Prepare private Android release draft
-        if: matrix.platform == 'android' && github.event.repository.visibility == 'public'
+    steps:
+      - *checkout
+      - *shared
+      - *bun
+      - run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" checkout
         env:
           GH_TOKEN: ${{ github.token }}
+          EXACT_REF: ${{ needs.config.outputs.exact }}
+      - env: { CONVEX_DEPLOY_KEY: '${{ secrets.CONVEX_DEPLOY_KEY }}' }
+        run: bash "$CI_SCRIPTS/web.sh" origins
+      - working-directory: apps/apps
         run: |
-          scripts="$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts"
-          # Only the draft ID is retained. Upload waits for the verified APK.
-          nohup python3 "$scripts/release-apk.py" prepare > "$RUNNER_TEMP/draft-prepare.log" 2>&1 < /dev/null &
-      - uses: ./.github/actions/exact-setup
-        with:
-          platform: ${{ matrix.platform }}
-          exact-ref: ${{ env.EXACT_REF }}
-          bun-version: ${{ env.BUN_VERSION }}
-          bundle-version: ${{ env.BUNDLE_VERSION }}
-      - name: Install backend dependencies
-        working-directory: packages/backend
-        run: bun install --frozen-lockfile && bun run generate:platforms
-      - name: Install app dependencies
-        if: matrix.platform == 'web'
+          mkdir -p .exact
+          ln -s "$EXACT" .exact/checkout
+          bun install --frozen-lockfile
+      - id: probe
         working-directory: apps/apps
-        run: *install-app
-      - name: Deploy web
-        if: matrix.platform == 'web'
-        working-directory: packages/backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          EXPECTED_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
-        run: *deploy-web
-      - name: Configure updates
-        if: matrix.platform != 'web'
-        working-directory: ${{ env.NATIVE_APP_DIR }}
-        env:
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: |
-          platform="${{ matrix.platform }}"
-          scripts="$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts"
-          export EXACT_BAKE_OUTPUT="$RUNNER_TEMP/$platform-artifacts/bake"
-          echo "EXACT_BAKE_OUTPUT=$EXACT_BAKE_OUTPUT" >> "$GITHUB_ENV"
-          bun "$scripts/mobile-updates.mjs" configure "$platform"
-          nohup bash "$scripts/publish-installer.sh" "$platform" stage > "$RUNNER_TEMP/install-$platform-stage.log" 2>&1 < /dev/null &
-          echo "$!" > "$RUNNER_TEMP/install-$platform.pid"
-      - name: Build native artifacts
-        if: matrix.platform != 'web'
-        id: native-build
-        working-directory: ${{ env.NATIVE_APP_DIR }}
+        env: &update-key { EXACT_UPDATE_SEED: '${{ secrets.EXACT_UPDATE_SEED }}' }
+        run: &plan bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+      - if: steps.probe.outputs.tools == 'true' || steps.probe.outputs.native == 'true'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" web ota
+      - id: plan
+        if: steps.probe.outputs.tools == 'true'
+        working-directory: apps/apps
+        env: *update-key
+        run: *plan
+      - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash "$CI_SCRIPTS/setup.sh" "$PLATFORM" restore
+      - if: *native
+        working-directory: apps/apps
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" prepare "$PLATFORM"
+      - if: *native
+        working-directory: apps/apps
         env:
           ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
-          ANDROID_PLAY_UPLOAD_SIGNING: ${{ matrix.platform == 'android' && vars.ANDROID_PLAY_CONNECTED == 'true' && secrets.ANDROID_PLAY_UPLOAD_SIGNING || '' }}
-          ANDROID_PLAY_CONNECTED: ${{ vars.ANDROID_PLAY_CONNECTED }}
-        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/native-build.sh" "${{ matrix.platform }}"
-      - name: Publish the install link and seed signed updates
-        if: ${{ !cancelled() && (matrix.platform == 'ios' && steps.native-build.outcome == 'success' || matrix.platform == 'android' && steps.native-build.outputs.apk_verified == 'true') }}
-        working-directory: ${{ env.NATIVE_APP_DIR }}
-        id: delivery
-        env:
-          EXACT_PUBLIC_APK: ${{ matrix.platform == 'android' && github.event.repository.visibility == 'public' }}
-          GH_TOKEN: ${{ matrix.platform == 'android' && github.event.repository.visibility == 'public' && github.token || '' }}
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-        run: |
-          scripts="$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts"
-          platform="${{ matrix.platform }}"
-          bash "$scripts/publish-installer.sh" "$platform"
-      - name: Upload native artifacts
-        if: ${{ !cancelled() && (matrix.platform == 'ios' && steps.native-build.outcome == 'success' || matrix.platform == 'android' && steps.native-build.outputs.apk_verified == 'true') }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: ${{ matrix.platform }}-production
-          path: |
-            ${{ runner.temp }}/${{ matrix.platform }}-artifacts/*.apk
-            ${{ runner.temp }}/${{ matrix.platform }}-artifacts/*.aab
-            ${{ runner.temp }}/${{ matrix.platform }}-artifacts/*.ipa
-            ${{ runner.temp }}/${{ matrix.platform }}-artifacts/*.receipt.json
-          if-no-files-found: error
-          overwrite: true
-          compression-level: 0
-      - name: Save the installer for compatible updates
-        if: ${{ !cancelled() && steps.delivery.outcome == 'success' }}
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
+      - if: *native
+        working-directory: apps/apps
+        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
+      - if: *native
         working-directory: packages/backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          PLATFORM: ${{ matrix.platform }}
         run: |
-          name=$(printf '%s' "$PLATFORM" | tr '[:lower:]' '[:upper:]')
-          bun run convex env set "EXACT_INSTALL_$name" "$(cat "$RUNNER_TEMP/installer-$PLATFORM.json")" --prod
-
-  public-android:
-    name: Build Android production
-    needs: [config, tools, deploy]
-    if: >-
-      !cancelled() && needs.tools.result == 'success' &&
-      needs.deploy.result == 'success' && needs.deploy.outputs.public_android != '[]'
-    strategy:
-      matrix:
-        include: ${{ fromJSON(needs.deploy.outputs.public_android || '[]') }}
-    runs-on: blacksmith-16vcpu-ubuntu-2604
-    permissions:
-      contents: write
-    timeout-minutes: 90
-    environment: *native-environment
-    defaults: *native-defaults
-    env: *native-env
-    steps: *native-steps
-
-  macos-preview:
-    name: Build macOS preview
-    needs: [config, tools, deploy]
-    if: >-
-      !cancelled() && needs.config.outputs.macos == 'true' &&
-      needs.tools.result == 'success' && needs.deploy.result == 'success'
-    runs-on: blacksmith-8vcpu-ubuntu-2604
-    timeout-minutes: 25
-    environment: *native-environment
-    defaults: *native-defaults
-    env:
-      CONVEX_ORIGIN: ${{ needs.deploy.outputs.convex_origin }}
-      CONVEX_SITE_ORIGIN: ${{ needs.deploy.outputs.convex_site_origin }}
-      EXACT_FEEDBACK: '0'
-      EXACT_UPDATE_GENESIS: '1'
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/exact-setup
-        with:
-          platform: macos
-          exact-ref: ${{ needs.config.outputs.exact-ref }}
-          bun-version: ${{ needs.config.outputs.bun-version }}
-          bundle-version: ${{ needs.config.outputs.bundle-version }}
-      - name: Build and verify macOS preview
-        working-directory: ${{ env.NATIVE_APP_DIR }}
-        run: bash "$GITHUB_WORKSPACE/.github/actions/exact-setup/scripts/macos-preview.sh"
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: macos-preview
-          path: ${{ runner.temp }}/macos-preview/app.zip
-          if-no-files-found: error
-          compression-level: 0
-
-  provision-signing:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Generate and encrypt missing signing keys
-        env:
-          RECIPIENTS: ${{ inputs.recipients }}
-        run: |
-          python3 -m venv "$RUNNER_TEMP/signing"
-          "$RUNNER_TEMP/signing/bin/pip" install --quiet PyNaCl==1.6.2
-          "$RUNNER_TEMP/signing/bin/python" .github/actions/exact-setup/scripts/setup-signing.py --generate-on-runner
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: sealed-keys
-          path: ${{ runner.temp }}/sealed/
-          if-no-files-found: error
-          retention-days: 1
+          name=$(echo "$PLATFORM" | tr '[:lower:]' '[:upper:]')
+          bun run convex env set "EXACT_INSTALL_$name" --from-file "$RUNNER_TEMP/installer-$PLATFORM.json"
+          printf '[Install %s](%s)\n' "$PLATFORM" "$(jq -er .url "$RUNNER_TEMP/installer-$PLATFORM.json")" >> "$GITHUB_STEP_SUMMARY"
+      - if: *native
+        working-directory: apps/apps
+        env: *update-key
+        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"

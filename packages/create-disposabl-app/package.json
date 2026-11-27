@@ -1,8 +1,12 @@
 {
   "name": "create-disposabl-app",
-  "version": "0.22.0",
+  "version": "1.0.0",
   "description": "Create a Disposabl app with Exact and Convex",
   "type": "module",
+  "homepage": "https://github.com/disposabl-dev/disposabl-exact/tree/main/packages/create-disposabl-app#readme",
+  "bugs": {
+    "url": "https://github.com/disposabl-dev/disposabl-exact/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/disposabl-dev/disposabl-exact.git",

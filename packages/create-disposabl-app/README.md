@@ -3,7 +3,7 @@
 Run the Exact starter generator with Node.js 22.12 or newer, Git, and Bun.
 
 ```sh
-npx create-disposabl-app@next my-app
+npx create-disposabl-app my-app
 ```
 
 npm installs `@disposabl/cli` with the generator. Sign in to Disposabl and connect GitHub and Convex when prompted. The CLI provisions a repository, a Convex project with a development deployment, and the GitHub Actions Convex deploy key. The generated checkout has that repository as its `origin` and local Convex settings for its backend and Exact app.
@@ -11,7 +11,7 @@ npm installs `@disposabl/cli` with the generator. Sign in to Disposabl and conne
 The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
 ```sh
-npx create-disposabl-app@next my-app --platforms web,ios --features authentication,payments
+npx create-disposabl-app my-app --platforms web,ios --features authentication,payments
 ```
 
 The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
@@ -26,4 +26,6 @@ The generator takes `apps/apps`, `packages/backend`, and the backend workspace m
 
 ## Release from Exact
 
-Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack the starter and test it with the published CLI. The repository's **Exact app generator** workflow publishes from `main` when manually dispatched, using a Bun-packed tarball and npm Trusted Publishing for `create-disposabl-app.yml`. It publishes to `next`. After verifying the release, a maintainer can move the npm `latest` tag.
+Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack and test the starter with the published CLI. The **Exact app generator** workflow tests each push to `main` and publishes to npm’s default `latest` tag using the trusted publisher `disposabl-dev/disposabl-exact` and workflow `create-disposabl-app.yml`.
+
+The Exact generator starts at `1.0.0`. Subsequent releases use the highest change since the last published commit. A Conventional Commit with `!` or a `BREAKING CHANGE:` footer bumps the major version, `feat:` bumps the minor version, and all other changes bump the patch version. Scopes such as `feat(cli):` are supported.
