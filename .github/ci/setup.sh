@@ -18,7 +18,7 @@ work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/exact-setup.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
 tag=$(jq -er --arg platform "$platform" '.[$platform]' <<< "${EXACT_CACHE_TAGS:?Expected verified platform cache tags}")
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
-[[ "$tag" =~ ^exact-ci-linux-v2-$platform-$ref-[0-9]+-[0-9]+$ ]]
+[[ "$tag" =~ ^exact-ci-linux-v3-$platform-$ref-[0-9]+-[0-9]+$ ]]
 gh api "repos/$repo/releases/tags/$tag" > "$work/release.json"
 gh release download "$tag" -R "$repo" --pattern "cache-$platform.tar.zst.part-*" --dir "$work"
 cd "$work"

@@ -1,6 +1,6 @@
 # All four published platforms must belong to the same Exact revision and refresh.
 [.[][] | select(.draft == false and .prerelease == false) | . as $release
- | .tag_name | capture("^exact-ci-linux-v2-(?<platform>android|ios|macos|web)-(?<exact>[a-f0-9]{40})-(?<run>[0-9]+)-(?<attempt>[0-9]+)$")
+ | .tag_name | capture("^exact-ci-linux-v3-(?<platform>android|ios|macos|web)-(?<exact>[a-f0-9]{40})-(?<run>[0-9]+)-(?<attempt>[0-9]+)$")
  | .platform as $platform
  | select(any($release.assets[]; .name == ("cache-" + $platform + ".tar.zst.part-aaa") and .size > 0 and .state == "uploaded"))
  | {platform, exact, run: (.run|tonumber), attempt: (.attempt|tonumber), tag: $release.tag_name}]

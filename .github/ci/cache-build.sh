@@ -7,6 +7,12 @@ export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-n
 mkdir -p "$RUNNER_TEMP/cache-output" "$CARGO_TARGET_DIR"
 if [[ ${CACHE_VERIFY:-} == 1 ]]; then
   cat "$RUNNER_TEMP"/restored-cache/cache-"$platform".tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME"
+  if [[ "$platform" == ios ]]; then
+    baker=".cache/exact/ota-tools/$EXACT_REF/exact-js-bake"
+    cat "$RUNNER_TEMP"/restored-cache/cache-web.tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME" "$baker"
+    test -x "$HOME/$baker"
+    export EXACT_OTA_TOOLS_READY=1
+  fi
   if [[ "$platform" == ios || "$platform" == macos ]]; then
     [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]]
   fi
@@ -79,7 +85,11 @@ else
     export ANDROID_APK_SIGNING="$(python3 -c 'import base64,json,sys; print(json.dumps({"password":"publicfixture","keystore":base64.b64encode(open(sys.argv[1],"rb").read()).decode()}))' "$key")"
   fi
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
-  bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
+  bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform" 2>&1 | tee "$RUNNER_TEMP/native-build.log"
+  if [[ "${CACHE_VERIFY:-}:$platform" == 1:ios ]] && grep -Eq '[[:space:]]Compiling (exact-kernel v|ExactCore |ExactKit )' "$RUNNER_TEMP/native-build.log"; then
+    echo 'The fresh iOS app rebuilt shared SDK code. Keeping the previously qualified cache.' >&2
+    exit 1
+  fi
   paths=()
   for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
     [[ ! -e "$HOME/$file" ]] || paths+=("$file")
