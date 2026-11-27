@@ -30,11 +30,24 @@ apple_linux() (
     jobs=()
     # Reap background work before deleting its staging directory, including on failure.
     trap 'for job in "${jobs[@]}"; do wait "$job" || :; done; rm -rf -- "$work"' EXIT
-    swift_ready="$root/toolchain-v2-beta2.ready"
+    swift_ready="$root/toolchain-v2-beta2-swift-6.4.3.ready"
     sdk_ready="$root/$platform-$version.ready"
-    swift_url="https://download.swift.org/swift-6.4.2-release/ubuntu${VERSION_ID//./}/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu$VERSION_ID.tar.gz"
+    swift_url="https://download.swift.org/swift-6.4.3-release/ubuntu${VERSION_ID//./}/swift-6.4.3-RELEASE/swift-6.4.3-RELEASE-ubuntu$VERSION_ID.tar.gz"
+    valid_swift() {
+      local toolchain resource
+      toolchain=$(realpath "$1") || return 1
+      [[ -x "$toolchain/usr/bin/swift" && -x "$toolchain/usr/bin/swiftc" ]] || return 1
+      [[ $("$toolchain/usr/bin/swiftc" --version | head -n 1) == 'Swift version 6.4.3 '* ]] || return 1
+      resource=$("$toolchain/usr/bin/swiftc" -print-target-info | jq -er '.paths.runtimeResourcePath') || return 1
+      [[ "$resource" == "$toolchain/"* && -d "$resource/clang/include" && -r "$resource/linux/libswiftCore.so" ]]
+    }
+    if [[ -f "$swift_ready" ]] && ! valid_swift "$root/swift"; then rm -f "$swift_ready"; fi
     if [[ ! -f "$swift_ready" ]]; then
-      (
+      if valid_swift /usr/share/swift; then
+        ln -s /usr/share/swift "$work/swift"
+        echo 'Using runner Swift 6.4.3 toolchain'
+      else
+        (
         download "$swift_url" "$work/swift.tar.gz"
         download "$swift_url.sig" "$work/swift.tar.gz.sig"
         mkdir -m 700 "$work/swift-gpg"
@@ -44,7 +57,8 @@ apple_linux() (
         mkdir "$work/swift"
         tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
         rm "$work/swift.tar.gz"
-      ) & jobs+=("$!")
+        ) & jobs+=("$!")
+      fi
       download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage "$work/xtool.AppImage" \
         512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd & jobs+=("$!")
       download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz "$work/rcodesign.tgz" \
@@ -107,11 +121,18 @@ apple_linux() (
 exec bun "${EXACT:?}/host/apple/toolchain.mjs" "$@"
 XCRUN
       chmod 755 "$work/bin/xcrun"
+      valid_swift "$work/swift"
       "$work/swift/usr/bin/swiftc" --version
       APPIMAGE_EXTRACT_AND_RUN=1 "$work/bin/xtool" --version
       rm -rf -- "$root/swift" "$root/bin"
       mv "$work/swift" "$work/bin" "$root/"
       touch "$swift_ready"
+    fi
+
+    # The SDK may have survived a toolchain upgrade in a persistent Boat root.
+    resource_path=$("$root/swift/usr/bin/swiftc" -print-target-info | jq -er '.paths.runtimeResourcePath')
+    if [[ -d "$root/$platform/swift/clang" ]]; then
+      ln -sfn "$resource_path/clang/include" "$root/$platform/swift/clang/include"
     fi
 
     if "$install_sdk"; then
