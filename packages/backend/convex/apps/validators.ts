@@ -13,8 +13,31 @@ export const listArgs = { paginationOpts: paginationOptsValidator };
 export const createArgs = {
   ...appSlugArgs,
   appName: v.string(),
-  githubOwner: v.string(),
-  githubRepoName: v.string(),
-  convexProjectId: v.number(),
+  mode: v.optional(v.union(v.literal("agent"), v.literal("local"))),
 };
 export const removeArgs = { ...appSlugArgs, confirm: v.literal(true) };
+
+export const createForUserArgs = { userId: v.id("users"), ...createArgs };
+
+export const creationLeaseArgs = {
+  creationId: v.id("appCreations"),
+  leaseId: v.string(),
+};
+
+export const creationPlan = v.union(
+  v.object({ status: v.literal("complete"), app }),
+  v.object({
+    status: v.literal("provision"),
+    ...creationLeaseArgs,
+    resourceName: v.string(),
+    githubOwner: v.string(),
+    githubInstallationId: v.union(v.string(), v.null()),
+    convexTeamId: v.number(),
+    convexAccessToken: v.string(),
+  }),
+);
+
+export const finishCreationArgs = {
+  ...creationLeaseArgs,
+  convexProjectId: v.number(),
+};

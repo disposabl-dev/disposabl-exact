@@ -31,7 +31,10 @@ const appPlatforms = v.union(
 );
 
 export default defineSchema({
-  users: defineTable({ name: v.optional(v.string()) }),
+  users: defineTable({
+    name: v.optional(v.string()),
+    firstAppProvisioned: v.optional(v.boolean()),
+  }),
 
   apps: defineTable({
     userId: v.id("users"),
@@ -46,6 +49,20 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_slug", ["slug"]),
+
+  appCreations: defineTable({
+    userId: v.id("users"),
+    slug: v.string(),
+    name: v.string(),
+    resourceName: v.string(),
+    githubOwner: v.string(),
+    managedGitHub: v.boolean(),
+    convexTeamId: v.number(),
+    managedConvex: v.boolean(),
+    lease: v.optional(v.object({ id: v.string(), expiresAt: v.number() })),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_userId", ["userId"]),
 
   previews: defineTable({
     appSlug: v.string(),

@@ -17,7 +17,8 @@
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
     "@disposabl-kit/server": "workspace:*",
-    "convex": "^1.51.0"
+    "convex": "^1.51.0",
+    "libsodium-wrappers": "0.8.4"
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^5.0.0",

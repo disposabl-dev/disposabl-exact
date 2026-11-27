@@ -1,6 +1,6 @@
-import { v, type Infer } from "convex/values";
-import { internal } from "../_generated/api";
-import { mutation, query } from "../_generated/server";
+import { ConvexError, v, type Infer } from "convex/values";
+import { api, internal } from "../_generated/api";
+import { action, mutation, query } from "../_generated/server";
 import { requireUserId } from "../lib/requireUserId";
 import { app, appSlugArgs, appOrNull, appPage, createArgs, listArgs, removeArgs } from "./validators";
 
@@ -18,11 +18,14 @@ export const get = query({
     ctx.runQuery(internal.apps.internal.get, { ...args, userId: await requireUserId(ctx) }),
 });
 
-export const create = mutation({
+export const create = action({
   args: createArgs,
   returns: app,
-  handler: async (ctx, args): Promise<Infer<typeof app>> =>
-    ctx.runMutation(internal.apps.internal.create, { ...args, userId: await requireUserId(ctx) }),
+  handler: async (ctx, args): Promise<Infer<typeof app>> => {
+    const userId = await ctx.runQuery(api.auth.viewerId, {});
+    if (!userId) throw new ConvexError("Sign in to continue.");
+    return ctx.runAction(internal.apps.actions.create.provision, { ...args, userId });
+  },
 });
 
 export const remove = mutation({

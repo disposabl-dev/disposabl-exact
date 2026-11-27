@@ -33,6 +33,10 @@ type Env = {
   readonly AUTH_GOOGLE_CLIENT_ID: string | undefined;
   readonly AUTH_GOOGLE_CLIENT_SECRET: string | undefined;
   readonly AUTUMN_SECRET_KEY: string | undefined;
+  readonly DISPOSABL_CONVEX_TEAM_ID: string | undefined;
+  readonly DISPOSABL_CONVEX_TEAM_TOKEN: string | undefined;
+  readonly DISPOSABL_GITHUB_APP_ID: string | undefined;
+  readonly DISPOSABL_GITHUB_APP_PRIVATE_KEY: string | undefined;
 };
 
 /**
