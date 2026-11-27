@@ -22,12 +22,75 @@ apple_linux() (
   if [[ "$phase" == prepare ]]; then
     mkdir -p "$root"
     work=$(mktemp -d "$root/install.XXXXXX")
-    trap 'rm -rf -- "$work"' EXIT
     download() {
       local url=$1 destination=$2 digest=${3:-}
       curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 "$url" -o "$destination"
       if [[ -n "$digest" ]]; then printf '%s  %s\n' "$digest" "$destination" | sha256sum -c -; fi
     }
+    # Cache only upstream public tool archives, never the SDK or installation root.
+    public_cache=${EXACT_APPLE_PUBLIC_CACHE:-}
+    public_download() {
+      local url=$1 name=$2 digest=$3
+      if [[ -n "$public_cache" && -f "$public_cache/$name" ]]; then
+        cp "$public_cache/$name" "$work/$name"
+        if printf '%s  %s\n' "$digest" "$work/$name" | sha256sum -c --status; then
+          return
+        fi
+      fi
+      download "$url" "$work/$name" "$digest"
+      if [[ -n "$public_cache" ]]; then
+        local staged
+        staged=$(mktemp "$public_cache/.download.XXXXXX")
+        if ! cp "$work/$name" "$staged" || ! mv -f "$staged" "$public_cache/$name"; then
+          rm -f -- "$staged"
+          return 1
+        fi
+      fi
+    }
+    if [[ -n "$public_cache" ]]; then
+      mkdir -p "$public_cache"
+      public_cache=$(realpath "$public_cache")
+    fi
+
+    jobs=()
+    # Reap background work before deleting its staging directory, including on failure.
+    trap 'for job in "${jobs[@]}"; do wait "$job" || :; done; rm -rf -- "$work"' EXIT
+    swift_ready="$root/toolchain-v2-beta2.ready"
+    sdk_ready="$root/$platform-$version.ready"
+    swift_url="https://download.swift.org/swift-6.4.2-release/ubuntu${VERSION_ID//./}/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu$VERSION_ID.tar.gz"
+    if [[ ! -f "$swift_ready" ]]; then
+      (
+        download "$swift_url" "$work/swift.tar.gz"
+        download "$swift_url.sig" "$work/swift.tar.gz.sig"
+        mkdir -m 700 "$work/swift-gpg"
+        gpg --batch --homedir "$work/swift-gpg" --import "$ci_dir/swift-6-release.asc"
+        gpg --batch --homedir "$work/swift-gpg" --status-fd 1 --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz" |
+          awk -v key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F '$2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'
+        mkdir "$work/swift"
+        tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
+        rm "$work/swift.tar.gz"
+      ) & jobs+=("$!")
+      public_download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage xtool.AppImage \
+        512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd & jobs+=("$!")
+      public_download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz rcodesign.tgz \
+        dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002 & jobs+=("$!")
+    fi
+    install_sdk=false
+    if [[ ! -f "$sdk_ready" || $(cat "$sdk_ready") != "$input_digest" ]]; then
+      install_sdk=true
+      sdk_name=${system,,}
+      tag="$platform-$version-xcode-27.1-27A9275-r1"
+      (
+        download "https://github.com/kemono-games/apple-inputs/releases/download/$tag/apple-inputs.tar.gz" "$work/input.tgz" "$input_digest"
+        tar --no-same-owner -xzf "$work/input.tgz" -C "$work" "$sdk_name" darwin
+        rm "$work/input.tgz"
+      ) & jobs+=("$!")
+      public_download https://github.com/xtool-org/darwin-tools-linux-llvm/releases/download/v1.1.0/toolset-x86_64.tar.gz tools.tgz \
+        a5166f2d56ac45707e5ef2f3c20a41a94af8ef0c0456354224dd08656e874188 & jobs+=("$!")
+      public_download https://github.com/xtool-org/OpenAppleMacros/releases/download/v1.4.1/OpenAppleMacrosServer-x86_64.tar.gz macros.tgz \
+        2d80c922d0873dd8b0a85e19d10bd7f42a1aea3db3a85f7b6edf56fe9b687a21 & jobs+=("$!")
+    fi
+
     system_command=()
     if [[ $(id -u) != 0 ]]; then system_command=(sudo); fi
     apt() {
@@ -43,27 +106,24 @@ apple_linux() (
     xml=libxml2
     if [[ "$VERSION_ID" == 26.04 ]]; then xml=libxml2-16; fi
     packages=(clang-23 lld-23 llvm-23 libcurl4t64 "$xml" libsqlite3-0 libncurses6 libedit2 libzstd1 libssl-dev zip unzip)
-    if [[ ! -x /usr/lib/llvm-23/bin/llvm-lipo ]] || ! dpkg -s "${packages[@]}" >/dev/null 2>&1; then
+    missing=()
+    for package in "${packages[@]}"; do
+      if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) != 'install ok installed' ]]; then
+        missing+=("$package")
+      fi
+    done
+    if (( ${#missing[@]} )); then
       apt update -q
-      apt install -y -qq --no-install-recommends "${packages[@]}"
+      apt install -y -qq --no-install-recommends "${missing[@]}"
     fi
+    test -x /usr/lib/llvm-23/bin/llvm-lipo
 
-    if [[ ! -f "$root/toolchain-v2-beta2.ready" ]]; then
-      swift_url="https://download.swift.org/swift-6.4.2-release/ubuntu${VERSION_ID//./}/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu$VERSION_ID.tar.gz"
-      download "$swift_url" "$work/swift.tar.gz"
-      download "$swift_url.sig" "$work/swift.tar.gz.sig"
-      mkdir -m 700 "$work/swift-gpg"
-      gpg --batch --homedir "$work/swift-gpg" --import "$ci_dir/swift-6-release.asc"
-      gpg --batch --homedir "$work/swift-gpg" --status-fd 1 --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz" |
-        awk -v key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F '$2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'
-      mkdir "$work/swift" "$work/bin" "$work/codesign"
-      tar --no-same-owner -xzf "$work/swift.tar.gz" --strip-components=1 -C "$work/swift"
-      rm "$work/swift.tar.gz"
-      download https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2/xtool-x86_64.AppImage "$work/bin/xtool" \
-        512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd
-      chmod 755 "$work/bin/xtool"
-      download https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz "$work/rcodesign.tgz" \
-        dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002
+    for job in "${jobs[@]}"; do wait "$job"; done
+    jobs=()
+
+    if [[ ! -f "$swift_ready" ]]; then
+      mkdir "$work/bin" "$work/codesign"
+      install -m 755 "$work/xtool.AppImage" "$work/bin/xtool"
       tar --no-same-owner -xzf "$work/rcodesign.tgz" --strip-components=1 -C "$work/codesign"
       install -m 755 "$(find "$work/codesign" -name rcodesign -type f -print -quit)" "$work/bin/rcodesign"
       ln -s /usr/lib/llvm-23/bin/llvm-lipo "$work/bin/lipo"
@@ -76,34 +136,25 @@ XCRUN
       APPIMAGE_EXTRACT_AND_RUN=1 "$work/bin/xtool" --version
       rm -rf -- "$root/swift" "$root/bin"
       mv "$work/swift" "$work/bin" "$root/"
-      touch "$root/toolchain-v2-beta2.ready"
+      touch "$swift_ready"
     fi
 
-    if [[ ! -f "$root/$platform-$version.ready" ]]; then
+    if "$install_sdk"; then
       sdk="$work/sdk"
       developer="$sdk/Developer/Platforms/$system.platform/Developer"
       device="$developer/SDKs/$system$version.sdk"
-      sdk_name=${system,,}
       resources="$sdk/swift"
       tools="$sdk/toolset"
       mkdir -p "$developer/SDKs" "$developer/usr/bin" "$developer/usr/lib/swift/host" \
         "$resources/clang/lib" "$tools" "$work/macros"
-      # These are the public versioned compiler inputs used by the previous Ubuntu Exact CI.
-      tag="$platform-$version-xcode-27.1-27A9275-r1"
-      download "https://github.com/kemono-games/apple-inputs/releases/download/$tag/apple-inputs.tar.gz" "$work/input.tgz" "$input_digest"
-      tar --no-same-owner -xzf "$work/input.tgz" -C "$work" "$sdk_name" darwin
       mv "$work/$sdk_name" "$device"
       mv "$work/darwin" "$resources/clang/lib/darwin"
       ln -s "../${device#"$sdk/"}"/usr/lib/swift "$resources/$sdk_name"
       resource_path=$("$root/swift/usr/bin/swiftc" -print-target-info | jq -er '.paths.runtimeResourcePath')
       ln -s "$resource_path/clang/include" "$resources/clang/include"
 
-      download https://github.com/xtool-org/darwin-tools-linux-llvm/releases/download/v1.1.0/toolset-x86_64.tar.gz "$work/tools.tgz" \
-        a5166f2d56ac45707e5ef2f3c20a41a94af8ef0c0456354224dd08656e874188
       tar --no-same-owner -xzf "$work/tools.tgz" -C "$tools"
       mv "$tools/bin/libtool" "$tools/bin/llvm-lib"
-      download https://github.com/xtool-org/OpenAppleMacros/releases/download/v1.4.1/OpenAppleMacrosServer-x86_64.tar.gz "$work/macros.tgz" \
-        2d80c922d0873dd8b0a85e19d10bd7f42a1aea3db3a85f7b6edf56fe9b687a21
       tar --no-same-owner -xzf "$work/macros.tgz" -C "$work/macros"
       mv "$work/macros/OpenAppleMacrosServer" "$tools/bin/"
       mkdir "$tools/plugins"
@@ -127,9 +178,10 @@ XCRUN
       test -r "$resources/clang/lib/darwin/libclang_rt.$runtime.a"
       test -x "$developer/usr/bin/swift-plugin-server"
       test -d "$developer/usr/lib/swift/host/plugins"
+      rm -f -- "$sdk_ready"
       rm -rf -- "$root/$platform"
       mv "$sdk" "$root/$platform"
-      touch "$root/$platform-$version.ready"
+      printf '%s\n' "$input_digest" > "$sdk_ready"
     fi
     python3 "$ci_dir/apple-linux-compat.py" "$EXACT" "$platform"
   fi
