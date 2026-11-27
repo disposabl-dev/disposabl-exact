@@ -66,5 +66,10 @@
   "app.loading": "Loading…",
   "keys.failed": "Could not load or update connections. Try again.",
   "billing.monthlyOffer": "{count} credits per month for {price}",
-  "billing.topupOffer": "{count} one-time credits for {price}"
+  "billing.topupOffer": "{count} one-time credits for {price}",
+  "storeUpdate.open": "Update in the App Store",
+  "storeUpdate.install": "Update app",
+  "storeUpdate.restart": "Restart to update",
+  "storeUpdate.downloading": "Downloading update…",
+  "storeUpdate.failed": "Could not update the app. Try again."
 }

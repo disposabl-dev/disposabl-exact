@@ -2,6 +2,8 @@
 // sizes and the safe area are left unsaid, so each platform supplies its own:
 // the header is the navigation bar, its heading the title, its button a bar item.
 use ConvexLive from "@exact/convex"
+use storeUpdateStatus, openStorePage, StoreUpdateStatus from "@exact/store-update"
+use startStoreUpdate, completeStoreUpdate, StoreUpdateResult from "@exact/store-update/android"
 
 shape Language
   resolvedLocale: string
@@ -235,6 +237,7 @@ component Apps
             column gap=12 align-items="flex-start"
               if e.name == "home"
                 text t("app.greeting", name=t("app.name")) testId="greeting"
+                StoreUpdate()
               if e.name != "pricing" and languages.length > 1
                 column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
                   select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
@@ -296,6 +299,44 @@ component Apps
                 if appFeatures.payments
                   link href=path("pricing") testId="pricing-link"
                     text t("billing.title")
+
+component StoreUpdate
+  resource store = storeUpdateStatus() as shape StoreUpdateStatus else empty()
+  mutation started as shape StoreUpdateResult
+  derive startFailed = match started {
+    case some(result) => result.outcome == "failed",
+    case none => false
+  }
+  action download
+    send started = startStoreUpdate(appUpdateType="flexible")
+  action installNow
+    send started = startStoreUpdate(appUpdateType="immediate")
+  action restart
+    completeStoreUpdate()
+  action openListing
+    openStorePage()
+  view
+    if store.available
+      if store.updateAvailability == "listed"
+        button press=openListing testId="store-update-open"
+          text t("storeUpdate.open")
+      match store.android
+        case some(play)
+          if play.installStatus == "downloaded"
+            button press=restart testId="store-update-restart"
+              text t("storeUpdate.restart")
+          else if play.installStatus == "pending" or play.installStatus == "downloading"
+            text t("storeUpdate.downloading") role="status" testId="store-update-downloading"
+          else if store.updateAvailability == "offered"
+            if play.flexibleAllowed
+              button press=download disabled=pending(started) testId="store-update-download"
+                text t("storeUpdate.install")
+            else if play.immediateAllowed
+              button press=installNow disabled=pending(started) testId="store-update-immediate"
+                text t("storeUpdate.install")
+            if (play.flexibleAllowed or play.immediateAllowed) and not pending(started) and (failed(started) or startFailed or play.installStatus == "failed")
+              text t("storeUpdate.failed") role="alert" testId="store-update-error"
+        case none
 
 component ConsentForm
   props

@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@exact/convex": "file:.exact/checkout/packages/convex",
+    "@exact/store-update": "file:.exact/checkout/packages/store-update",
     "convex": "1.51.0"
   }
 }
