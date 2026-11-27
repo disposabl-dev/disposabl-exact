@@ -3,6 +3,7 @@ on:
   workflow_call:
     secrets:
       ANDROID_APK_SIGNING: { required: false }
+      EXACT_UPDATE_SEED: { required: false }
       CONVEX_DEPLOY_KEY: { required: false }
       CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
   pull_request:
