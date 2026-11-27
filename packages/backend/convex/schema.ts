@@ -42,6 +42,7 @@ export default defineSchema({
     convexProjectId: v.number(),
     prod: appPlatforms,
     live: appPlatforms,
+    agentThreadId: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
     .index("by_slug", ["slug"]),
@@ -50,9 +51,10 @@ export default defineSchema({
     appId: v.id("apps"),
     previewName: v.string(),
     previewSlug: v.string(),
+    gitRef: v.optional(v.string()),
     platforms: previewPlatforms,
   })
-    .index("by_appId", ["appId"])
+    .index("by_appId_and_gitRef", ["appId", "gitRef"])
     .index("by_previewSlug", ["previewSlug"]),
 
   connections: defineTable({

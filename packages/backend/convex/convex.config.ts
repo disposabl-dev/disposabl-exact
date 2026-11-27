@@ -1,3 +1,4 @@
+import agent from "@convex-dev/agent/convex.config.js";
 import auth from "@convex-dev/auth/convex.config.js";
 import google from "@convex-dev/auth/components/google/convex.config.js";
 import password from "@convex-dev/auth/components/password/convex.config.js";
@@ -14,6 +15,7 @@ app.use(password);
 app.use(username);
 app.use(rateLimiter);
 app.use(mcp);
+app.use(agent);
 if (googleConfigured) {
   app.use(google, {
     // Keep linked Google accounts when authentication is temporarily disabled.
