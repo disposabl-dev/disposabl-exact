@@ -19,7 +19,9 @@ app="$GITHUB_WORKSPACE/apps/apps"
 export CONVEX_ORIGIN=wss://cache-check.invalid CONVEX_SITE_ORIGIN=https://cache-check.invalid
 if [[ ${CACHE_VERIFY:-} != 1 ]]; then
   app="$RUNNER_TEMP/exact-cache-fixture"
-  (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed)
+  platforms=()
+  if [[ "$platform" == ios || "$platform" == macos ]]; then platforms=(--with "$platform"); fi
+  (cd "$EXACT" && bun scripts/exact.mjs new "$app" --name ExactCacheSeed --bundle-id dev.disposabl.exactcacheseed "${platforms[@]}")
   if [[ "$platform" == ios || "$platform" == macos ]]; then
     cat >> "$app/app.contract" <<'CONTRACT'
       canvas width=32 height=32

@@ -5,6 +5,14 @@ phase=${1:?expected prepare, build, or publish}; platform=${2:?expected android,
 : "${RUNNER_TEMP:?}"
 case "$platform" in android|ios|macos) ;; *) exit 2 ;; esac
 out="$RUNNER_TEMP/$platform-artifacts"
+if [[ "$platform" != android && "$phase" != publish ]]; then
+  ci_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  source "$ci_dir/apple-linux.sh"
+  apple_linux "$phase" "$platform" "$ci_dir"
+  apple_root=${EXACT_APPLE_ROOT:-$RUNNER_TEMP/exact-apple}
+  export EXACT_APPLE_SDK="$apple_root/$platform" EXACT_APPLE_LLVM_BIN=/usr/lib/llvm-23/bin
+  export PATH="$apple_root/bin:$apple_root/swift/usr/bin:$EXACT_APPLE_LLVM_BIN:$PATH"
+fi
 case "$phase" in
   prepare)
     : "${EXACT:?}"
@@ -62,12 +70,19 @@ PYCODE
         } ;;
       ios)
         bun exact.mjs ios --device --release --unsigned --archive "$out/app.ipa" --json > "$out/build.json"
-        unzip -tq "$out/app.ipa" >/dev/null ;;
+        unzip -tq "$out/app.ipa" >/dev/null
+        unpacked=$(mktemp -d "$RUNNER_TEMP/ios-archive.XXXXXX")
+        trap 'rm -rf -- "$unpacked"' EXIT
+        unzip -q "$out/app.ipa" 'Payload/*' -d "$unpacked"
+        bundles=("$unpacked"/Payload/*.app)
+        [[ ${#bundles[@]} == 1 && -d "${bundles[0]}" ]]
+        apple_verify_bundle "${bundles[0]}" ios "$out" ;;
       macos)
         EXACT_IDENTITY=- bun exact.mjs mac --release --json > "$out/build.json"
         bundle=$(jq -er '.path | select(endswith(".app"))' "$out/build.json")
-        codesign --verify --deep --strict "$bundle"
-        ditto -c -k --sequesterRsrc --keepParent "$bundle" "$out/app.zip"
+        apple_verify_bundle "$bundle" macos "$out"
+        rm -f -- "$out/app.zip"
+        (cd "$(dirname "$bundle")" && zip -q -r -y "$out/app.zip" "$(basename "$bundle")")
         unzip -tq "$out/app.zip" >/dev/null ;;
     esac ;;
   publish)
