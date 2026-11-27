@@ -1,10 +1,8 @@
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { parseEnv } from "node:util";
 
 const require = createRequire(import.meta.url);
 const cliManifest = require.resolve("@disposabl/cli/package.json");
@@ -41,7 +39,12 @@ async function runCli(directory, origin, args, interactive = false) {
       else reject(new Error('Disposabl setup failed at "' + args.slice(0, 2).join(" ") + '".'));
     });
   });
-  return interactive ? undefined : JSON.parse(output);
+  if (interactive) return;
+  try {
+    return JSON.parse(output);
+  } catch {
+    throw new Error("Disposabl setup returned an invalid response.");
+  }
 }
 
 async function updateEnv(directory, relativePath, variables, remove = []) {
@@ -73,9 +76,14 @@ function githubRepository(url) {
   return match?.[1].toLowerCase();
 }
 
-async function configureExact(directory, scratch) {
-  const repository = git(scratch, "config", "--get", "remote.origin.url");
-  const expected = githubRepository(repository);
+async function configureExact(directory, appId, deployment) {
+  const { name, deployKey, convexUrl, convexSiteUrl, repositoryUrl } = deployment;
+  if (deployment.appId !== appId || typeof name !== "string" || !/^[a-z0-9-]+$/.test(name) ||
+      typeof deployKey !== "string" || !deployKey.startsWith(`dev:${name}|`) || !deployKey.split("|")[1] ||
+      convexUrl !== `https://${name}.convex.cloud` || convexSiteUrl !== `https://${name}.convex.site`) {
+    throw new Error("Disposabl returned mismatched Convex development credentials.");
+  }
+  const expected = githubRepository(repositoryUrl);
   if (!expected) throw new Error("Disposabl did not configure a GitHub repository.");
   const remotes = git(directory, "remote").split("\n");
   if (remotes.includes("origin")) {
@@ -84,22 +92,17 @@ async function configureExact(directory, scratch) {
       throw new Error("The existing origin belongs to a different repository.");
     }
   } else {
-    git(directory, "remote", "add", "origin", repository);
+    git(directory, "remote", "add", "origin", repositoryUrl);
   }
 
-  const env = parseEnv(await readFile(join(scratch, "packages/backend/.env.local"), "utf8"));
-  const { CONVEX_DEPLOY_KEY, CONVEX_URL, CONVEX_SITE_URL } = env;
-  if (!CONVEX_DEPLOY_KEY || !CONVEX_URL || !CONVEX_SITE_URL) {
-    throw new Error("Disposabl did not write the Convex development configuration.");
-  }
   await updateEnv(directory, "packages/backend/.env.local", {
-    CONVEX_DEPLOY_KEY,
-    CONVEX_URL,
-    CONVEX_SITE_URL,
+    CONVEX_DEPLOY_KEY: deployKey,
+    CONVEX_URL: convexUrl,
+    CONVEX_SITE_URL: convexSiteUrl,
   }, ["CONVEX_DEPLOYMENT"]);
   await updateEnv(directory, "apps/apps/.env.local", {
-    CONVEX_ORIGIN: CONVEX_URL.replace(/^https:/, "wss:"),
-    CONVEX_SITE_ORIGIN: CONVEX_SITE_URL,
+    CONVEX_ORIGIN: convexUrl.replace(/^https:/, "wss:"),
+    CONVEX_SITE_ORIGIN: convexSiteUrl,
   });
 }
 
@@ -127,24 +130,10 @@ export async function setup(directory, name, config) {
     await writeJson(join(directory, "disposabl.json"), config);
   }
 
-  // The published CLI configures the legacy layout. Keep that layout and its
-  // development credentials in a private, disposable Git checkout.
-  const scratch = await mkdtemp(join(tmpdir(), "disposabl-web-setup-"));
-  try {
-    await mkdir(join(scratch, "apps/web"), { recursive: true });
-    await mkdir(join(scratch, "packages/backend"), { recursive: true });
-    await writeFile(join(scratch, ".gitignore"), "*.local\n");
-    await writeJson(join(scratch, "disposabl.json"), {
-      appId: config.appId, platforms: ["web"], features: JSON.parse(features),
-    });
-    git(scratch, "init", "--quiet", "--initial-branch=main");
-    const result = await run([
-      "previews", "token", "create", "--appId", config.appId, "--reference", "main",
-      "--platforms", web, "--features", features, "--configure", scratch,
-    ]);
-    if (!result.configured) throw new Error("Disposabl did not configure the development deployment.");
-    await configureExact(directory, scratch);
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
+  // The CLI response stays in the stdout pipe. Write development credentials to Exact's layout.
+  const deployment = await run([
+    "previews", "token", "create", "--appId", config.appId, "--reference", "main",
+    "--platforms", web, "--features", features,
+  ]);
+  await configureExact(directory, config.appId, deployment);
 }

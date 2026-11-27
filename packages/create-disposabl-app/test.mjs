@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +29,7 @@ const contract = {
   },
 };
 
-test("the packed generator uses the published CLI for web setup and enables Exact mobile afterward", async t => {
+test("the packed generator defaults to web and preserves selections through provider setup", async t => {
   const work = await mkdtemp(join(tmpdir(), "create-disposabl-app-test-"));
   t.after(() => rm(work, { recursive: true, force: true }));
   const archive = join(work, "generator.tgz");
@@ -37,6 +37,7 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   const files = new Set();
   await list({ file: archive, onReadEntry: entry => files.add(entry.path) });
   assert.ok(files.has("package/template.tar.gz"));
+  assert.ok(files.has("package/platform-config.mjs"));
   assert.ok(!files.has("package/build.mjs"));
   assert.ok(!files.has("package/bun.lock"));
   assert.ok(!files.has("package/reset-app.mjs"));
@@ -66,9 +67,10 @@ test("the packed generator uses the published CLI for web setup and enables Exac
     if (url.pathname === "/api/connections/status") {
       return send({ ready: !("mobile" in input) });
     }
-    if (JSON.stringify(input.platforms) !== '["web"]') {
+    if (JSON.stringify(input.platforms) !== '["web"]' ||
+        JSON.stringify(input.features) !== '["authentication"]') {
       response.statusCode = 400;
-      return send({ error: "Only web can use legacy provider setup" });
+      return send({ error: "Expected web and authentication during provider setup" });
     }
     if (url.pathname === "/api/apps/create") {
       creations += 1;
@@ -92,8 +94,12 @@ test("the packed generator uses the published CLI for web setup and enables Exac
     DO_NOT_TRACK: "1",
   };
 
-  await assert.rejects(scaffold("exact-demo", [], env), /--resume/);
-  assert.deepEqual((await config()).platforms, ["web"]);
+  const selected = { platforms: ["web", "ios", "mcp"], features: ["authentication", "payments"] };
+  await assert.rejects(scaffold("exact-demo", [
+    "--platforms", selected.platforms.join(","), "--features", selected.features.join(","),
+  ], env), /--resume/);
+  assert.deepEqual((await config()).platforms, selected.platforms);
+  assert.deepEqual((await config()).features, selected.features);
   assert.equal((await config()).appId, appId);
   assert.equal(creations, 1);
   const callsBeforeRejectedOrigin = calls.length;
@@ -105,12 +111,12 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   const result = await scaffold("exact-demo", ["--resume"], env);
   assert.ok(!result.stdout.includes(deployKey) && !result.stderr.includes(deployKey));
   assert.equal(creations, 1);
-  assert.deepEqual((await config()).platforms, ["web", "android", "ios"]);
-  assert.deepEqual((await config()).features, ["authentication"]);
+  assert.deepEqual((await config()).platforms, selected.platforms);
+  assert.deepEqual((await config()).features, selected.features);
   const mobile = execFileSync("bun", ["--print", 'JSON.stringify((await import("./packages/disposabl-kit/server/platform.ts")).platform.mobile)'], {
     cwd: directory, encoding: "utf8",
   });
-  assert.deepEqual(JSON.parse(mobile), ["android", "ios"]);
+  assert.deepEqual(JSON.parse(mobile), ["ios"]);
   assert.equal(execFileSync("git", ["remote", "get-url", "origin"], { cwd: directory, encoding: "utf8" }).trim(), repositoryUrl);
   assert.equal(parseEnv(await read("packages/backend/.env.local")).CONVEX_DEPLOY_KEY, deployKey);
   assert.deepEqual(parseEnv(await read("apps/apps/.env.local")), {
@@ -144,7 +150,10 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   const git = (...args) => execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
   const sshOrigin = "git@github.com:Example/exact-demo.git";
   git("remote", "set-url", "origin", sshOrigin);
+  const edited = { ...await config(), platforms: ["api"], features: ["authentication"] };
+  await writeFile(join(directory, "disposabl.json"), JSON.stringify(edited));
   await scaffold("exact-demo", ["--resume"], env);
+  assert.deepEqual(await config(), edited);
   assert.equal(git("config", "--get", "remote.origin.url"), sshOrigin);
   assert.equal(creations, 1);
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
@@ -153,10 +162,7 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   assert.deepEqual(deploy.getIn(["jobs", "tools", "needs"]).toJSON(), ["config"]);
   assert.equal(deploy.hasIn(["jobs", "native"]), true);
   assert.equal(deploy.hasIn(["jobs", "provision-signing"]), true);
-  for (const excluded of ["apps/web", "apps/mobile", ".github/workflows/publish.yml",
-    ".github/workflows/create-disposabl-app.yml", ".github/actions/exact-setup/scripts/publish-inputs.sh",
-    "packages/create-disposabl-app", "apps/apps/app.test.contract",
-    "packages/backend/convex/counter.ts", "packages/backend/convex/myFunctions.ts"]) {
+  for (const excluded of ["packages/backend/convex/counter.ts", "packages/backend/convex/myFunctions.ts"]) {
     await assert.rejects(access(join(directory, excluded)), { code: "ENOENT" });
   }
   await access(join(directory, ".github/actions/exact-setup/scripts/publish-installer.sh"));
@@ -168,6 +174,11 @@ test("the packed generator uses the published CLI for web setup and enables Exac
   });
   assert.equal(calls.length, priorCalls);
   const offline = JSON.parse(await readFile(join(work, "offline-app/disposabl.json"), "utf8"));
-  assert.deepEqual(offline.platforms, ["web", "android", "ios"]);
+  assert.deepEqual(offline, { platforms: ["web"], features: ["authentication"] });
+  await scaffold("headless-app", ["--skip-setup", "--platforms", "mcp,cli", "--features", ""], env);
+  const headless = JSON.parse(await readFile(join(work, "headless-app/disposabl.json"), "utf8"));
+  assert.deepEqual(headless, { platforms: ["mcp", "cli"], features: [] });
+  await assert.rejects(scaffold("invalid-app", ["--skip-setup", "--features", "payments"], env), /payments requires authentication/);
+  await assert.rejects(access(join(work, "invalid-app")), { code: "ENOENT" });
   await assert.rejects(scaffold("offline-app", ["--skip-setup"], env), /EEXIST/);
 });

@@ -8,7 +8,7 @@ Starter kit for building apps and agents with Exact and Convex.
 
 ```json
 {
-  "platforms": ["web", "android", "ios", "macos", "api", "mcp", "cli", "typescript-sdk"],
+  "platforms": ["web"],
   "features": ["authentication"]
 }
 ```
