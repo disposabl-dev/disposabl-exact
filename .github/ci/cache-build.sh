@@ -5,12 +5,6 @@ command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y z
 [[ "$GITHUB_REPOSITORY" == disposabl-dev/disposabl-exact && "$EXACT_REF" =~ ^[0-9a-f]{40}$ ]]
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 mkdir -p "$RUNNER_TEMP/cache-output" "$CARGO_TARGET_DIR"
-if [[ ${CACHE_VERIFY:-} == 1 ]]; then
-  cat "$RUNNER_TEMP"/restored-cache/cache-"$platform".tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME"
-  if [[ "$platform" == ios || "$platform" == macos ]]; then
-    [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]]
-  fi
-fi
 mode=
 [[ "$platform" != web || ${CACHE_VERIFY:-} == 1 ]] || mode=keep-tools
 bash "$GITHUB_WORKSPACE/.github/ci/checkout.sh" "$EXACT_REF" "$EXACT" ${mode:+"$mode"}
@@ -78,7 +72,11 @@ else
     keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$key" -storepass publicfixture -keypass publicfixture -alias android -keyalg RSA -dname CN=PublicFixture -validity 2 >/dev/null 2>&1
     export ANDROID_APK_SIGNING="$(python3 -c 'import base64,json,sys; print(json.dumps({"password":"publicfixture","keystore":base64.b64encode(open(sys.argv[1],"rb").read()).decode()}))' "$key")"
   fi
-  bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
+  bash "$GITHUB_WORKSPACE/.github/ci/setup.sh" web ota
+  export EXACT_OTA_TOOLS_READY=1
+  bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform" restore
+  unset GH_TOKEN
+  test -n "$(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit)"
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
   paths=()
   for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
