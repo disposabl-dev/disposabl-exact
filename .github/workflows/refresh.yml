@@ -16,12 +16,16 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with:
           github-token: ${{ github.token }}
-          run-id: 46038819874
+          run-id: 46042837826
           name: cache-android
           path: ${{ runner.temp }}/restored-cache
       - name: Record Cargo rebuild reasons
         run: |
           mkdir "$RUNNER_TEMP/probe"
+          original=$(command -v cargo)
+          cp -L "$original" "$RUNNER_TEMP/probe/cargo.stock"
+          mkdir "$RUNNER_TEMP/probe/original"
+          mv "$RUNNER_TEMP/probe/cargo.stock" "$RUNNER_TEMP/probe/original/cargo"
           cat > "$RUNNER_TEMP/probe/cargo" <<'SH'
           #!/usr/bin/env bash
           set -u
@@ -39,20 +43,22 @@ jobs:
             esac
             shift
           done
-          if ! "$build"; then exec "$HOME/.cargo/bin/cargo" "${original[@]}"; fi
+          if ! "$build"; then exec "$RUNNER_TEMP/probe/original/cargo" "${original[@]}"; fi
           log=$(mktemp "$RUNNER_TEMP/dirty.XXXXXX")
           if "$json"; then
-            "$HOME/.cargo/bin/cargo" "${args[@]}" 2>"$log" | awk '/^\{/'
+            "$RUNNER_TEMP/probe/original/cargo" "${args[@]}" 2>"$log" | awk '/^\{/'
             status=${PIPESTATUS[0]}
           else
-            "$HOME/.cargo/bin/cargo" "${args[@]}" 2>"$log"
+            "$RUNNER_TEMP/probe/original/cargo" "${args[@]}" 2>"$log"
             status=$?
           fi
           grep -E '^ *(Dirty |Compiling |Finished |error)' "$log" >&2 || :
           exit "$status"
           SH
           chmod +x "$RUNNER_TEMP/probe/cargo"
-          export PATH="$RUNNER_TEMP/probe:$PATH"
+          mv "$original" "$RUNNER_TEMP/probe/saved-cargo"
+          trap 'rm -f "$original"; mv "$RUNNER_TEMP/probe/saved-cargo" "$original"' EXIT
+          cp "$RUNNER_TEMP/probe/cargo" "$original"
           bash .github/ci/cache-build.sh android
       - if: always()
         run: grep -hE '^ *Dirty (wgpu|exact-logic|vello|apps-android)' "$RUNNER_TEMP"/dirty.* || true

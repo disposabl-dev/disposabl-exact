@@ -79,7 +79,18 @@ else
     export ANDROID_APK_SIGNING="$(python3 -c 'import base64,json,sys; print(json.dumps({"password":"publicfixture","keystore":base64.b64encode(open(sys.argv[1],"rb").read()).decode()}))' "$key")"
   fi
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" prepare "$platform"
+  fingerprints() {
+    python3 - "$CARGO_TARGET_DIR" <<'PYCODE'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1], "aarch64-linux-android/release/.fingerprint")
+for crate in ("wgpu-hal", "exact-logic"):
+    for path in root.glob(crate + "-*/run-build-script-*.json"):
+        print(path.parent.name, json.loads(path.read_text())["local"])
+PYCODE
+  }
+  fingerprints
   bash "$GITHUB_WORKSPACE/.github/ci/native.sh" build "$platform"
+  fingerprints
   paths=()
   for file in .cargo/registry/cache .cargo/registry/index .cargo/registry/src .cargo/git/db .cargo/hermes-lean-sys .cache/exact-native/cargo .gradle/caches/modules-2 .gradle/caches/build-cache-1 .gradle/wrapper/dists; do
     [[ ! -e "$HOME/$file" ]] || paths+=("$file")
