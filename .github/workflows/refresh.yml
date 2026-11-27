@@ -1,6 +1,6 @@
 name: Diagnose iOS cache reuse
 on: workflow_dispatch
-permissions: { contents: read }
+permissions: { contents: read, actions: read }
 jobs:
   restore:
     runs-on: ubuntu-24.04
@@ -13,7 +13,11 @@ jobs:
         with: { persist-credentials: false }
       - uses: oven-sh/setup-bun@v2.2.0
         with: { bun-version: '1.4.5' }
-      - env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh release download exact-ci-linux-v2-ios-$EXACT_REF-46031837045-1 --pattern 'cache-ios.tar.zst.part-*' --dir "$RUNNER_TEMP/restored-cache"
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46031837045
+          name: cache-ios
+          path: ${{ runner.temp }}/restored-cache
       - env: { CARGO_LOG: 'cargo::core::compiler::fingerprint=info' }
         run: bash .github/ci/cache-build.sh ios
