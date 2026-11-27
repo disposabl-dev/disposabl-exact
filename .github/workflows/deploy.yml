@@ -7,8 +7,10 @@ on:
       CONVEX_DEPLOY_KEY: { required: false }
       CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
   pull_request:
+    paths-ignore: &generator-only ['packages/create-disposabl-app/**', '.github/workflows/create-disposabl-app.yml']
   push:
     branches: [main]
+    paths-ignore: *generator-only
 permissions:
   contents: read
 concurrency:

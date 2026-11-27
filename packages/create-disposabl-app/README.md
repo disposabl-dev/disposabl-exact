@@ -28,4 +28,4 @@ The generator takes `apps/apps`, `packages/backend`, and the backend workspace m
 
 Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack and test the starter with the published CLI. The **Exact app generator** workflow tests each push to `main` and publishes to npm’s default `latest` tag using the trusted publisher `disposabl-dev/disposabl-exact` and workflow `create-disposabl-app.yml`.
 
-The Exact generator starts at `1.0.0`. Subsequent releases use the highest change since the last published commit. A Conventional Commit with `!` or a `BREAKING CHANGE:` footer bumps the major version, `feat:` bumps the minor version, and all other changes bump the patch version. Scopes such as `feat(cli):` are supported.
+The generator uses `semantic-release` with the Conventional Commits preset. Breaking changes bump the major version, `feat:` bumps the minor version, and other changes bump the patch version. Each release tags the existing commit as `create-disposabl-app-vX.Y.Z`. Tag pushes do not start the branch CI workflows.

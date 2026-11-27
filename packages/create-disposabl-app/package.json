@@ -30,6 +30,8 @@
     "tar": "7.5.23"
   },
   "devDependencies": {
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semantic-release": "25.0.9",
     "yaml": "2.9.1"
   },
   "scripts": {
@@ -37,5 +39,33 @@
     "reset-app": "node reset-app.mjs",
     "prepack": "bun run build",
     "test": "bun run build && node --test test.mjs"
+  },
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "tagFormat": "create-disposabl-app-v${version}",
+    "plugins": [
+      [
+        "@semantic-release/commit-analyzer",
+        {
+          "preset": "conventionalcommits",
+          "releaseRules": [
+            {
+              "breaking": true,
+              "release": "major"
+            },
+            {
+              "type": "feat",
+              "release": "minor"
+            },
+            {
+              "release": "patch"
+            }
+          ]
+        }
+      ],
+      "@semantic-release/npm"
+    ]
   }
 }

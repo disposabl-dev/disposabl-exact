@@ -8,7 +8,6 @@ import { test } from "node:test";
 import { parseEnv, promisify } from "node:util";
 import { list } from "tar";
 import { starterRef } from "./reset-app.mjs";
-import { releaseVersion } from "./release-version.mjs";
 import { parseDocument } from "yaml";
 
 const exec = promisify(execFile);
@@ -18,34 +17,6 @@ const repositoryUrl = "https://github.com/example/exact-demo.git";
 const deployKey = "dev:test-deployment|fixture-key";
 const convexUrl = "https://test-deployment.convex.cloud";
 const convexSiteUrl = "https://test-deployment.convex.site";
-
-test("stable releases migrate once and use the highest change since npm latest", () => {
-  const published = {
-    version: "1.2.3", gitHead: "a".repeat(40),
-    repository: { url: "git+https://github.com/disposabl-dev/disposabl-exact.git" },
-  };
-  const head = "b".repeat(40);
-  const unused = () => assert.fail("unexpected git history lookup");
-  assert.equal(releaseVersion({
-    version: "0.21.0", repository: { url: "git+https://github.com/disposabl-dev/create-disposabl-app.git" },
-  }, head, unused), "1.0.0");
-  assert.equal(releaseVersion(published, published.gitHead, unused), "1.2.3");
-  for (const [messages, expected] of [
-    [["fix: install", "Update docs\n\nfeat: an example"], "1.2.4"],
-    [["fix: install", "feat(cli): add a command"], "1.3.0"],
-    [["feat: new command", "fix(cli)!: rename an option"], "2.0.0"],
-    [["feat: new command\n\nBREAKING CHANGE: replace the CLI"], "2.0.0"],
-    [["chore: release\n\nBREAKING-CHANGE: replace the CLI"], "2.0.0"],
-  ]) {
-    assert.equal(releaseVersion(published, head, (base, to) => {
-      assert.equal(base, published.gitHead);
-      assert.equal(to, head);
-      return messages;
-    }), expected);
-  }
-  assert.throws(() => releaseVersion({ ...published, gitHead: undefined }, head, unused), /Missing release commit/);
-  assert.throws(() => releaseVersion(published, head, () => { throw new Error("not an ancestor"); }), /not an ancestor/);
-});
 
 const features = { type: "array", items: { type: "string" } };
 const schema = properties => ({ content: { "application/json": { schema: { type: "object", properties } } } });
