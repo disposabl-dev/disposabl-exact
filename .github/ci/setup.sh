@@ -16,18 +16,18 @@ fi
 repo=disposabl-dev/disposabl-exact
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/exact-setup.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
-gh api "repos/$repo/releases?per_page=100" | jq --arg prefix "exact-ci-linux-v2-$platform-$ref-" \
-  'first(.[] | select(.draft == false and (.tag_name | startswith($prefix)))) // {}' > "$work/release.json"
-tag=$(jq -r '.tag_name // empty' "$work/release.json")
+tag=${EXACT_CACHE_TAG:-}
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 if [[ -n "$tag" ]]; then
+  [[ "$tag" =~ ^exact-ci-linux-v3-$ref-[0-9]+-[0-9]+$ ]]
+  gh api "repos/$repo/releases/tags/$tag" > "$work/release.json"
   gh release download "$tag" -R "$repo" --pattern "cache-$platform.tar.zst.part-*" --dir "$work"
   cd "$work"
   jq -er --arg platform "$platform" '
     [.assets[] | select(.name | test("^cache-" + $platform + "\\.tar\\.zst\\.part-[a-z]{3}$"))]
     | select(length > 0) | .[] | (if (.digest | test("^sha256:[a-f0-9]{64}$")) then (.digest | ltrimstr("sha256:")) else error("Missing SHA-256") end) + "  " + .name
   ' release.json > checksums
-  shasum -a 256 --check --strict checksums
+  sha256sum --check --strict checksums
   cut -d ' ' -f 3 checksums | LC_ALL=C sort | while read -r part; do cat "$part"; done | zstd -dc | tar -xf - -C "$HOME"
 else
   echo "No shared cache published yet; bootstrapping $ref."

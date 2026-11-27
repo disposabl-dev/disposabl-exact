@@ -25,7 +25,6 @@ jobs:
           [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && echo "ref=$ref" >> "$GITHUB_OUTPUT"
   cache:
     needs: resolve
-    permissions: { contents: write }
     strategy:
       fail-fast: false
       matrix:
@@ -48,3 +47,19 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - env: { BOAT_API_KEY: '${{ secrets.BOAT_API_KEY }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}', BUN_VERSION: '1.4.5' }
         run: bash .github/ci/boat.sh
+
+  publish:
+    needs: [resolve, cache]
+    if: github.ref == 'refs/heads/main' && (!inputs.platform || inputs.platform == 'all')
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with: { pattern: cache-*, merge-multiple: true, path: cache }
+      - run: |
+          for platform in web android ios macos; do test -s "cache/cache-$platform.tar.zst.part-aaa"; done
+          tag="exact-ci-linux-v3-$EXACT_REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Exact $EXACT_REF" --notes 'Verified on fresh Ubuntu runners for all four platforms.' --latest=false cache/*
+          gh release list --limit 100 --exclude-drafts --json tagName --jq '[.[] | select(.tagName | startswith("exact-ci-linux-v3-"))][2:][].tagName' |
+            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done

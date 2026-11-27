@@ -31,21 +31,6 @@ jobs:
     steps:
       - *checkout
       - *bun
-      - &restore
-        uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@v8.0.2
         with: { name: 'cache-${{ inputs.platform }}', path: '${{ runner.temp }}/restored-cache' }
       - *build
-  publish:
-    needs: verify
-    if: github.repository == 'disposabl-dev/disposabl-exact' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions: { contents: write }
-    env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
-    steps:
-      - *restore
-      - run: |
-          prefix="exact-ci-linux-v2-$PLATFORM-"
-          tag="$prefix$EXACT_REF-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          gh release create "$tag" --target "$GITHUB_SHA" --title "Exact $PLATFORM cache $EXACT_REF" --notes 'Built from fresh inputs and tested on a second Ubuntu runner.' --latest=false "$RUNNER_TEMP"/restored-cache/*
-          gh release list --limit 100 --json tagName,isDraft | jq -r --arg prefix "$prefix" '[.[] | select(.isDraft == false and (.tagName | startswith($prefix)))][2:][].tagName' |
-            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
