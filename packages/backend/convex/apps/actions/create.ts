@@ -4,9 +4,10 @@ import { ConvexError, type Infer } from "convex/values";
 import { internal } from "../../_generated/api";
 import { internalAction } from "../../_generated/server";
 import { app, createForUserArgs } from "../validators";
-import { createDeployKeys, ensureProject } from "./convex";
+import { createDeployKeys, ensureProductionDeployment, ensureProject } from "./convex";
 import { ensureRepository, openSecrets } from "./github";
-import { ProviderError } from "./provider";
+import { previewSecret, productionSecret, ProviderError } from "./provider";
+import { ensureSigningSecrets } from "./signing";
 
 export const provision = internalAction({
   args: createForUserArgs,
@@ -19,9 +20,16 @@ export const provision = internalAction({
     const lease = { creationId, leaseId };
     try {
       const project = await ensureProject(convexAccessToken, convexTeamId, resourceName);
+      const production = await ensureProductionDeployment(convexAccessToken, project.id);
       const repository = await ensureRepository(githubOwner, githubInstallationId, resourceName, creationId);
       const secrets = await openSecrets(repository);
-      await secrets.save(await createDeployKeys(convexAccessToken, project, secrets.missing));
+      const signing = await ensureSigningSecrets(convexAccessToken, project.id, production, secrets.has);
+      const missingDeployKeys = ([productionSecret, previewSecret] as const).filter(name => !secrets.has(name));
+      const values = new Map<string, string>(await createDeployKeys(convexAccessToken, project, production, missingDeployKeys));
+      for (const [name, value] of signing) {
+        if (!secrets.has(name)) values.set(name, value);
+      }
+      await secrets.save(values);
       return await ctx.runMutation(internal.apps.internal.finishCreation, { ...lease, convexProjectId: project.id });
     } catch (error) {
       await ctx.runMutation(internal.apps.internal.releaseCreation, lease).catch(() => null);

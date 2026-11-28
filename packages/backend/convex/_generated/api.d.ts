@@ -16,6 +16,7 @@ import type * as apps_actions_convex from "../apps/actions/convex.js";
 import type * as apps_actions_create from "../apps/actions/create.js";
 import type * as apps_actions_github from "../apps/actions/github.js";
 import type * as apps_actions_provider from "../apps/actions/provider.js";
+import type * as apps_actions_signing from "../apps/actions/signing.js";
 import type * as apps_index from "../apps/index.js";
 import type * as apps_internal from "../apps/internal.js";
 import type * as apps_validators from "../apps/validators.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   "apps/actions/create": typeof apps_actions_create;
   "apps/actions/github": typeof apps_actions_github;
   "apps/actions/provider": typeof apps_actions_provider;
+  "apps/actions/signing": typeof apps_actions_signing;
   "apps/index": typeof apps_index;
   "apps/internal": typeof apps_internal;
   "apps/validators": typeof apps_validators;

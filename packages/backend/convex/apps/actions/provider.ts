@@ -12,18 +12,20 @@ export class ProviderError extends Error {
 }
 
 export async function request<T>(
-  provider: Provider,
+  target: Provider | { deployment: string },
   token: string,
   path: string,
   body?: object,
   method = body === undefined ? "GET" : "POST",
 ): Promise<T> {
-  const response = await fetch(origins[provider] + path, {
+  const provider = typeof target === "string" ? target : "Convex";
+  const origin = typeof target === "string" ? origins[target] : `https://${target.deployment}.convex.cloud/api/v1`;
+  const response = await fetch(origin + path, {
     method,
     redirect: "error",
     signal: AbortSignal.timeout(20_000),
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `${typeof target === "string" ? "Bearer" : "Convex"} ${token}`,
       "Content-Type": "application/json",
       ...(provider === "GitHub" ? {
         Accept: "application/vnd.github+json",

@@ -40,7 +40,7 @@ export async function ensureProject(token: string, teamId: number, name: string)
   return project;
 }
 
-async function productionDeployment(token: string, projectId: number) {
+export async function ensureProductionDeployment(token: string, projectId: number) {
   const path = `/projects/${projectId}`;
   const find = () => lookup(request<Deployment>("Convex", token, `${path}/deployment?defaultProd=true`));
   let deployment = await find();
@@ -63,11 +63,10 @@ function keyMaterial(token: string) {
   return token.slice(token.lastIndexOf("|") + 1);
 }
 
-export async function createDeployKeys(token: string, project: Project, missing: DeploySecret[]) {
+export async function createDeployKeys(token: string, project: Project, production: string, missing: DeploySecret[]) {
   const keys = new Map<DeploySecret, string>();
   if (missing.length === 0) return keys;
 
-  const production = missing.includes(productionSecret) ? await productionDeployment(token, project.id) : null;
   const mint = async (signer: string, name: DeploySecret) => {
     if (name === productionSecret) {
       const { deployKey } = await request<{ deployKey: string }>(
