@@ -1,0 +1,114 @@
+name: Deploy and report app status
+on:
+  workflow_call:
+    secrets:
+      CONVEX_DEPLOY_KEY: { required: false }
+      CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
+permissions:
+  contents: read
+jobs:
+  platforms:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    outputs:
+      web: ${{ steps.selected.outputs.web }}
+      native: ${{ steps.selected.outputs.native }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false }
+      - uses: oven-sh/setup-bun@v2.2.0
+        with: { bun-version: '1.4.5' }
+      - id: selected
+        run: |
+          bun -e '
+            import { platform } from "./packages/disposabl-kit/server/platform.ts";
+            const production = process.env.GITHUB_EVENT_NAME === "push";
+            const web = platform.web || production ? ["web", "api", "mcp"].filter(name => platform[name]) : [];
+            const native = production ? [...platform.mobile, ...(platform.macos ? ["macos"] : [])] : [];
+            console.log(`web=${JSON.stringify(web)}\nnative=${JSON.stringify(native)}`);
+          ' >> "$GITHUB_OUTPUT"
+  report-start:
+    needs: platforms
+    if: needs.platforms.outputs.web != '[]' || needs.platforms.outputs.native != '[]'
+    runs-on: ubuntu-24.04
+    permissions: { id-token: write }
+    steps:
+      - name: Report platforms building
+        continue-on-error: true
+        env:
+          WEB_PLATFORMS: ${{ needs.platforms.outputs.web }}
+          NATIVE_PLATFORMS: ${{ needs.platforms.outputs.native }}
+        run: &report |
+          set -euo pipefail
+          endpoint=https://www.disposabl.dev/github/deployments
+          token=$(curl --silent --show-error --fail --max-time 10 --get \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            --data-urlencode "audience=$endpoint" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -er .value)
+          printf '::add-mask::%s\n' "$token"
+          send() {
+            local payload
+            payload=$(jq -cn --arg platform "$1" --arg status "$2" --arg url "${3:-}" \
+              '{platform: $platform, status: $status} + (if $url == "" then {} else {url: $url} end)')
+            curl --silent --show-error --fail --max-time 15 --retry 1 \
+              -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+              --data "$payload" "$endpoint" >/dev/null
+          }
+          failed=0
+          result() {
+            local receipt="$RUNNER_TEMP/deployment-reports/report-$1.json"
+            status=building url=
+            [[ "${REPORT_FINISHED:-}" == true ]] || return 0
+            status=error
+            [[ -f "$receipt" ]] || return 0
+            status=$(jq -er '.status | select(. == "done" or . == "error")' "$receipt") || return 1
+            url=$(jq -er 'if .status == "done" then .url // "" else "" end' "$receipt")
+          }
+          for platform in $(jq -r '.[]' <<< "$WEB_PLATFORMS"); do
+            case "$platform" in web|api|mcp) ;; *) failed=1; continue ;; esac
+            result web || { failed=1; continue; }
+            if [[ -n "$url" ]]; then
+              case "$platform" in
+                api) url="${url%/}/openapi.json" ;;
+                mcp) url="${url%/}/mcp" ;;
+              esac
+            fi
+            send "$platform" "$status" "$url" || failed=1
+          done
+          for platform in $(jq -r '.[]' <<< "$NATIVE_PLATFORMS"); do
+            case "$platform" in android|ios|macos) ;; *) failed=1; continue ;; esac
+            result "$platform" || { failed=1; continue; }
+            send "$platform" "$status" "$url" || failed=1
+          done
+          if [[ "$failed" == 1 ]]; then
+            echo '::warning::One or more platform statuses could not be sent to Disposabl.'
+            exit 1
+          fi
+  deploy:
+    needs: [platforms, report-start]
+    if: ${{ !cancelled() }}
+    permissions: { contents: read }
+    uses: ./.github/workflows/deploy.yml
+    with:
+      deployment-receipts: ${{ needs.platforms.result == 'success' }}
+    secrets:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      CONVEX_DEPLOY_KEY_PREVIEW: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
+  report-finish:
+    needs: [platforms, deploy]
+    if: ${{ always() && needs.platforms.result == 'success' && (needs.platforms.outputs.web != '[]' || needs.platforms.outputs.native != '[]') }}
+    runs-on: ubuntu-24.04
+    permissions: { id-token: write }
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          pattern: exact-deployment-*
+          path: ${{ runner.temp }}/deployment-reports
+          merge-multiple: true
+      - name: Report platform results
+        continue-on-error: true
+        env:
+          WEB_PLATFORMS: ${{ needs.platforms.outputs.web }}
+          NATIVE_PLATFORMS: ${{ needs.platforms.outputs.native }}
+          REPORT_FINISHED: true
+        run: *report

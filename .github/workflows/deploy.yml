@@ -1,6 +1,8 @@
 name: Deploy app
 on:
   workflow_call:
+    inputs:
+      deployment-receipts: { type: boolean, default: false }
     secrets:
       CONVEX_DEPLOY_KEY: { required: false }
       CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
@@ -61,12 +63,39 @@ jobs:
       - if: needs.config.outputs.web == 'true'
         env: { GH_TOKEN: '${{ github.token }}', EXACT_REF: '${{ needs.config.outputs.exact }}' }
         run: bash "$CI_SCRIPTS/setup.sh" web
-      - env:
+      - id: deploy
+        env:
           WEB: ${{ needs.config.outputs.web }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PREVIEW_BUILD_ONLY: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
           CONVEX_DEPLOY_KEY: ${{ secrets[github.event_name == 'pull_request' && 'CONVEX_DEPLOY_KEY_PREVIEW' || 'CONVEX_DEPLOY_KEY'] }}
         run: bash "$CI_SCRIPTS/web.sh"
+
+      - id: receipt
+        if: ${{ always() && inputs.deployment-receipts }}
+        continue-on-error: true
+        env:
+          BUILD_RESULT: ${{ job.status }}
+          PLATFORM: web
+          WEB_URL: ${{ steps.deploy.outputs.url }}
+        run: &receipt |
+          set -euo pipefail
+          status=error url=
+          if [[ "$BUILD_RESULT" == success ]]; then
+            status=done
+            installer="$RUNNER_TEMP/installer-$PLATFORM.json"
+            if [[ "$PLATFORM" == web ]]; then url=${WEB_URL:?Missing deployed web origin}
+            elif [[ -f "$installer" ]]; then url=$(jq -er .url "$installer"); fi
+          fi
+          jq -cn --arg status "$status" --arg url "$url" '{status: $status, url: $url}' > "$RUNNER_TEMP/report-$PLATFORM.json"
+      - if: ${{ always() && steps.receipt.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: exact-deployment-web
+          path: ${{ runner.temp }}/report-web.json
+          overwrite: true
+          if-no-files-found: error
 
   native:
     needs: config
@@ -141,3 +170,18 @@ jobs:
         run: |
           ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
           bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" seed "$PLATFORM"
+      - id: receipt
+        if: ${{ always() && inputs.deployment-receipts }}
+        continue-on-error: true
+        env:
+          BUILD_RESULT: ${{ job.status }}
+          PLATFORM: ${{ matrix.platform }}
+        run: *receipt
+      - if: ${{ always() && steps.receipt.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: exact-deployment-${{ matrix.platform }}
+          path: ${{ runner.temp }}/report-${{ matrix.platform }}.json
+          overwrite: true
+          if-no-files-found: error

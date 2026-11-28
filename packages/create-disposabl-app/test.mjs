@@ -194,7 +194,8 @@ test("the packed generator defaults to web and CLI and preserves selections thro
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
-  assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main");
+  assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy-managed.yml@main");
+  assert.equal(deploy.getIn(["jobs", "deploy", "permissions", "id-token"]), "write");
   for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh", ".github/ci/android-key.sh"]) {
     await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
   }

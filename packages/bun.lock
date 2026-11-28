@@ -16,6 +16,7 @@
         "@convex-dev/static-hosting": "0.2.2",
         "@disposabl-kit/server": "workspace:*",
         "convex": "^1.51.0",
+        "jose": "5.10.0",
         "libsodium-wrappers": "0.8.4",
         "node-forge": "1.4.4",
       },
