@@ -95,7 +95,7 @@ Use `["read","write"]` for an integration that needs write access. Revoke the ke
 
 Choose `cli` or `typescript-sdk` to enable the corresponding client. The SDK uses the app’s OpenAPI contract.
 
-Use `bunx disposabl status`, `bunx disposabl login` and `bunx disposabl list` from the project directory. The CLI exposes functions marked `platforms: true` and skips sign-in when the app disables authentication. Both clients accept scoped API keys for automation. With payments enabled, `bunx disposabl billing status` reads the account’s plan and credits. Checkout and billing management are available in the web app.
+Use `bunx disposabl status`, `bunx disposabl login` and `bunx disposabl list` from the project directory. The CLI exposes functions marked `platforms: true` and skips sign-in when the app disables authentication. Both clients accept scoped API keys for automation. When payments are enabled and an Autumn key is configured, `bunx disposabl billing status` reads the account’s plan and credits. Checkout and billing management are available in the web app.
 
 See the [CLI](packages/cli/README.md) and [SDK](packages/sdk/README.md) for usage.
 

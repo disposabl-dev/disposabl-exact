@@ -1,6 +1,7 @@
 import { checkValue } from "@convex-dev/mcp";
 import { makeFunctionReference, type FunctionType, type GenericActionCtx, type GenericDataModel } from "convex/server";
 import { asObjectValidator, v, type GenericValidator, type PropertyValidators, type Value } from "convex/values";
+import { billingAvailable } from "./billing/index";
 import { platform } from "./platform";
 import definitions from "../../backend/platforms.generated";
 
@@ -12,6 +13,8 @@ type PlatformFunction = {
   feature?: "authentication" | "payments";
   readOnly?: true;
 };
+
+const enabledFeatures = { authentication: platform.authentication, payments: billingAvailable() };
 
 export const operations = Object.entries(definitions).map(([id, definition]) => {
   const exposed = (definition as { platform?: PlatformFunction }).platform;
@@ -33,7 +36,7 @@ export const operations = Object.entries(definitions).map(([id, definition]) => 
     method: readOnly ? "GET" as const : "POST" as const,
     scope: readOnly ? "read" : "write",
   };
-}).filter(operation => !operation.feature || platform[operation.feature]);
+}).filter(operation => !operation.feature || enabledFeatures[operation.feature]);
 if (new Set(operations.map(op => op.name)).size !== operations.length)
   throw new Error("Two functions have the same MCP tool name");
 

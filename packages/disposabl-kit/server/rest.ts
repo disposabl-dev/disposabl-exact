@@ -4,6 +4,7 @@ import { ConvexError, convexToJson, v, type GenericValidator, type Value } from 
 import { httpAction, type ActionCtx } from "../../backend/convex/_generated/server";
 import { api } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "./authSettings";
+import { billingAvailable } from "./billing/index";
 import { mcp, service } from "./mcp";
 import { invoke, operations, validate, type Operation } from "./operations";
 import { isAppRequest, readBody, reply, requestClient } from "./requests";
@@ -98,12 +99,12 @@ function resultSchema(validator: GenericValidator): JSONSchema {
 }
 
 const content = (schema: JSONSchema) => ({ "application/json": { schema } });
-const openapi = ({ authentication, payments }: { authentication: boolean; payments: boolean }) => httpAction(async () => {
+const openapi = (authentication: boolean) => httpAction(async () => {
   const { title, version } = service;
   return Response.json({
     openapi: "3.1.2",
     info: { title, version },
-    "x-disposabl": { authentication, payments },
+    "x-disposabl": { authentication, payments: billingAvailable() },
     servers: [{ url: siteOrigin() }],
     security: [{ apiKey: [] }],
     components: { securitySchemes: { apiKey: { type: "http", scheme: "bearer" } } },
@@ -142,7 +143,7 @@ export function registerRest(http: HttpRouter, config: { authentication: boolean
     http.route({ path: operation.path, method: "GET", handler });
     http.route({ path: operation.path, method: "POST", handler });
   }
-  http.route({ path: "/openapi.json", method: "GET", handler: openapi(config) });
+  http.route({ path: "/openapi.json", method: "GET", handler: openapi(config.authentication) });
   if (config.authentication) http.route({ path: "/api/users/current", method: "GET", handler: currentUser(authorizeSandbox) });
 }
 

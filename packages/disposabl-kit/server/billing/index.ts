@@ -36,10 +36,18 @@ export const statusResult = v.object({
 });
 const result = v.union(statusResult, v.object({ url: v.string() }));
 
+function billingMode(secretKey?: string) {
+  return secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
+}
+
+export function billingAvailable() {
+  return platform.payments && billingMode(env.AUTUMN_SECRET_KEY?.trim()) !== "off";
+}
+
 function billingProvider() {
   if (!platform.payments) throw new Error("Enable payments in disposabl.json");
   const secretKey = env.AUTUMN_SECRET_KEY?.trim();
-  const mode = secretKey?.startsWith("am_sk_test_") ? "test" : secretKey?.startsWith("am_sk_live_") ? "live" : "off";
+  const mode = billingMode(secretKey);
   return { mode, client: mode === "off" ? null : new Autumn({ secretKey }) } as const;
 }
 
