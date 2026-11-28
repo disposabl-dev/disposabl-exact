@@ -120,6 +120,9 @@ export const saveCreatedApp = internalMutation({
       if (existing.userId === fields.userId && existing.name === name) return { ...presentApp(existing), appId: existing._id };
       throw new ConvexError("App slug is already in use.");
     }
+    const registered = await ctx.db.query("apps")
+      .withIndex("by_githubRepositoryId", q => q.eq("githubRepositoryId", fields.githubRepositoryId)).first();
+    if (registered) throw new ConvexError("The GitHub repository is already linked to an app.");
 
     const id = await ctx.db.insert("apps", { ...fields, slug, name, prod: null, live: null });
     const row = await ctx.db.get("apps", id);

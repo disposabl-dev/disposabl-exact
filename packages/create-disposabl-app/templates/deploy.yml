@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   deploy:
+    permissions: { contents: read, id-token: write }
     uses: disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main
     secrets:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

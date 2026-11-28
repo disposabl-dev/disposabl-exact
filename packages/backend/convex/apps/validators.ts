@@ -38,6 +38,7 @@ export const saveCreatedAppArgs = {
   appName: v.string(),
   githubOwner: v.string(),
   githubRepoName: v.string(),
+  githubRepositoryId: v.number(),
   convexProjectId: v.number(),
   convexSiteUrl: v.string(),
 };

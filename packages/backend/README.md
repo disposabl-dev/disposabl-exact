@@ -12,6 +12,12 @@ The status operations report the signed-in user's connected GitHub owner and Con
 - GitHub uses the same GitHub App as app provisioning. Configure `GITHUB_APP_SLUG`, `GITHUB_OAUTH_CLIENT_ID`, and `GITHUB_OAUTH_CLIENT_SECRET`. Register `<CONVEX_SITE_URL>/dashboard/connections/callback/github` as a callback URL. Enable Administration and Secrets write permissions and organization Members read permission.
 - Convex uses `CONVEX_OAUTH_CLIENT_ID` and `CONVEX_OAUTH_CLIENT_SECRET`. Register `<CONVEX_SITE_URL>/dashboard/connections/callback/convex` as a redirect URI. Set `CONNECTIONS_ENCRYPTION_KEY` to a base64-encoded 32-byte key to protect saved credentials.
 
+## Deployment status
+
+The generated GitHub Actions workflow reports each platform as building, done, or error. A push to `main` updates `apps.prod`. A pull request from the same repository updates its `pr-<number>` preview. `apps.live` is reserved for store delivery.
+
+Reporting verifies GitHub's OIDC token against the registered repository ID. The last successful URL stays available during a rebuild, after a failure, and after an OTA-only update.
+
 ## Setting up
 
 ```

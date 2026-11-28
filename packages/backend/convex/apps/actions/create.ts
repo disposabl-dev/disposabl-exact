@@ -34,6 +34,7 @@ export const provision = internalAction({
       await secrets.save(await createDeployKeys(token, project, production, missingDeployKeys));
       return await ctx.runMutation(internal.apps.internal.saveCreatedApp, {
         userId: args.userId, appSlug, appName, githubOwner, githubRepoName: resourceName,
+        githubRepositoryId: repository.repositoryId,
         convexProjectId: project.id, convexSiteUrl: `https://${production}.convex.site`,
       });
     } catch (error) {

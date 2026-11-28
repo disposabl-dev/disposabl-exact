@@ -12,6 +12,7 @@ const platformResult = v.object({
     v.literal("error"),
   ),
   commitSha: v.optional(v.string()),
+  run: v.optional(v.object({ id: v.number(), number: v.number(), attempt: v.number() })),
 });
 
 const optionalResult = v.optional(platformResult);
@@ -43,6 +44,7 @@ export default defineSchema({
     name: v.string(),
     githubOwner: v.string(),
     githubRepoName: v.string(),
+    githubRepositoryId: v.optional(v.number()),
     convexProjectId: v.number(),
     convexSiteUrl: v.optional(v.string()),
     prod: appPlatforms,
@@ -51,6 +53,7 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_slug", ["slug"])
+    .index("by_githubRepositoryId", ["githubRepositoryId"])
     .index("by_agentThreadId", ["agentThreadId"]),
 
   previews: defineTable({

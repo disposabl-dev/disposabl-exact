@@ -63,5 +63,6 @@ if [[ "$WEB" == true ]]; then
   if [[ "${PREVIEW_BUILD_ONLY:-false}" != true ]]; then bun run static-hosting upload --dist ../../apps/apps/dist/convex "$upload_mode"; fi
 fi
 if [[ "${PREVIEW_BUILD_ONLY:-false}" != true ]]; then
+  [[ -z "${GITHUB_OUTPUT:-}" ]] || printf 'url=%s\n' "$site" >> "$GITHUB_OUTPUT"
   [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] || printf 'Convex site: %s\n' "$site" >> "$GITHUB_STEP_SUMMARY"
 fi
