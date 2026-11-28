@@ -24,7 +24,7 @@ async function session(ctx: ActionCtx, request: Request) {
 export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
   const sandbox = await session(ctx, request);
   if (!sandbox) return null;
-  const { userId, appSlug, threadId, sandbox: box, messageId } = sandbox;
+  const { userId, appSlug, threadId, messageId } = sandbox;
   return {
     userId,
     allows: (operation, args) => {
@@ -32,7 +32,7 @@ export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
       if (typeof args.appSlug !== "string") return false;
       if (operation.id === "apps/internal:get") return args.appSlug === appSlug;
       if (operation.id !== "apps/internal:create") return false;
-      return ctx.runMutation(internal.agent.internal.claimApp, { sandbox: box, messageId, appSlug: args.appSlug });
+      return ctx.runMutation(internal.agent.internal.claimApp, { userId, messageId, appSlug: args.appSlug });
     },
     onSuccess: async (operation, args) => {
       if (operation.id === "apps/internal:create" && typeof args.appSlug === "string") {

@@ -2,7 +2,7 @@ import { env } from "../../_generated/server";
 
 const baseUrl = "https://boat.dev/api/v1";
 
-type Sandbox = { id: string; state: string; snapshots?: boolean };
+type Sandbox = { id: string; state: string; snapshotAvailable?: boolean };
 type BoatEvent = { id: string; timestamp: number; type: string; data?: { content?: unknown } };
 type Prompt = { promptId: string; conversationId: string };
 
@@ -29,15 +29,26 @@ async function request<T>(path: string, options: { method?: string; body?: objec
     redirect: "error",
     signal: AbortSignal.timeout(75_000),
   });
-  const result = await response.json().catch(() => null) as (T & { ok?: boolean; code?: string }) | null;
-  if (!result || !response.ok || result.ok === false) throw new BoatError(response.status, result?.code);
+  const result = await response.json().catch(() => null) as (T & { ok?: boolean; code?: string; error?: { code?: string } }) | null;
+  if (!result || !response.ok || result.ok === false) throw new BoatError(response.status, result?.error?.code ?? result?.code);
   return result;
 }
 
 const path = (id: string) => "/sandboxes/" + encodeURIComponent(id);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function readySandbox(existing: string | undefined, key: string) {
+function ownerLabel(userId: string) {
+  return `${env.CONVEX_SITE_URL}#${userId}`;
+}
+
+export async function findSandbox(userId: string) {
+  const query = new URLSearchParams({ label: `disposabl-user=${ownerLabel(userId)}`, limit: "1", dataExpired: "false",
+    state: "init,provisioning,provisioned,cloning,ready,idle,running,archiving,archived,error" });
+  const { sandboxes } = await request<{ sandboxes: Sandbox[] }>(`/sandboxes?${query}`);
+  return sandboxes.at(0);
+}
+
+export async function readySandbox(userId: string, key: string) {
   const deadline = Date.now() + 3 * 60_000;
   const environment = required(env.BOAT_AGENT_ENVIRONMENT);
   const { environments } = await request<{
@@ -47,19 +58,21 @@ export async function readySandbox(existing: string | undefined, key: string) {
   if (!profile?.safeForThirdParties || !profile.proxyAiCredentials) {
     throw new BoatError(400, "unsafe_environment");
   }
+  const existing = (await findSandbox(userId))?.id;
   let id = existing;
   while (Date.now() < deadline) {
     if (!id) {
       try {
-        const created = await request<{ id: string }>("/sandboxes", {
+        const { sandbox } = await request<{ sandbox: Sandbox }>("/sandboxes", {
           key,
           body: {
             environment, type: "default", ttlSeconds: 1800,
+            labels: { "disposabl-user": ownerLabel(userId) },
             snapshots: env.BOAT_AGENT_SNAPSHOTS !== "false",
             ...(env.BOAT_AGENT_SNAPSHOT ? { from: env.BOAT_AGENT_SNAPSHOT } : {}),
           },
         });
-        id = created.id;
+        id = sandbox.id;
       } catch (error) {
         if (error instanceof BoatError && error.status < 500 && error.code !== "idempotency_in_progress") throw error;
       }
@@ -69,7 +82,7 @@ export async function readySandbox(existing: string | undefined, key: string) {
         const { sandbox } = await request<{ sandbox: Sandbox }>(path(id));
         if (["ready", "idle", "running"].includes(sandbox.state)) return id;
         if (["archived", "error", "cancelled"].includes(sandbox.state)) {
-          if (sandbox.snapshots === false || sandbox.state === "cancelled") {
+          if (sandbox.snapshotAvailable === false || sandbox.state === "cancelled") {
             if (id !== existing) throw new Error("New sandbox failed to start.");
             id = undefined;
           }
