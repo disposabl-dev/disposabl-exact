@@ -198,6 +198,13 @@ esac
   assert.equal(calls.length, priorCalls);
   const offline = JSON.parse(await readFile(join(work, "offline-app/disposabl.json"), "utf8"));
   assert.deepEqual(offline, { platforms: ["web"], features: ["authentication"] });
+  await scaffold("headless-app", ["--skip-setup", "--platforms", "mcp,cli", "--features", ""], env);
+  const headless = JSON.parse(await readFile(join(work, "headless-app/disposabl.json"), "utf8"));
+  assert.deepEqual(headless, { platforms: ["mcp", "cli"], features: [] });
+  await assert.rejects(scaffold("invalid-app", ["--skip-setup", "--features", "payments"], env), /payments requires authentication/);
+  await assert.rejects(access(join(work, "invalid-app")), { code: "ENOENT" });
+  await assert.rejects(scaffold("offline-app", ["--skip-setup"], env), /EEXIST/);
+
   const offlineApp = join(work, "offline-app");
   for (const name of ["disposabl-app", "disposabl-reconfigure"]) {
     const file = `${name}/SKILL.md`;
@@ -208,10 +215,4 @@ esac
     }
   }
   await assert.rejects(access(join(offlineApp, "packages/skills")), { code: "ENOENT" });
-  await scaffold("headless-app", ["--skip-setup", "--platforms", "mcp,cli", "--features", ""], env);
-  const headless = JSON.parse(await readFile(join(work, "headless-app/disposabl.json"), "utf8"));
-  assert.deepEqual(headless, { platforms: ["mcp", "cli"], features: [] });
-  await assert.rejects(scaffold("invalid-app", ["--skip-setup", "--features", "payments"], env), /payments requires authentication/);
-  await assert.rejects(access(join(work, "invalid-app")), { code: "ENOENT" });
-  await assert.rejects(scaffold("offline-app", ["--skip-setup"], env), /EEXIST/);
 });
