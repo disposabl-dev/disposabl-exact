@@ -1,3 +1,4 @@
+import boat from "@boatdev/convex/convex.config.js";
 import agent from "@convex-dev/agent/convex.config.js";
 import auth from "@convex-dev/auth/convex.config.js";
 import google from "@convex-dev/auth/components/google/convex.config.js";
@@ -11,14 +12,16 @@ import { v } from "convex/values";
 import { platform } from "@disposabl-kit/server/platforms.ts";
 import { environment, googleConfigured } from "@disposabl-kit/server/components.ts";
 
+// eslint-disable-next-line @convex-dev/no-process-env -- Config evaluation selects the component's required environment binding.
+const boatConfigured = Boolean(process.env.BOAT_API_KEY?.trim());
+
 const app = defineApp({
   env: {
     ...environment,
-    BOAT_API_KEY: v.optional(v.string()),
+    BOAT_API_KEY: boatConfigured ? v.string() : v.optional(v.string()),
     BOAT_AGENT_ENVIRONMENT: v.optional(v.string()),
     BOAT_AGENT_MODEL: v.optional(v.string()),
     BOAT_AGENT_SNAPSHOT: v.optional(v.string()),
-    BOAT_AGENT_SNAPSHOTS: v.optional(v.string()),
   },
 });
 
@@ -29,6 +32,7 @@ app.use(username);
 app.use(rateLimiter);
 app.use(mcp);
 app.use(agent);
+app.use(boat, { env: { BOAT_API_KEY: boatConfigured ? app.env.BOAT_API_KEY : "" } });
 if (googleConfigured) {
   app.use(google, {
     // Keep linked Google accounts when authentication is temporarily disabled.

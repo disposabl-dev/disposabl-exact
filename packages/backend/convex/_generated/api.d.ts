@@ -122,4 +122,5 @@ export declare const components: {
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
   mcp: import("@convex-dev/mcp/_generated/component.js").ComponentApi<"mcp">;
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  boat: import("@boatdev/convex/_generated/component.js").ComponentApi<"boat">;
 };
