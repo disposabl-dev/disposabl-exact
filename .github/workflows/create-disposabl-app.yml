@@ -1,7 +1,7 @@
 name: Exact app generator
 on:
   pull_request:
-    paths: ['packages/create-disposabl-app/**', '.github/**', 'packages/disposabl-kit/**', 'package.json', 'bun.lock', 'scripts/*.mjs', 'README.md']
+    paths: ['packages/create-disposabl-app/**', '.github/**', 'packages/disposabl-kit/**', 'packages/skills/**', 'package.json', 'bun.lock', 'scripts/*.mjs', 'README.md']
   push:
     branches: [main]
 concurrency:

@@ -198,6 +198,16 @@ esac
   assert.equal(calls.length, priorCalls);
   const offline = JSON.parse(await readFile(join(work, "offline-app/disposabl.json"), "utf8"));
   assert.deepEqual(offline, { platforms: ["web"], features: ["authentication"] });
+  const offlineApp = join(work, "offline-app");
+  for (const name of ["disposabl-app", "disposabl-reconfigure"]) {
+    const file = `${name}/SKILL.md`;
+    const source = await readFile(join(packageDir, "../../packages/skills", file), "utf8");
+    for (const path of [`.agents/skills/${file}`, `.claude/skills/${file}`]) {
+      assert.equal(await readFile(join(offlineApp, path), "utf8"), source);
+      execFileSync("git", ["add", "--dry-run", "--", path], { cwd: offlineApp });
+    }
+  }
+  await assert.rejects(access(join(offlineApp, "packages/skills")), { code: "ENOENT" });
   await scaffold("headless-app", ["--skip-setup", "--platforms", "mcp,cli", "--features", ""], env);
   const headless = JSON.parse(await readFile(join(work, "headless-app/disposabl.json"), "utf8"));
   assert.deepEqual(headless, { platforms: ["mcp", "cli"], features: [] });

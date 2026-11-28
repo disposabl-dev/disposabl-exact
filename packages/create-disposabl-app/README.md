@@ -12,6 +12,8 @@ The generator installs `@disposabl/cli` as a development dependency in the new a
 
 The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
+New projects include `disposabl-app` and `disposabl-reconfigure` in `.agents/skills` for Codex and `.claude/skills` for Claude Code.
+
 ```sh
 bunx create-disposabl-app@latest my-app --platforms web,ios --features authentication,payments
 ```
