@@ -8,17 +8,23 @@ cd my-app
 bun run dev
 ```
 
-The generator installs `@disposabl/cli` as a development dependency in the new app root. Sign in to Disposabl and connect GitHub and Convex when prompted. The CLI provisions a repository, a Convex project with a development deployment, and the GitHub Actions Convex deploy key. The generated checkout has that repository as its `origin` and local Convex settings for its backend and Exact app.
+The generator installs `@disposabl/cli` and checks your Disposabl sign-in. It then guides you through GitHub and Convex in order. With both providers connected, setup creates the GitHub repository and Convex project in your accounts, sets the repository as `origin`, and saves the returned `appSlug` in `disposabl.json`. `bun run dev` starts a local Convex development deployment.
 
-The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
+The default project enables web, CLI, and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
 ```sh
 bunx create-disposabl-app@latest my-app --platforms web,ios --features authentication,payments
 ```
 
-The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
+The generator saves your selections in `disposabl.json`. Deployment uses the platforms and features in that file. Use `--features ""` for an app without sign-in or billing.
 
-Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. Run the project CLI with `bun run disposabl --help`.
+Press Ctrl+C to pause. In a non-interactive shell, open the printed provider link and resume after authorizing. From the generated project's parent directory, run `bunx create-disposabl-app@latest my-app --resume`. Setup skips providers already connected to your Disposabl account. Use `--skip-setup` to generate local files only.
+
+## App CLI
+
+Run `bunx disposabl status` from a generated app. The CLI targets the local Convex deployment when configured, or the app’s hosted API otherwise. Override the target with `--origin <url>`.
+
+Run `bunx disposabl login` if your app uses authentication. `bunx disposabl list` shows the commands exposed by its Convex functions with `platforms: true`. For automation, use `bunx disposabl call <operationId> '<json>'` or run a named command. Apps with payments enabled and an Autumn key configured expose `bunx disposabl billing status`.
 
 ## Reset to the clean starter
 
@@ -28,6 +34,6 @@ The generator takes `apps/apps`, `packages/backend`, and the backend workspace m
 
 ## Release from Exact
 
-Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack and test the starter with the published CLI. The **Exact app generator** workflow tests each push to `main` and publishes to npm’s default `latest` tag using the trusted publisher `disposabl-dev/disposabl-exact` and workflow `create-disposabl-app.yml`.
+Run `bun install --frozen-lockfile` and `bun run test` in this directory to pack and test the starter with its bundled CLI. The **Exact app generator** workflow tests each push to `main` and publishes to npm’s default `latest` tag using the trusted publisher `disposabl-dev/disposabl-exact` and workflow `create-disposabl-app.yml`.
 
 The generator uses `semantic-release` with the Conventional Commits preset. Breaking changes bump the major version, `feat:` bumps the minor version, and other changes bump the patch version. Each release tags the existing commit as `create-disposabl-app-vX.Y.Z`. Tag pushes do not start the branch CI workflows.

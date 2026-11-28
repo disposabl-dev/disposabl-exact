@@ -1,11 +1,11 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 const defaultOrigin = "https://www.disposabl.dev";
-const web = JSON.stringify(["web"]);
 
 export const git = (directory, ...args) =>
   execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
@@ -21,122 +21,94 @@ export async function writeJson(path, value) {
   }
 }
 
-async function runCli(directory, origin, args, interactive = false) {
-  const require = createRequire(join(directory, "package.json"));
-  const manifest = require.resolve("@disposabl/cli/package.json");
-  const cli = join(dirname(manifest), require(manifest).bin.disposabl);
-  const output = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, ...args], {
-      cwd: directory,
-      env: { ...process.env, DISPOSABL_API_ORIGIN: origin },
-      stdio: interactive ? "inherit" : ["ignore", "pipe", "inherit"],
-    });
-    let stdout = "";
-    child.stdout?.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
-    child.once("error", reject);
-    child.once("close", code => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error('Disposabl setup failed at "' + args.slice(0, 2).join(" ") + '".'));
-    });
-  });
-  if (interactive) return;
-  try {
-    return JSON.parse(output);
-  } catch {
-    throw new Error("Disposabl setup returned an invalid response.");
-  }
-}
-
-async function updateEnv(directory, relativePath, variables, remove = []) {
-  git(directory, "check-ignore", relativePath);
-  const path = join(directory, relativePath);
-  let existing = "";
-  try {
-    existing = await readFile(path, "utf8");
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  const keys = new Set([...Object.keys(variables), ...remove]);
-  const retained = existing.split("\n").filter(line =>
-    !keys.has(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=/.exec(line)?.[1]));
-  const updated = Object.entries(variables).map(([key, value]) => `${key}=${JSON.stringify(value)}`);
-  const temporary = join(git(directory, "rev-parse", "--absolute-git-dir"), `disposabl-env-${randomUUID()}`);
-  try {
-    await writeFile(temporary, [...retained, ...updated].join("\n").trimStart() + "\n", {
-      flag: "wx", mode: 0o600,
-    });
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
 function githubRepository(url) {
   const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([a-z0-9-]+\/[a-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(url);
   return match?.[1].toLowerCase();
 }
 
-async function configureExact(directory, appId, deployment) {
-  const { name, deployKey, convexUrl, convexSiteUrl, repositoryUrl } = deployment;
-  if (deployment.appId !== appId || typeof name !== "string" || !/^[a-z0-9-]+$/.test(name) ||
-      typeof deployKey !== "string" || !deployKey.startsWith(`dev:${name}|`) || !deployKey.split("|")[1] ||
-      convexUrl !== `https://${name}.convex.cloud` || convexSiteUrl !== `https://${name}.convex.site`) {
-    throw new Error("Disposabl returned mismatched Convex development credentials.");
+function configureRemote(directory, app) {
+  if (typeof app.githubOwner !== "string" || typeof app.githubRepoName !== "string") {
+    throw new Error("Disposabl did not return the app's GitHub repository.");
   }
-  const expected = githubRepository(repositoryUrl);
-  if (!expected) throw new Error("Disposabl did not configure a GitHub repository.");
+  const repository = app.githubOwner + "/" + app.githubRepoName;
+  if (!/^[a-z0-9-]+\/[a-z0-9_.-]+$/i.test(repository)) {
+    throw new Error("Disposabl returned an invalid GitHub repository.");
+  }
   const remotes = git(directory, "remote").split("\n");
   if (remotes.includes("origin")) {
-    const current = git(directory, "config", "--get", "remote.origin.url");
-    if (githubRepository(current) !== expected) {
+    if (githubRepository(git(directory, "config", "--get", "remote.origin.url")) !== repository.toLowerCase()) {
       throw new Error("The existing origin belongs to a different repository.");
     }
   } else {
-    git(directory, "remote", "add", "origin", repositoryUrl);
+    git(directory, "remote", "add", "origin", "https://github.com/" + repository + ".git");
   }
-
-  await updateEnv(directory, "packages/backend/.env.local", {
-    CONVEX_DEPLOY_KEY: deployKey,
-    CONVEX_URL: convexUrl,
-    CONVEX_SITE_URL: convexSiteUrl,
-  }, ["CONVEX_DEPLOYMENT"]);
-  await updateEnv(directory, "apps/apps/.env.local", {
-    CONVEX_ORIGIN: convexUrl.replace(/^https:/, "wss:"),
-    CONVEX_SITE_ORIGIN: convexSiteUrl,
-  });
+  return repository;
 }
 
-export async function setup(directory, name, config) {
-  const origin = process.env.DISPOSABL_API_ORIGIN || defaultOrigin;
-  if (config.appId && config.serviceOrigin !== origin) {
+async function connect(client, terminal, signal, provider, label, providerLink, openUrl) {
+  const path = "/api/connections/" + provider;
+  const status = () => client.request(path + "/status", { signal }, true);
+  if ((await status()).connected) return terminal.progress(label + " connected.");
+
+  const { url } = await client.request(path + "/connect", { method: "POST", signal }, true);
+  const link = providerLink(provider, url);
+  terminal.progress("Open this link to connect " + label + ".\n" + link);
+  if (!terminal.interactive) throw new Error("Setup paused. Open the link, finish connecting " + label + ", then resume.");
+  openUrl(link);
+
+  terminal.progress("Waiting for " + label + ". Press Ctrl+C to pause.");
+  const expiresAt = Date.now() + 10 * 60_000;
+  while (Date.now() < expiresAt) {
+    await delay(2_000, undefined, { signal });
+    if ((await status()).connected) return terminal.progress(label + " connected.");
+  }
+  throw new Error(label + " connection timed out. Resume to check again.");
+}
+
+export async function setup(directory, name, config, terminal, signal) {
+  const require = createRequire(join(directory, "package.json"));
+  const cli = dirname(require.resolve("@disposabl/cli/package.json"));
+  const { createClient, providerLink } = await import(join(cli, "client.mjs"));
+  const { sandboxSession } = await import(join(cli, "sandbox.mjs"));
+  const { openUrl } = await import(join(cli, "auth.mjs"));
+  const client = createClient(process.env.DISPOSABL_API_ORIGIN || sandboxSession()?.origin || defaultOrigin);
+  if (config.serviceOrigin && config.serviceOrigin !== client.origin) {
     throw new Error("Set DISPOSABL_API_ORIGIN to the original Disposabl API origin before resuming.");
   }
 
-  const features = JSON.stringify(config.features.filter(feature => feature !== "payments"));
-  const run = (args, interactive) => runCli(directory, origin, args, interactive);
-  if (!(await run(["login", "status"])).currentUser) {
-    await run(["login"], true);
-    if (!(await run(["login", "status"])).currentUser) throw new Error("Disposabl login did not complete.");
+  terminal.progress("[1/4] Check Disposabl sign-in");
+  if (!await client.currentUser({ signal })) {
+    terminal.progress("Sign in in your browser, then return here to continue. Press Ctrl+C to pause.");
+    await client.signIn(terminal.interactive);
+    if (!await client.currentUser({ signal })) throw new Error("Disposabl login did not complete.");
   }
-  if (!(await run(["connections", "status", "--features", features, "--wait", "--setup-origin"])).ready) {
-    throw new Error("Connect GitHub and Convex to continue setup.");
+  terminal.progress("Signed in to Disposabl.");
+
+  terminal.progress("[2/4] Connect GitHub");
+  await connect(client, terminal, signal, "github", "GitHub", providerLink, openUrl);
+  terminal.progress("[3/4] Connect Convex");
+  await connect(client, terminal, signal, "convex", "Convex", providerLink, openUrl);
+
+  terminal.progress("[4/4] Provision your GitHub repository and Convex project");
+  const app = await client.request("/api/apps/create", {
+    method: "POST", signal, timeout: 120_000,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ appSlug: name, appName: name }),
+  }, true);
+  if (app.appSlug !== name) {
+    throw new Error("Disposabl did not return the expected app slug.");
+  }
+  if ((config.appSlug && config.appSlug !== app.appSlug) || (config.appId && config.appId !== app.appId)) {
+    throw new Error("This project is linked to a different Disposabl app.");
   }
 
-  if (!config.appId) {
-    const app = await run(["apps", "create", "--name", name, "--platforms", web, "--features", features]);
-    if (typeof app.appId !== "string" || !app.appId) throw new Error("Disposabl did not return an app ID.");
-    config.appId = app.appId;
-    config.serviceOrigin = origin;
-    await writeJson(join(directory, "disposabl.json"), config);
+  const repository = configureRemote(directory, app);
+  delete config.appId;
+  config.appSlug = app.appSlug;
+  config.serviceOrigin = client.origin;
+  if (typeof app.convexSiteUrl === "string" && /^https:\/\/[a-z0-9-]+\.convex\.site$/.test(app.convexSiteUrl)) {
+    config.apiOrigin = app.convexSiteUrl;
   }
-
-  // The CLI response stays in the stdout pipe. Write development credentials to Exact's layout.
-  const deployment = await run([
-    "previews", "token", "create", "--appId", config.appId, "--reference", "main",
-    "--platforms", web, "--features", features,
-  ]);
-  await configureExact(directory, config.appId, deployment);
-  if (config.platforms.some(platform => ["android", "ios", "macos"].includes(platform))) {
-    execFileSync("bash", [".github/ci/android-key.sh", config.platforms.includes("android") ? "android" : "update"], { cwd: directory, stdio: "inherit" });
-  }
+  await writeJson(join(directory, "disposabl.json"), config);
+  terminal.progress("App linked to " + repository + ". App slug saved in disposabl.json.");
 }

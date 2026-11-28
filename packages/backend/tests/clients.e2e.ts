@@ -142,6 +142,9 @@ test("installed packages follow the deployed API and feature settings", async ()
         )
       : undefined;
     if (sdk) expect(typeof sdk.createClient).toBe("function");
+    const spec = await (await operation("/openapi.json")).json();
+    const billingAvailable = spec["x-disposabl"].payments;
+    if (fixture) expect(billingAvailable).toBe(false);
     if (cliCalls) {
       const listed = await cli("", "list");
       expect(listed.exitCode).toBe(0);
@@ -152,11 +155,11 @@ test("installed packages follow the deployed API and feature settings", async ()
             ({ operationId }: { operationId: string }) =>
               operationId === paymentId,
           ),
-      ).toBe(platform.payments);
+      ).toBe(billingAvailable);
     }
     if (sdk)
       expect(typeof sdk.billingIndexStatus === "function").toBe(
-        platform.payments,
+        billingAvailable,
       );
     if (!fixture) return;
 
@@ -169,11 +172,27 @@ test("installed packages follow the deployed API and feature settings", async ()
         })
       ).status,
     ).toBe(platform.authentication && platform.web ? 200 : 404);
-    expect((await operation(paymentPath)).status).toBe(
-      platform.payments ? 401 : 404,
-    );
+    expect((await operation(paymentPath)).status).toBe(404);
+    if (cliCalls) {
+      const billing = await cli("", "billing", "status");
+      expect(billing.exitCode).not.toBe(0);
+      expect(billing.stderr.toString()).toContain("unknown command 'billing'");
+    }
 
     const { userId, key } = await readKey();
+    if (platform.mcp) {
+      const response = await operation("/mcp", {
+        method: "POST",
+        headers: {
+          ...withKey(key),
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      const { result } = await response.json();
+      expect(result.tools.some(({ name }: { name: string }) => name === paymentId)).toBe(false);
+    }
     const writable = await convex("mcp:createApiKeyForUser", {
       userId,
       scopes: ["read", "write"],
@@ -193,7 +212,7 @@ test("installed packages follow the deployed API and feature settings", async ()
         (
           await cli(key, "call", "clientTest_echo", JSON.stringify({ filter }))
         ).stderr.toString(),
-      ).toContain("403");
+      ).toContain("insufficient_scope");
       expect(
         (
           await cli(
@@ -213,7 +232,7 @@ test("installed packages follow the deployed API and feature settings", async ()
             JSON.stringify(query),
           )
         ).stderr.toString(),
-      ).toContain("401");
+      ).toContain("unauthorized");
     }
     if (sdk) {
       expect(
@@ -237,42 +256,6 @@ test("installed packages follow the deployed API and feature settings", async ()
       ).toBe(401);
     }
 
-    if (platform.payments) {
-      const status = { mode: "off", credits: null, monthlyActive: false };
-      if (cliCalls)
-        expect((await cli(key, "call", paymentId)).json()).toMatchObject(
-          status,
-        );
-      if (sdk)
-        expect(
-          (await sdk.billingIndexStatus({ client: sdkClient(key) })).data,
-        ).toMatchObject(status);
-      expect(
-        (
-          await operation(`${paymentPath}?userId=${userId}`, {
-            headers: withKey(key),
-          })
-        ).status,
-      ).toBe(400);
-      const result = await operation("/mcp", {
-        method: "POST",
-        headers: {
-          ...withKey(key),
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: { name: paymentId },
-        }),
-      });
-      expect(await result.json()).toMatchObject({
-        result: { structuredContent: status },
-      });
-    }
-
     const connections = await convex("mcp:createApiKeyForUser", {
       userId,
       scopes: ["read"],
@@ -288,7 +271,7 @@ test("installed packages follow the deployed API and feature settings", async ()
             JSON.stringify(query),
           )
         ).stderr.toString(),
-      ).toContain("401");
+      ).toContain("unauthorized");
     if (sdk)
       expect(
         (

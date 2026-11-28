@@ -2,10 +2,9 @@ name: Deploy app
 on:
   workflow_call:
     secrets:
-      ANDROID_APK_SIGNING: { required: false }
-      EXACT_UPDATE_SEED: { required: false }
       CONVEX_DEPLOY_KEY: { required: false }
       CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
+      DISPOSABL_PUBLISH_KEY: { required: false }
   pull_request:
     paths-ignore: &generator-only ['packages/create-disposabl-app/**', '.github/workflows/create-disposabl-app.yml']
   push:
@@ -63,12 +62,18 @@ jobs:
       - if: needs.config.outputs.web == 'true'
         env: { GH_TOKEN: '${{ github.token }}', EXACT_REF: '${{ needs.config.outputs.exact }}' }
         run: bash "$CI_SCRIPTS/setup.sh" web
-      - env:
+      - id: deploy
+        env:
           WEB: ${{ needs.config.outputs.web }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PREVIEW_BUILD_ONLY: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
           CONVEX_DEPLOY_KEY: ${{ secrets[github.event_name == 'pull_request' && 'CONVEX_DEPLOY_KEY_PREVIEW' || 'CONVEX_DEPLOY_KEY'] }}
         run: bash "$CI_SCRIPTS/web.sh"
+      - if: github.event_name == 'push' && needs.config.outputs.web == 'true'
+        env:
+          DISPOSABL_PUBLISH_KEY: ${{ secrets.DISPOSABL_PUBLISH_KEY }}
+          SITE_URL: ${{ steps.deploy.outputs.site }}
+        run: bun --no-env-file "$CI_SCRIPTS/report-publish.mjs" web "$SITE_URL"
 
   native:
     needs: config
@@ -78,7 +83,6 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.config.outputs.native) }}
     runs-on: ubuntu-24.04
-    environment: { name: android-production, deployment: false }
     env:
       EXACT_CACHE_TAGS: ${{ needs.config.outputs.cache }}
       PLATFORM: ${{ matrix.platform }}
@@ -100,15 +104,17 @@ jobs:
           bun install --frozen-lockfile
       - id: probe
         working-directory: apps/apps
-        env: &update-key { EXACT_UPDATE_SEED: '${{ secrets.EXACT_UPDATE_SEED }}' }
-        run: &plan bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+        env: &production-key { CONVEX_DEPLOY_KEY: '${{ secrets.CONVEX_DEPLOY_KEY }}' }
+        run: &plan |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" plan "$PLATFORM"
       - if: steps.probe.outputs.tools == 'true' || steps.probe.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
         run: bash "$CI_SCRIPTS/setup.sh" web ota
       - id: plan
         if: steps.probe.outputs.tools == 'true'
         working-directory: apps/apps
-        env: *update-key
+        env: *production-key
         run: *plan
       - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
@@ -117,8 +123,14 @@ jobs:
       - if: *native
         working-directory: apps/apps
         env:
-          ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
-        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
+          CONVEX_DEPLOY_KEY: ${{ matrix.platform == 'android' && secrets.CONVEX_DEPLOY_KEY || '' }}
+        run: |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          if [[ "$PLATFORM" == android ]]; then
+            bash "$ci/with-signing.sh" ANDROID_APK_SIGNING bash "$ci/native.sh" build "$PLATFORM"
+          else
+            bash "$ci/native.sh" build "$PLATFORM"
+          fi
       - if: *native
         working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
@@ -132,5 +144,10 @@ jobs:
           printf '[Install %s](%s)\n' "$PLATFORM" "$(jq -er .url "$RUNNER_TEMP/installer-$PLATFORM.json")" >> "$GITHUB_STEP_SUMMARY"
       - if: *native
         working-directory: apps/apps
-        env: *update-key
-        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"
+        env: *production-key
+        run: |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" seed "$PLATFORM"
+      - env:
+          DISPOSABL_PUBLISH_KEY: ${{ secrets.DISPOSABL_PUBLISH_KEY }}
+        run: bun --no-env-file "$CI_SCRIPTS/report-publish.mjs" "$PLATFORM"

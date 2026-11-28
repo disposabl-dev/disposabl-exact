@@ -11,18 +11,22 @@
     "lint": "bun run typecheck && cd .. && eslint --config backend/eslint.config.mjs backend/convex disposabl-kit/server --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@convex-dev/agent": "0.7.11",
     "@convex-dev/auth": "2.1.0",
     "@convex-dev/mcp": "0.1.0-alpha.7",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/static-hosting": "0.2.2",
     "@disposabl-kit/server": "workspace:*",
-    "convex": "^1.51.0"
+    "convex": "^1.51.0",
+    "libsodium-wrappers": "0.8.4",
+    "node-forge": "1.4.4"
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^5.0.0",
     "@eslint/eslintrc": "^3.3.6",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
+    "@types/node-forge": "1.3.14",
     "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/parser": "^8.66.0",
     "@typescript/native": "npm:typescript@^7.0.2",

@@ -1,9 +1,15 @@
-# Exact app CLI
+# Disposabl CLI
 
-Set `DISPOSABL_API_ORIGIN` to the app's HTTP origin and provide its API key as
-`DISPOSABL_API_KEY`. Use `exact-app list` to discover operations. Use
-`exact-app call <operation-id>` to call one, with arguments as a JSON object.
+Run `bunx disposabl` from a generated app. The CLI uses its local Convex HTTP origin when configured and its hosted API otherwise. Use `--origin <url>` or `DISPOSABL_API_ORIGIN` to choose a target.
 
-With payments enabled, read account billing status with
-`exact-app call billing_index_status`. The API key determines which account the
-command reads.
+| Command | What it does |
+| --- | --- |
+| `disposabl status` | Reports the current user and whether the app uses authentication. |
+| `disposabl login` and `disposabl logout` | Manage the session for an app with authentication enabled. |
+| `disposabl list` | Lists the app’s enabled commands and their operation IDs. |
+| `disposabl call <operationId> '<json>'` | Invokes an operation with a JSON object. |
+| `disposabl billing status` | Reads plan and credits when payments are enabled and an Autumn key is configured. |
+
+Use `disposabl <command> --help` to see the arguments for a function command. Run `disposabl login --no-browser` to print the approval link. For automation, set `DISPOSABL_API_KEY` to a scoped key issued for the target app.
+
+On the Disposabl service, run `disposabl connections status` to check both providers. Run `disposabl connections github` or `disposabl connections convex` followed by `status`, `connect`, or `disconnect`. The `connect` command opens the authorization link. Use `--no-browser` to print it instead.

@@ -1,5 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { activeTurn } from "./agent/validators";
+import { convexAccount, flow, githubAccount } from "./connections/validators";
 
 const platformResult = v.object({
   url: v.optional(v.string()),
@@ -31,7 +33,9 @@ const appPlatforms = v.union(
 );
 
 export default defineSchema({
-  users: defineTable({ name: v.optional(v.string()) }),
+  users: defineTable({
+    name: v.optional(v.string()),
+  }),
 
   apps: defineTable({
     userId: v.id("users"),
@@ -40,30 +44,42 @@ export default defineSchema({
     githubOwner: v.string(),
     githubRepoName: v.string(),
     convexProjectId: v.number(),
+    convexSiteUrl: v.optional(v.string()),
     prod: appPlatforms,
     live: appPlatforms,
+    publishKeyId: v.optional(v.string()),
+    agentThreadId: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
-    .index("by_slug", ["slug"]),
+    .index("by_slug", ["slug"])
+    .index("by_publishKeyId", ["publishKeyId"])
+    .index("by_agentThreadId", ["agentThreadId"]),
 
   previews: defineTable({
-    appId: v.id("apps"),
+    appSlug: v.string(),
     previewName: v.string(),
     previewSlug: v.string(),
     platforms: previewPlatforms,
   })
-    .index("by_appId", ["appId"])
+    .index("by_appSlug", ["appSlug"])
     .index("by_previewSlug", ["previewSlug"]),
+
+  agentSandboxes: defineTable({
+    userId: v.id("users"),
+    sandboxId: v.optional(v.string()),
+    turn: v.optional(activeTurn),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_tokenHash", ["turn.tokenHash"]),
 
   connections: defineTable({
     userId: v.id("users"),
-    github: v.optional(v.object({
-      owner: v.string(),
-      installationId: v.string(),
-    })),
-    convex: v.optional(v.object({
-      teamId: v.number(),
-      accessToken: v.string(),
-    })),
-  }).index("by_userId", ["userId"]),
+    github: v.optional(githubAccount),
+    convex: v.optional(convexAccount),
+    githubFlow: v.optional(flow),
+    convexFlow: v.optional(flow),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_github_state", ["githubFlow.stateHash"])
+    .index("by_convex_state", ["convexFlow.stateHash"]),
 });

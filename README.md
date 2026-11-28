@@ -8,7 +8,7 @@ Starter kit for building apps and agents with Exact and Convex.
 
 ```json
 {
-  "platforms": ["web"],
+  "platforms": ["web", "cli"],
   "features": ["authentication"]
 }
 ```
@@ -23,9 +23,9 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 ## First deployment from a new repository
 
-Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses two repository secrets, `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
+Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
 
-For any native platform, the generator provisions `EXACT_UPDATE_SEED` in the repository’s `android-production` GitHub environment. Android also gets a persistent APK signing key for direct installation. To add native delivery after creating a project, run `bash .github/ci/android-key.sh android` for Android or `bash .github/ci/android-key.sh update` for Apple platforms only. Running these commands again reuses the existing keys.
+Generator setup calls `apps.create` after you sign in and connect GitHub and Convex. Push the generated files to your provisioned repository. The workflow uses the app's `DISPOSABL_PUBLISH_KEY` to record successful production publishes in Disposabl. Native CI reads `EXACT_UPDATE_SEED` and `ANDROID_APK_SIGNING` from the app's production Convex deployment using `CONVEX_DEPLOY_KEY`.
 
 On the first deployment, CI builds each selected native app on Ubuntu and writes its AppDrop link to the job summary. Android produces a signed APK, iOS produces a device IPA for re-signing, and macOS produces an ad-hoc-signed, non-notarized app ZIP. Subsequent deployments publish compatible app changes as signed over-the-air updates. Changes that require a new native binary or include changed static assets produce a new installer link. Web and its backend share a Convex site URL. Pull requests preview web only.
 
@@ -82,7 +82,7 @@ Sign in on the Exact web app at `/dashboard/api-keys` to create or revoke a key 
 
 REST read operations use GET with URL parameters. Write operations take a JSON body with POST. `/openapi.json` describes the available operations and their scopes.
 
-With web and authentication enabled, Exact web serves `/dashboard/api-keys` and MCP consent. When either is off, use a bearer API key created by a deployment operator. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key. Store the returned key securely.
+With web and authentication enabled, Exact web serves `/dashboard/api-keys` and OAuth consent. CLI-only apps with authentication have their own sign-in page. A deployment operator can issue a bearer API key for automation. Create a service identity once from `packages/backend`, then use its ID when issuing or rotating a scoped key.
 
 ```sh
 bun run convex run mcp:createServiceUser '{"name":"My integration"}'
@@ -95,10 +95,7 @@ Use `["read","write"]` for an integration that needs write access. Revoke the ke
 
 Choose `cli` or `typescript-sdk` to enable the corresponding client. The SDK uses the app’s OpenAPI contract.
 
-Both clients use a scoped API key. Sign in on the web app to issue a personal
-key, or have a deployment operator issue a service key for a headless app.
-When payments are enabled, clients can read their account's plan and credits.
-Checkout and billing management are available on the web app.
+Use `bunx disposabl status`, `bunx disposabl login` and `bunx disposabl list` from the project directory. The CLI exposes functions marked `platforms: true` and skips sign-in when the app disables authentication. Both clients accept scoped API keys for automation. When payments are enabled and an Autumn key is configured, `bunx disposabl billing status` reads the account’s plan and credits. Checkout and billing management are available in the web app.
 
 See the [CLI](packages/cli/README.md) and [SDK](packages/sdk/README.md) for usage.
 

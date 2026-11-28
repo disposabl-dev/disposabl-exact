@@ -1,9 +1,10 @@
 import { toJsonSchema, type JSONSchema } from "@convex-dev/mcp";
 import type { HttpRouter } from "convex/server";
-import { convexToJson, v, type GenericValidator, type Value } from "convex/values";
-import { httpAction } from "../../backend/convex/_generated/server";
+import { ConvexError, convexToJson, v, type GenericValidator, type Value } from "convex/values";
+import { httpAction, type ActionCtx } from "../../backend/convex/_generated/server";
 import { api } from "../../backend/convex/_generated/api";
 import { siteOrigin } from "./authSettings";
+import { billingAvailable } from "./billing/index";
 import { mcp, service } from "./mcp";
 import { invoke, operations, validate, type Operation } from "./operations";
 import { isAppRequest, readBody, reply, requestClient } from "./requests";
@@ -19,15 +20,23 @@ function queryArgs(operation: Operation, search: URLSearchParams) {
   }));
 }
 
-function endpoint(operation: Operation) {
+export type SandboxAuthorization = (ctx: ActionCtx, request: Request) => Promise<{
+  userId: string;
+  allows: (operation: Operation, args: Record<string, Value>) => boolean | Promise<boolean>;
+  onSuccess?: (operation: Operation, args: Record<string, Value>) => Promise<unknown>;
+} | null>;
+
+function endpoint(operation: Operation, authentication: boolean, authorizeSandbox?: SandboxAuthorization) {
+  const secured = authentication || operation.usesUser;
   return httpAction(async (ctx, request) => {
-    const user = await mcp.authenticate(ctx, request);
-    if (!user || user.clientId !== undefined) {
+    const sandbox = secured ? await authorizeSandbox?.(ctx, request) : null;
+    const user = secured && !sandbox ? await mcp.authenticate(ctx, request) : null;
+    if (secured && !user && !sandbox) {
       return Response.json({ error: "unauthorized" }, {
         status: 401, headers: { "WWW-Authenticate": "Bearer" },
       });
     }
-    if (!user.scopes.includes(operation.scope)) return reply({ error: "insufficient_scope" }, 403);
+    if (user && !user.scopes.includes(operation.scope)) return reply({ error: "insufficient_scope" }, 403);
     if (request.method !== operation.method) {
       return Response.json({ error: "method_not_allowed" }, {
         status: 405, headers: { Allow: operation.method },
@@ -45,9 +54,20 @@ function endpoint(operation: Operation) {
     }
     const parsed = validate(operation, input);
     if (!parsed.ok) return reply({ error: "invalid_arguments" }, 400);
-    return Response.json(convexToJson(await invoke(ctx, operation, parsed.value as Record<string, Value>, user.userId)), {
-      headers: { "Cache-Control": "no-store" },
-    });
+    try {
+      const args = parsed.value as Record<string, Value>;
+      if (sandbox && !await sandbox.allows(operation, args)) return reply({ error: "insufficient_scope" }, 403);
+      const output = await invoke(ctx, operation, args, sandbox?.userId ?? user?.userId);
+      await sandbox?.onSuccess?.(operation, args);
+      return Response.json(convexToJson(output), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      if (error instanceof ConvexError && typeof error.data === "string") {
+        return reply({ error: error.data }, 400);
+      }
+      throw error;
+    }
   });
 }
 
@@ -79,11 +99,12 @@ function resultSchema(validator: GenericValidator): JSONSchema {
 }
 
 const content = (schema: JSONSchema) => ({ "application/json": { schema } });
-const openapi = httpAction(async () => {
+const openapi = (authentication: boolean) => httpAction(async () => {
   const { title, version } = service;
   return Response.json({
     openapi: "3.1.2",
     info: { title, version },
+    "x-disposabl": { authentication, payments: billingAvailable() },
     servers: [{ url: siteOrigin() }],
     security: [{ apiKey: [] }],
     components: { securitySchemes: { apiKey: { type: "http", scheme: "bearer" } } },
@@ -91,6 +112,7 @@ const openapi = httpAction(async () => {
       [operation.method.toLowerCase()]: {
         operationId: operation.name,
         description: operation.description,
+        ...(!authentication && !operation.usesUser ? { security: [] } : {}),
         "x-required-scope": operation.scope,
         ...(operation.method === "GET" ? {
           parameters: Object.entries(operation.args).map(([name, field]) => ({
@@ -109,13 +131,20 @@ const openapi = httpAction(async () => {
   }, { headers: { "Cache-Control": "no-cache" } });
 });
 
-export function registerRest(http: HttpRouter) {
+const currentUser = (authorizeSandbox?: SandboxAuthorization) => httpAction(async (ctx, request) => {
+  const user = await authorizeSandbox?.(ctx, request) ?? await mcp.authenticate(ctx, request);
+  if (!user) return reply({ error: "unauthorized" }, 401);
+  return reply({ id: user.userId });
+});
+
+export function registerRest(http: HttpRouter, config: { authentication: boolean; payments: boolean }, authorizeSandbox?: SandboxAuthorization) {
   for (const operation of operations) {
-    const handler = endpoint(operation);
+    const handler = endpoint(operation, config.authentication, authorizeSandbox);
     http.route({ path: operation.path, method: "GET", handler });
     http.route({ path: operation.path, method: "POST", handler });
   }
-  http.route({ path: "/openapi.json", method: "GET", handler: openapi });
+  http.route({ path: "/openapi.json", method: "GET", handler: openapi(config.authentication) });
+  if (config.authentication) http.route({ path: "/api/users/current", method: "GET", handler: currentUser(authorizeSandbox) });
 }
 
 const appCall = httpAction(async (ctx, request) => {

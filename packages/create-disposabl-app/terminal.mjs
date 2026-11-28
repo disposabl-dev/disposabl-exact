@@ -47,7 +47,11 @@ export function createTerminal() {
         required: false,
       }));
     },
-    async install(directory, config) {
+    progress(message) {
+      if (interactive) prompts.log.step(message);
+      else console.log(message);
+    },
+    async install(directory, config, signal) {
       const progress = interactive ? prompts.spinner() : null;
       if (interactive) {
         const names = ids => ids.map(id => labels[id] ?? id).join(", ") || "None";
@@ -59,15 +63,16 @@ export function createTerminal() {
       }
       progress?.start("Installing project dependencies");
       try {
-        await exec("bun", ["install", "--frozen-lockfile"], { cwd: directory });
+        await exec("bun", ["install", "--frozen-lockfile"], { cwd: directory, signal });
         progress?.stop("Project dependencies installed");
       } catch (error) {
         progress?.stop("Dependency installation failed");
         throw error;
       }
     },
-    complete(directory) {
-      const message = `Created ${directory}\n\ncd ${basename(directory)}\nbun run dev`;
+    complete(directory, linked) {
+      const deploy = linked ? "\n\nTo deploy, commit your files and run git push -u origin main." : "";
+      const message = `Created ${directory}\n\ncd ${basename(directory)}\nbun run dev${deploy}`;
       if (interactive) prompts.outro(message);
       else console.log(message);
     },

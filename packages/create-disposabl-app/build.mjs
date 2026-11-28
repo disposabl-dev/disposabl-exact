@@ -9,7 +9,6 @@ const root = join(import.meta.dirname, "../..");
 const templatePaths = [
   ".gitignore", "package.json", "bun.lock", "scripts/dev.mjs", "scripts/dev-web.mjs", "scripts/exact.mjs",
   "README.md", "packages/.gitignore", "packages/disposabl-kit", "packages/cli", "packages/sdk",
-  ".github/ci/android-key.sh",
 ];
 
 const temporary = await realpath(await mkdtemp(join(tmpdir(), "exact-starter-")));

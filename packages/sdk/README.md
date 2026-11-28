@@ -12,5 +12,5 @@ const client = createClient({
 });
 ```
 
-When payments are enabled at build time, `billingIndexStatus({ client })`
+When the app's API exposes payments at build time, `billingIndexStatus({ client })`
 reads billing status for the account that owns the API key.

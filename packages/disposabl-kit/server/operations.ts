@@ -1,6 +1,7 @@
 import { checkValue } from "@convex-dev/mcp";
 import { makeFunctionReference, type FunctionType, type GenericActionCtx, type GenericDataModel } from "convex/server";
 import { asObjectValidator, v, type GenericValidator, type PropertyValidators, type Value } from "convex/values";
+import { billingAvailable } from "./billing/index";
 import { platform } from "./platform";
 import definitions from "../../backend/platforms.generated";
 
@@ -12,6 +13,8 @@ type PlatformFunction = {
   feature?: "authentication" | "payments";
   readOnly?: true;
 };
+
+const enabledFeatures = { authentication: platform.authentication, payments: billingAvailable() };
 
 export const operations = Object.entries(definitions).map(([id, definition]) => {
   const exposed = (definition as { platform?: PlatformFunction }).platform;
@@ -29,11 +32,11 @@ export const operations = Object.entries(definitions).map(([id, definition]) => 
     feature: exposed.feature,
     description: exposed.description ?? `Call ${id}.`,
     name: id.replace(/[^a-zA-Z0-9_.-]/g, "_"),
-    path: `/api/${id.replace(":", "/")}`,
+    path: `/api/${id.replace(/\/internal:/, ":").replace(":", "/")}`,
     method: readOnly ? "GET" as const : "POST" as const,
     scope: readOnly ? "read" : "write",
   };
-}).filter(operation => !operation.feature || platform[operation.feature]);
+}).filter(operation => !operation.feature || enabledFeatures[operation.feature]);
 if (new Set(operations.map(op => op.name)).size !== operations.length)
   throw new Error("Two functions have the same MCP tool name");
 
@@ -41,8 +44,12 @@ export type Operation = (typeof operations)[number];
 export const validate = (operation: Operation, input: unknown) => checkValue(v.object(operation.args), input);
 
 type Caller = Pick<GenericActionCtx<GenericDataModel>, "runQuery" | "runMutation" | "runAction">;
-export function invoke(ctx: Caller, operation: Operation, args: Record<string, Value>, userId: string): Promise<Value> {
-  const input = operation.usesUser ? { ...args, userId } : args;
+export function invoke(ctx: Caller, operation: Operation, args: Record<string, Value>, userId?: string): Promise<Value> {
+  let input = args;
+  if (operation.usesUser) {
+    if (!userId) throw new Error("This operation requires a user.");
+    input = { ...args, userId };
+  }
   const reference = <Kind extends FunctionType>() =>
     makeFunctionReference<Kind, typeof input, Value>(operation.id);
   switch (operation.kind) {

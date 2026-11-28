@@ -21,7 +21,14 @@ const tools = Object.fromEntries(operations.map(operation => [
 class AppMcpServer extends McpServer {
   override async authenticate(ctx: ToolCtx, request: Request) {
     const user = await super.authenticate(ctx, request);
-    return !platform.consent && user?.clientId !== undefined ? null : user;
+    return !platform.oauth && user?.clientId !== undefined ? null : user;
+  }
+
+  override async handleMcp(ctx: ToolCtx, request: Request) {
+    if (platform.mcp) return super.handleMcp(ctx, request);
+    return new Response(null, { status: 401, headers: {
+      "WWW-Authenticate": `Bearer resource_metadata="${this.issuer}/.well-known/oauth-protected-resource/mcp"`,
+    } });
   }
 }
 
@@ -41,7 +48,7 @@ function platformUser(ctx: { auth: Parameters<typeof getAuthUserId>[0]["auth"] }
 }
 
 export const { authorize } = mcp.api({
-  getUserId: (ctx) => platform.consent ? platformUser(ctx) : Promise.resolve(null),
+  getUserId: (ctx) => platform.oauth ? platformUser(ctx) : Promise.resolve(null),
 });
 export const { createApiKey, listConnections, revokeConnection } = mcp.api({
   getUserId: (ctx) => platform.credentials ? platformUser(ctx) : Promise.resolve(null),

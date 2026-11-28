@@ -1,4 +1,4 @@
 {
-  "platforms": ["web"],
+  "platforms": ["web", "cli"],
   "features": ["authentication"]
 }

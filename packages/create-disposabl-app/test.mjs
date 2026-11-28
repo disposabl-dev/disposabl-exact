@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { parseEnv, promisify } from "node:util";
+import { promisify } from "node:util";
 import { list } from "tar";
 import { starterRef } from "./reset-app.mjs";
 import { parseDocument } from "yaml";
@@ -13,23 +13,26 @@ import { parseDocument } from "yaml";
 const exec = promisify(execFile);
 const packageDir = import.meta.dirname;
 const appId = "00000000-0000-4000-8000-000000000001";
+const convexSiteUrl = "https://exact-demo.convex.site";
 const repositoryUrl = "https://github.com/example/exact-demo.git";
-const deployKey = "dev:test-deployment|fixture-key";
-const convexUrl = "https://test-deployment.convex.cloud";
-const convexSiteUrl = "https://test-deployment.convex.site";
-
-const features = { type: "array", items: { type: "string" } };
-const schema = properties => ({ content: { "application/json": { schema: { type: "object", properties } } } });
-const text = { type: "string" };
+const links = {
+  github: "https://github.com/login/oauth/authorize?state=test",
+  convex: "https://dashboard.convex.dev/oauth/authorize/team?state=test",
+};
+const fields = { appSlug: { type: "string" }, appName: { type: "string" } };
 const contract = {
   paths: {
-    "/api/connections/status": { get: { parameters: [{ name: "features", content: { "application/json": { schema: features } } }] } },
-    "/api/apps/create": { post: { requestBody: schema({ name: text, platforms: features, features }) } },
-    "/api/previews/token/create": { post: { requestBody: schema({ appId: text, reference: text, platforms: features, features }) } },
+    ...Object.fromEntries(Object.keys(links).flatMap(provider => [
+      ["/api/connections/" + provider + "/status", { get: {} }],
+      ["/api/connections/" + provider + "/connect", { post: {} }],
+    ])),
+    "/api/apps/create": { post: { requestBody: { content: {
+      "application/json": { schema: { type: "object", properties: fields, required: Object.keys(fields) } },
+    } } } },
   },
 };
 
-test("the packed generator defaults to web and preserves selections through provider setup", async t => {
+test("the packed generator defaults to web and CLI and preserves selections through provider setup", async t => {
   const work = await mkdtemp(join(tmpdir(), "create-disposabl-app-test-"));
   t.after(() => rm(work, { recursive: true, force: true }));
   const archive = join(work, "generator.tgz");
@@ -58,8 +61,10 @@ test("the packed generator defaults to web and preserves selections through prov
   const read = file => readFile(join(directory, file), "utf8");
   const config = async () => JSON.parse(await read("disposabl.json"));
 
-  let failSetup = true;
-  let creations = 0;
+  const connected = { github: false, convex: false };
+  let failCreate = true;
+  let created = false;
+  let holdGitHubStatus;
   const calls = [];
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
@@ -68,29 +73,29 @@ test("the packed generator defaults to web and preserves selections through prov
     if (url.pathname === "/openapi.json") return send(contract);
     calls.push(url.pathname);
     if (url.pathname === "/api/users/current") return send({ id: "fake-user" });
+    const connection = /^\/api\/connections\/(github|convex)\/(status|connect)$/.exec(url.pathname);
+    if (connection) {
+      const [, provider, command] = connection;
+      if (provider === "github" && command === "status" && holdGitHubStatus) {
+        holdGitHubStatus();
+        return;
+      }
+      return send(command === "status" ? { connected: connected[provider] } : { url: links[provider] });
+    }
     let body = "";
     for await (const chunk of request) body += chunk;
-    const input = body ? JSON.parse(body) : Object.fromEntries([...url.searchParams].map(([key, value]) => [key, JSON.parse(value)]));
-    if (url.pathname === "/api/connections/status") {
-      return send({ ready: !("mobile" in input) });
-    }
-    if (JSON.stringify(input.platforms) !== '["web"]' ||
-        JSON.stringify(input.features) !== '["authentication"]') {
+    const input = JSON.parse(body);
+    if (url.pathname !== "/api/apps/create" || !connected.github || !connected.convex ||
+        input.appSlug !== "exact-demo" || input.appName !== "exact-demo") {
       response.statusCode = 400;
-      return send({ error: "Expected web and authentication during provider setup" });
+      return send({ error: "Expected both connections and the app slug and name" });
     }
-    if (url.pathname === "/api/apps/create") {
-      creations += 1;
-      return send({ appId });
-    }
-    if (failSetup) {
+    if (failCreate) {
       response.statusCode = 503;
       return send({ error: "Temporary test failure" });
     }
-    return send({
-      appId, name: "test-deployment", deployKey, convexUrl, convexSiteUrl, repositoryUrl,
-      productionConvexSiteUrl: "https://test-production.convex.site",
-    });
+    created = true;
+    return send({ appId, appSlug: input.appSlug, convexSiteUrl, githubOwner: "example", githubRepoName: "exact-demo" });
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
@@ -101,59 +106,65 @@ test("the packed generator defaults to web and preserves selections through prov
     DO_NOT_TRACK: "1",
   };
 
-  const bin = join(work, "bin");
-  await mkdir(bin);
-  await writeFile(join(bin, "gh"), `#!/bin/sh
-case "$1 $2" in
-  "repo view") echo "example/exact-demo" ;;
-  "api repos/example/exact-demo/environments/android-production") exit 0 ;;
-  "secret list") printf "ANDROID_APK_SIGNING\nEXACT_UPDATE_SEED\n" ;;
-  *) exit 1 ;;
-esac
-`, { mode: 0o755 });
-  env.PATH = bin + ":" + process.env.PATH;
   const selected = { platforms: ["web", "android", "ios", "mcp"], features: ["authentication", "payments"] };
   await assert.rejects(scaffold("exact-demo", [
     "--platforms", selected.platforms.join(","), "--features", selected.features.join(","),
-  ], env), /--resume/);
+  ], env), error => error.stdout.includes(links.github) && error.stderr.includes("exact-demo --resume"));
   assert.deepEqual((await config()).platforms, selected.platforms);
   assert.deepEqual((await config()).features, selected.features);
   for (const name of ["gradle.lockfile", "gradle-verification.xml"]) {
     assert.equal(await read(`apps/apps/${name}`), await readFile(join(packageDir, `../../apps/apps/${name}`), "utf8"));
   }
-  assert.equal((await config()).appId, appId);
-  assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "4.1.0");
+  assert.equal((await config()).appSlug, undefined);
+  assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "file:packages/cli");
   await access(join(directory, "node_modules/.bin/disposabl"));
   for (const script of ["dev.mjs", "dev-web.mjs", "exact.mjs"]) await access(join(directory, "scripts", script));
-  assert.equal(creations, 1);
+
+  connected.github = true;
+  await assert.rejects(scaffold("exact-demo", ["--resume"], env),
+    error => error.stdout.includes(links.convex) && error.stderr.includes("exact-demo --resume"));
+  assert.equal((await config()).appSlug, undefined);
+  assert.equal(created, false);
+  assert.deepEqual(calls, [
+    "/api/users/current", "/api/connections/github/status", "/api/connections/github/connect",
+    "/api/users/current", "/api/connections/github/status", "/api/connections/convex/status", "/api/connections/convex/connect",
+  ]);
+
+  connected.convex = true;
+  const checking = new Promise(resolve => { holdGitHubStatus = resolve; });
+  const interrupted = scaffold("exact-demo", ["--resume"], env);
+  const interruptedResult = assert.rejects(interrupted,
+    error => error.code === 130 && error.stderr.includes("exact-demo --resume"));
+  await checking;
+  interrupted.child.kill("SIGINT");
+  await interruptedResult;
+  holdGitHubStatus = undefined;
+  assert.equal((await config()).appSlug, undefined);
+
+  await assert.rejects(scaffold("exact-demo", ["--resume"], env), /exact-demo --resume/);
+  assert.equal((await config()).appSlug, undefined);
+  failCreate = false;
+  const result = await scaffold("exact-demo", ["--resume"], env);
+  assert.match(result.stdout, /App slug saved in disposabl.json/);
+  assert.equal((await config()).appSlug, "exact-demo");
+  assert.equal((await config()).appId, undefined);
+  assert.equal((await config()).apiOrigin, convexSiteUrl);
+  assert.equal(created, true);
   const callsBeforeRejectedOrigin = calls.length;
   await assert.rejects(scaffold("exact-demo", ["--resume"], {
     ...env, DISPOSABL_API_ORIGIN: "",
   }), /Set DISPOSABL_API_ORIGIN/);
   assert.equal(calls.length, callsBeforeRejectedOrigin);
-  failSetup = false;
-  const result = await scaffold("exact-demo", ["--resume"], env);
-  assert.ok(!result.stdout.includes(deployKey) && !result.stderr.includes(deployKey));
-  assert.equal(creations, 1);
   assert.deepEqual((await config()).platforms, selected.platforms);
   assert.deepEqual((await config()).features, selected.features);
   const mobile = execFileSync("bun", ["--print", 'JSON.stringify((await import("./packages/disposabl-kit/server/platform.ts")).platform.mobile)'], {
     cwd: directory, encoding: "utf8",
   });
   assert.deepEqual(JSON.parse(mobile).sort(), ["android", "ios"]);
-  assert.match(result.stdout, /Using the existing APK key/);
   assert.equal(execFileSync("git", ["remote", "get-url", "origin"], { cwd: directory, encoding: "utf8" }).trim(), repositoryUrl);
-  assert.equal(parseEnv(await read("packages/backend/.env.local")).CONVEX_DEPLOY_KEY, deployKey);
-  assert.deepEqual(parseEnv(await read("apps/apps/.env.local")), {
-    CONVEX_ORIGIN: "wss://test-deployment.convex.cloud",
-    CONVEX_SITE_ORIGIN: convexSiteUrl,
-  });
-  execFileSync("git", ["check-ignore", "--quiet", "apps/apps/.env.local"], { cwd: directory });
-  execFileSync("git", ["check-ignore", "--quiet", "packages/backend/.env.local"], { cwd: directory });
-  assert.deepEqual(calls, [
-    "/api/users/current", "/api/connections/status", "/api/apps/create", "/api/previews/token/create",
-    "/api/users/current", "/api/connections/status", "/api/previews/token/create",
-  ]);
+  for (const file of ["packages/backend/.env.local", "apps/apps/.env.local"]) {
+    await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
+  }
 
   const pinned = file => execFileSync("git", ["show", starterRef + ":" + file], {
     cwd: packageDir, encoding: "utf8",
@@ -180,13 +191,12 @@ esac
   await scaffold("exact-demo", ["--resume"], env);
   assert.deepEqual(await config(), edited);
   assert.equal(git("config", "--get", "remote.origin.url"), sshOrigin);
-  assert.equal(creations, 1);
+  assert.equal((await config()).appSlug, "exact-demo");
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
   assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main");
-  await access(join(directory, ".github/ci/android-key.sh"));
-  for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh"]) {
+  for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh", ".github/ci/android-key.sh"]) {
     await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
   }
   await access(join(directory, "apps/apps/.gitignore"));
@@ -197,7 +207,7 @@ esac
   });
   assert.equal(calls.length, priorCalls);
   const offline = JSON.parse(await readFile(join(work, "offline-app/disposabl.json"), "utf8"));
-  assert.deepEqual(offline, { platforms: ["web"], features: ["authentication"] });
+  assert.deepEqual(offline, { platforms: ["web", "cli"], features: ["authentication"] });
   await scaffold("headless-app", ["--skip-setup", "--platforms", "mcp,cli", "--features", ""], env);
   const headless = JSON.parse(await readFile(join(work, "headless-app/disposabl.json"), "utf8"));
   assert.deepEqual(headless, { platforms: ["mcp", "cli"], features: [] });
