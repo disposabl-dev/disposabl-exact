@@ -33,10 +33,16 @@ type Env = {
   readonly AUTH_GOOGLE_CLIENT_ID: string | undefined;
   readonly AUTH_GOOGLE_CLIENT_SECRET: string | undefined;
   readonly AUTUMN_SECRET_KEY: string | undefined;
+  readonly CONNECTIONS_ENCRYPTION_KEY: string | undefined;
+  readonly CONVEX_OAUTH_CLIENT_ID: string | undefined;
+  readonly CONVEX_OAUTH_CLIENT_SECRET: string | undefined;
   readonly DISPOSABL_CONVEX_TEAM_ID: string | undefined;
   readonly DISPOSABL_CONVEX_TEAM_TOKEN: string | undefined;
   readonly DISPOSABL_GITHUB_APP_ID: string | undefined;
   readonly DISPOSABL_GITHUB_APP_PRIVATE_KEY: string | undefined;
+  readonly GITHUB_APP_SLUG: string | undefined;
+  readonly GITHUB_OAUTH_CLIENT_ID: string | undefined;
+  readonly GITHUB_OAUTH_CLIENT_SECRET: string | undefined;
 };
 
 /**

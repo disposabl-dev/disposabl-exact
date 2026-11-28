@@ -3,9 +3,10 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { env, type QueryCtx } from "../_generated/server";
+import { findConnection } from "../connections/internal";
 import {
-  app, appSlugArgs, appOrNull, appPage, createForUserArgs, creationLeaseArgs,
-  creationPlan, finishCreationArgs, listArgs, removeArgs,
+  app, appSlugArgs, appOrNull, appPage, createForUserArgs,
+  creationPlan, listArgs, removeArgs, saveCreatedAppArgs,
 } from "./validators";
 
 const identity = { userId: v.id("users") };
@@ -64,7 +65,7 @@ export const create = internalAction({
     ctx.runAction(internal.apps.actions.create.provision, args),
 });
 
-export const beginCreation = internalMutation({
+export const prepareCreation = internalQuery({
   args: createForUserArgs,
   returns: creationPlan,
   handler: async (ctx, args): Promise<Infer<typeof creationPlan>> => {
@@ -79,43 +80,24 @@ export const beginCreation = internalMutation({
     const user = await ctx.db.get("users", userId);
     if (!user) throw new ConvexError("Sign in to continue.");
     const existing = await findAppBySlug(ctx, slug);
-    if (existing) {
-      if (existing.userId === userId && existing.name === name) {
-        return { status: "complete", app: presentApp(existing) };
-      }
+    if (existing && (existing.userId !== userId || existing.name !== name)) {
       throw new ConvexError("App slug is already in use.");
     }
+    if (existing) return { status: "complete", app: presentApp(existing) };
 
-    const previous = await ctx.db.query("appCreations").withIndex("by_slug", q => q.eq("slug", slug)).unique();
-    if (previous && (previous.userId !== userId || previous.name !== name)) {
-      throw new ConvexError("App slug is already in use.");
-    }
-    if (previous?.lease && previous.lease.expiresAt > Date.now()) {
-      throw new ConvexError("App creation is already in progress. Try again shortly.");
-    }
-
-    const connection = await ctx.db.query("connections")
-      .withIndex("by_userId", q => q.eq("userId", userId)).unique();
-    const managedGitHub = previous?.managedGitHub ?? !connection?.github;
-    const managedConvex = previous?.managedConvex ?? !connection?.convex;
+    const connection = await findConnection(ctx, userId);
+    const managedGitHub = !connection?.github;
+    const managedConvex = !connection?.convex;
     if (mode === "local" && (managedGitHub || managedConvex)) {
       throw new ConvexError("Connect GitHub and Convex to create an app in local mode.");
     }
 
-    if (!previous) {
-      const firstApp = !user.firstAppProvisioned && !await ctx.db.query("apps")
-        .withIndex("by_userId", q => q.eq("userId", userId)).first();
-      if (!firstApp && (managedGitHub || managedConvex)) {
-        throw new ConvexError("Connect GitHub and Convex to create another app.");
-      }
-      if (firstApp && await ctx.db.query("appCreations")
-        .withIndex("by_userId", q => q.eq("userId", userId)).first()) {
-        throw new ConvexError("Finish creating your first app before starting another.");
-      }
-      // Reserve the slug until any previews from the deleted app have been removed.
-      if (await ctx.db.query("previews").withIndex("by_appSlug", q => q.eq("appSlug", slug)).first()) {
-        throw new ConvexError("This app is still being removed. Try again shortly.");
-      }
+    if ((managedGitHub || managedConvex) && await ctx.db.query("apps")
+      .withIndex("by_userId", q => q.eq("userId", userId)).first()) {
+      throw new ConvexError("Connect GitHub and Convex to create another app.");
+    }
+    if (await ctx.db.query("previews").withIndex("by_appSlug", q => q.eq("appSlug", slug)).first()) {
+      throw new ConvexError("This app is still being removed. Try again shortly.");
     }
 
     const githubOwner = managedGitHub ? "disposabl-dev" : connection?.github?.owner.toLowerCase();
@@ -133,50 +115,27 @@ export const beginCreation = internalMutation({
     if (!convexTeamId || convexTeamId < 1 || !Number.isSafeInteger(convexTeamId) || !convexAccessToken?.trim()) {
       throw new ConvexError(managedConvex ? "Disposabl's Convex team is unavailable." : "Reconnect Convex before creating the app.");
     }
-    if (previous && (previous.githubOwner !== githubOwner || previous.convexTeamId !== convexTeamId)) {
-      throw new ConvexError("Reconnect the original GitHub owner and Convex team to resume this app.");
-    }
-
-    const resourceName = previous?.resourceName ?? `${slug.slice(0, 48)}-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
-    const lease = { id: crypto.randomUUID(), expiresAt: Date.now() + 11 * 60 * 1000 };
-    if (previous) await ctx.db.patch("appCreations", previous._id, { lease });
-    const creationId = previous?._id ?? await ctx.db.insert("appCreations", {
-      userId, slug, name, resourceName, githubOwner, managedGitHub, convexTeamId, managedConvex, lease,
-    });
-
     return {
-      status: "provision", creationId, leaseId: lease.id, resourceName,
-      githubOwner, githubInstallationId, convexTeamId, convexAccessToken: convexAccessToken.trim(),
+      status: "provision", appSlug: slug, appName: name,
+      githubOwner, githubInstallationId, convexTeamId, convexAccessToken: convexAccessToken.trim(), managedConvex,
     };
   },
 });
 
-export const finishCreation = internalMutation({
-  args: finishCreationArgs,
+export const saveCreatedApp = internalMutation({
+  args: saveCreatedAppArgs,
   returns: app,
-  handler: async (ctx, { creationId, leaseId, convexProjectId }) => {
-    const creation = await ctx.db.get("appCreations", creationId);
-    if (creation?.lease?.id !== leaseId) throw new ConvexError("App creation expired. Retry to resume.");
-    const { userId, slug, name, githubOwner, resourceName } = creation;
-    const id = await ctx.db.insert("apps", {
-      userId, name, slug, githubOwner, githubRepoName: resourceName, convexProjectId, prod: null, live: null,
-    });
-    await ctx.db.patch("users", userId, { firstAppProvisioned: true });
-    await ctx.db.delete("appCreations", creationId);
+  handler: async (ctx, { appSlug: slug, appName: name, ...fields }) => {
+    const existing = await findAppBySlug(ctx, slug);
+    if (existing) {
+      if (existing.userId === fields.userId && existing.name === name) return presentApp(existing);
+      throw new ConvexError("App slug is already in use.");
+    }
 
+    const id = await ctx.db.insert("apps", { ...fields, slug, name, prod: null, live: null });
     const row = await ctx.db.get("apps", id);
     if (!row) throw new ConvexError("App could not be saved.");
     return presentApp(row);
-  },
-});
-
-export const releaseCreation = internalMutation({
-  args: creationLeaseArgs,
-  returns: v.null(),
-  handler: async (ctx, { creationId, leaseId }) => {
-    const creation = await ctx.db.get("appCreations", creationId);
-    if (creation?.lease?.id === leaseId) await ctx.db.patch("appCreations", creationId, { lease: undefined });
-    return null;
   },
 });
 

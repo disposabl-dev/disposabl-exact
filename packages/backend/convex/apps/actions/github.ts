@@ -40,7 +40,7 @@ async function installationToken(installationId: number, scope: object) {
   return token;
 }
 
-export async function ensureRepository(owner: string, connectionId: string | null, name: string, creationId: string) {
+export async function ensureRepository(owner: string, connectionId: string | null, name: string) {
   const installation = await request<Installation>("GitHub", appToken(), connectionId
     ? `/app/installations/${connectionId}`
     : `/orgs/${owner}/installation`);
@@ -52,7 +52,7 @@ export async function ensureRepository(owner: string, connectionId: string | nul
 
   const token = await installationToken(installation.id, { permissions: { administration: "write" } });
   const path = `/repos/${owner}/${name}`;
-  const description = `Disposabl app ${creationId}`;
+  const description = `Disposabl app ${name}`;
   const find = () => lookup(request<Repository>("GitHub", token, path));
   let repository = await find();
   if (!repository) {

@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { convexAccount, flow, githubAccount } from "./connections/validators";
 
 const platformResult = v.object({
   url: v.optional(v.string()),
@@ -33,7 +34,6 @@ const appPlatforms = v.union(
 export default defineSchema({
   users: defineTable({
     name: v.optional(v.string()),
-    firstAppProvisioned: v.optional(v.boolean()),
   }),
 
   apps: defineTable({
@@ -50,20 +50,6 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_slug", ["slug"]),
 
-  appCreations: defineTable({
-    userId: v.id("users"),
-    slug: v.string(),
-    name: v.string(),
-    resourceName: v.string(),
-    githubOwner: v.string(),
-    managedGitHub: v.boolean(),
-    convexTeamId: v.number(),
-    managedConvex: v.boolean(),
-    lease: v.optional(v.object({ id: v.string(), expiresAt: v.number() })),
-  })
-    .index("by_slug", ["slug"])
-    .index("by_userId", ["userId"]),
-
   previews: defineTable({
     appSlug: v.string(),
     previewName: v.string(),
@@ -75,13 +61,12 @@ export default defineSchema({
 
   connections: defineTable({
     userId: v.id("users"),
-    github: v.optional(v.object({
-      owner: v.string(),
-      installationId: v.string(),
-    })),
-    convex: v.optional(v.object({
-      teamId: v.number(),
-      accessToken: v.string(),
-    })),
-  }).index("by_userId", ["userId"]),
+    github: v.optional(githubAccount),
+    convex: v.optional(convexAccount),
+    githubFlow: v.optional(flow),
+    convexFlow: v.optional(flow),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_github_state", ["githubFlow.stateHash"])
+    .index("by_convex_state", ["convexFlow.stateHash"]),
 });
