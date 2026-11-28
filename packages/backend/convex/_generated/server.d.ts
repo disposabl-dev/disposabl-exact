@@ -36,7 +36,6 @@ type Env = {
   readonly BOAT_AGENT_ENVIRONMENT: string | undefined;
   readonly BOAT_AGENT_MODEL: string | undefined;
   readonly BOAT_AGENT_SNAPSHOT: string | undefined;
-  readonly BOAT_AGENT_SNAPSHOTS: string | undefined;
   readonly BOAT_API_KEY: string | undefined;
   readonly CONNECTIONS_ENCRYPTION_KEY: string | undefined;
   readonly CONVEX_OAUTH_CLIENT_ID: string | undefined;

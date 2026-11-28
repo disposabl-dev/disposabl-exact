@@ -6,15 +6,11 @@ import type { Id } from "../_generated/dataModel";
 import { internalMutation as mutation, internalQuery as query, type QueryCtx } from "../_generated/server";
 import { ownedApp, requireOwnedApp } from "../apps/internal";
 import { findConnection } from "../connections/internal";
-import { abortArgs, abortResult, boatPrompt, messagesArgs, messagesResult, sendArgs, sendResult, turnArgs } from "./validators";
+import { abortArgs, abortResult, activeTurn, boatPrompt, messagesArgs, messagesResult, sendArgs, sendResult, turnArgs } from "./validators";
 
 const identity = { userId: v.id("users") };
 const turnLifetime = 30 * 60_000;
 const textId = "assistant";
-
-function workspace(ctx: QueryCtx, userId: Id<"users">) {
-  return ctx.db.query("agentSandboxes").withIndex("by_userId", q => q.eq("userId", userId)).unique();
-}
 
 async function conversation(ctx: QueryCtx, userId: Id<"users">, appSlug?: string, suppliedThread?: string) {
   const app = appSlug ? await requireOwnedApp(ctx, userId, appSlug) : null;
@@ -35,8 +31,9 @@ export const sendMessage = internalMutation({
   handler: async (ctx, { userId, appSlug, threadId: suppliedThread, prompt }) => {
     const text = prompt.trim();
     if (!text || text.length > 32_000) throw new ConvexError("Message must be 1–32,000 characters.");
-    const box = await workspace(ctx, userId);
-    if (box?.turn) throw new ConvexError("Wait for the current message or stop it before sending another.");
+    const user = await ctx.db.get("users", userId);
+    if (!user) throw new ConvexError("Account not found.");
+    if (user.agentTurn) throw new ConvexError("Wait for the current message or stop it before sending another.");
 
     const target = await conversation(ctx, userId, appSlug, suppliedThread);
     const threadId = target.threadId ?? await createThread(ctx, components.agent, { userId, title: target.app?.name });
@@ -58,11 +55,10 @@ export const sendMessage = internalMutation({
     });
     const turn = { threadId, appSlug: app?.userId === userId ? app.slug : undefined, messageId, assistantMessageId, streamId,
       parts: 2, size: 0, deadline: Date.now() + turnLifetime };
-    const sandbox = box?._id ?? await ctx.db.insert("agentSandboxes", { userId });
-    await ctx.db.patch("agentSandboxes", sandbox, { turn });
+    await ctx.db.patch("users", userId, { agentTurn: turn });
     const run = internal.agent.actions.run.processTurn;
-    await ctx.scheduler.runAfter(0, run, { sandbox, messageId });
-    await ctx.scheduler.runAfter(turnLifetime, internal.agent.actions.run.expire, { sandbox, messageId });
+    await ctx.scheduler.runAfter(0, run, { userId, messageId });
+    await ctx.scheduler.runAfter(turnLifetime, internal.agent.actions.run.expire, { userId, messageId });
     return { threadId, messageId, assistantMessageId };
   },
 });
@@ -89,26 +85,27 @@ export const abortMessage = internalMutation({
   returns: abortResult,
   handler: async (ctx, { userId, appSlug, threadId: suppliedThread, messageId }) => {
     const { threadId } = await conversation(ctx, userId, appSlug, suppliedThread);
-    const box = await workspace(ctx, userId);
-    if (!box?.turn || box.turn.threadId !== threadId || box.turn.messageId !== messageId) return { accepted: false };
-    await ctx.db.patch("agentSandboxes", box._id, { turn: { ...box.turn, cancelled: true, tokenHash: undefined } });
+    const turn = await active(ctx, { userId, messageId });
+    if (!turn || turn.threadId !== threadId) return { accepted: false };
+    await ctx.db.patch("users", userId, { agentTurn: { ...turn, cancelled: true, tokenHash: undefined } });
     return { accepted: true };
   },
 });
 
-async function active(ctx: QueryCtx, { sandbox, messageId }: { sandbox: Id<"agentSandboxes">; messageId: string }) {
-  const box = await ctx.db.get("agentSandboxes", sandbox);
-  return box?.turn?.messageId === messageId ? { ...box, turn: box.turn } : null;
+async function active(ctx: QueryCtx, { userId, messageId }: { userId: Id<"users">; messageId: string }) {
+  const turn = (await ctx.db.get("users", userId))?.agentTurn;
+  return turn?.messageId === messageId ? turn : null;
 }
 
-export const getTurn = query({ args: turnArgs, handler: active });
+export const getTurn = query({ args: turnArgs, returns: v.union(activeTurn, v.null()), handler: active });
 
 export const getConversation = query({
   args: turnArgs,
+  returns: v.union(v.null(), v.object({ repository: v.optional(v.string()), history: v.array(v.object({ role: v.string(), text: v.string() })) })),
   handler: async (ctx, args) => {
-    const box = await active(ctx, args);
-    if (!box) return null;
-    const { userId, turn } = box;
+    const turn = await active(ctx, args);
+    if (!turn) return null;
+    const { userId } = args;
     const app = turn.appSlug && await ownedApp(ctx, userId, turn.appSlug);
     const { page } = await listUIMessages(ctx, components.agent, {
       threadId: turn.threadId, paginationOpts: { numItems: 9, cursor: null },
@@ -122,11 +119,12 @@ export const getConversation = query({
 });
 
 export const authorize = mutation({
-  args: { ...turnArgs, sandboxId: v.string(), tokenHash: v.string() },
-  handler: async (ctx, { sandboxId, tokenHash, ...ref }) => {
-    const box = await active(ctx, ref);
-    if (!box || box.turn.cancelled) return false;
-    await ctx.db.patch("agentSandboxes", ref.sandbox, { sandboxId, turn: { ...box.turn, tokenHash } });
+  args: { ...turnArgs, tokenHash: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { tokenHash, ...ref }) => {
+    const turn = await active(ctx, ref);
+    if (!turn || turn.cancelled || turn.deadline <= Date.now()) return false;
+    await ctx.db.patch("users", ref.userId, { agentTurn: { ...turn, tokenHash } });
     return true;
   },
 });
@@ -134,10 +132,11 @@ export const authorize = mutation({
 export const update = mutation({
   args: { ...turnArgs, prompt: v.optional(boatPrompt), cursor: v.optional(v.string()),
     text: v.optional(v.string()), finishedAt: v.optional(v.number()), delay: v.number(), finish: v.optional(v.boolean()) },
+  returns: v.null(),
   handler: async (ctx, { prompt, cursor, text, finishedAt, delay, finish, ...ref }) => {
-    const box = await active(ctx, ref);
-    if (!box) return;
-    const turn = { ...box.turn };
+    const current = await active(ctx, ref);
+    if (!current) return null;
+    const turn = { ...current };
     if (cursor) turn.cursor = cursor;
     if (prompt) turn.prompt = prompt;
     if (finishedAt) turn.finishedAt = finishedAt;
@@ -157,22 +156,26 @@ export const update = mutation({
         messageId: turn.assistantMessageId, result: { status: "success" },
       });
       await ctx.runMutation(components.agent.streams.finish, { streamId: turn.streamId });
-      await ctx.db.patch("agentSandboxes", ref.sandbox, { turn: undefined });
+      await ctx.db.patch("users", ref.userId, { agentTurn: undefined });
     } else {
-      await ctx.db.patch("agentSandboxes", ref.sandbox, { turn });
+      if (parts.length || turn.prompt !== current.prompt || turn.cursor !== current.cursor || turn.finishedAt !== current.finishedAt) {
+        await ctx.db.patch("users", ref.userId, { agentTurn: turn });
+      }
       await ctx.runMutation(components.agent.streams.heartbeat, { streamId: turn.streamId });
       await ctx.scheduler.runAfter(delay, internal.agent.actions.run.processTurn, ref);
     }
+    return null;
   },
 });
 
 export const getSandboxSession = query({
   args: { tokenHash: v.string(), now: v.number() },
+  returns: v.union(v.null(), v.object({ ...identity, messageId: v.string(), appSlug: v.optional(v.string()), threadId: v.string() })),
   handler: async (ctx, { tokenHash, now }) => {
-    const box = await ctx.db.query("agentSandboxes").withIndex("by_tokenHash", q => q.eq("turn.tokenHash", tokenHash)).unique();
-    const turn = box?.turn;
-    if (!turn || turn.cancelled || turn.deadline <= now) return null;
-    return { sandbox: box._id, userId: box.userId, messageId: turn.messageId, appSlug: turn.appSlug, threadId: turn.threadId };
+    const user = await ctx.db.query("users").withIndex("by_agentTurn_tokenHash", q => q.eq("agentTurn.tokenHash", tokenHash)).unique();
+    const turn = user?.agentTurn;
+    if (!user || !turn || turn.cancelled || turn.deadline <= now) return null;
+    return { userId: user._id, messageId: turn.messageId, appSlug: turn.appSlug, threadId: turn.threadId };
   },
 });
 
@@ -186,12 +189,13 @@ export const linkApp = mutation({
 
 export const claimApp = mutation({
   args: { ...turnArgs, appSlug: v.string() },
+  returns: v.boolean(),
   handler: async (ctx, { appSlug, ...ref }) => {
-    const box = await active(ctx, ref);
-    if (!box || box.turn.cancelled || box.turn.deadline <= Date.now()) return false;
-    if (box.turn.appSlug) return box.turn.appSlug === appSlug;
+    const turn = await active(ctx, ref);
+    if (!turn || turn.cancelled || turn.deadline <= Date.now()) return false;
+    if (turn.appSlug) return turn.appSlug === appSlug;
     if (appSlug.length > 63 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(appSlug)) return false;
-    await ctx.db.patch("agentSandboxes", ref.sandbox, { turn: { ...box.turn, appSlug } });
+    await ctx.db.patch("users", ref.userId, { agentTurn: { ...turn, appSlug } });
     return true;
   },
 });

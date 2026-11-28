@@ -1,3 +1,5 @@
+import type { SandboxRef } from "@boatdev/convex";
+import type { ActionCtx } from "../../_generated/server";
 import { command, writeFile } from "./boat";
 
 const workspace = "/home/user/disposabl-workspaces";
@@ -85,7 +87,8 @@ try {
 `;
 
 export async function installWorkspace(
-  sandboxId: string,
+  ctx: ActionCtx,
+  ref: SandboxRef,
   session: { origin: string; token: string; expiresAt: number; turnId: string },
   threadId: string,
   appSlug?: string,
@@ -94,16 +97,16 @@ export async function installWorkspace(
   if (!/^[a-zA-Z0-9]+$/.test(threadId)) throw new Error("Malformed conversation identifier.");
   if (repository && !/^[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw new Error("Malformed GitHub repository.");
 
-  await writeFile(sandboxId, "/tmp/disposabl-session.json", JSON.stringify(session));
-  await writeFile(sandboxId, "/tmp/disposabl-workspace.mjs", helper);
-  await command(sandboxId, install);
+  await writeFile(ctx, ref, "/tmp/disposabl-session.json", JSON.stringify(session));
+  await writeFile(ctx, ref, "/tmp/disposabl-workspace.mjs", helper);
+  await command(ctx, ref, install);
   if (appSlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(appSlug)) throw new Error("Malformed app slug.");
   const parent = `${workspace}/${threadId}`;
   const directory = repository && appSlug ? `${parent}/${appSlug}` : parent;
   const branch = "disposabl/" + threadId;
   if (repository) {
     const origin = `https://github.com/${repository}.git`;
-    await command(sandboxId, `set -eu
+    await command(ctx, ref, `set -eu
       mkdir -p '${parent}'
       cd '${parent}'
       if [ ! -d '${directory}/.git' ] && [ ! -d '${directory}' ]; then
@@ -111,14 +114,14 @@ export async function installWorkspace(
         git -C '${directory}' checkout '${branch}' 2>/dev/null || git -C '${directory}' checkout -b '${branch}'
       fi`, 60);
   } else {
-    await command(sandboxId, `mkdir -p '${parent}'`);
+    await command(ctx, ref, `mkdir -p '${parent}'`);
   }
   return { directory, branch };
 }
 
-export function clearWorkspace(sandboxId: string, turnId: string) {
+export function clearWorkspace(ctx: ActionCtx, ref: SandboxRef, turnId: string) {
   if (!/^[a-zA-Z0-9]+$/.test(turnId)) throw new Error("Malformed turn identifier.");
-  return command(sandboxId, `if grep -Fq '"turnId":"${turnId}"' ${runtime}/session.json 2>/dev/null; then
+  return command(ctx, ref, `if grep -Fq '"turnId":"${turnId}"' ${runtime}/session.json 2>/dev/null; then
     rm -f ${runtime}/session.json ${runtime}/github.json
   fi
   if grep -Fq '"turnId":"${turnId}"' /tmp/disposabl-session.json 2>/dev/null; then

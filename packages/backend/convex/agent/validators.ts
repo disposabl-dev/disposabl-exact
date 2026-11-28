@@ -10,7 +10,7 @@ export const messagesArgs = { ...conversationArgs, paginationOpts: paginationOpt
 export const messagesResult = vStreamUIMessagesReturnValue;
 
 export const abortArgs = { ...conversationArgs, messageId: v.string() };
-export const turnArgs = { sandbox: v.id("agentSandboxes"), messageId: v.string() };
+export const turnArgs = { userId: v.id("users"), messageId: v.string() };
 export const boatPrompt = v.object({ promptId: v.string(), conversationId: v.string() });
 export const activeTurn = v.object({
   threadId: v.string(),

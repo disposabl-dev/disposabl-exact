@@ -35,7 +35,8 @@ const appPlatforms = v.union(
 export default defineSchema({
   users: defineTable({
     name: v.optional(v.string()),
-  }),
+    agentTurn: v.optional(activeTurn),
+  }).index("by_agentTurn_tokenHash", ["agentTurn.tokenHash"]),
 
   apps: defineTable({
     userId: v.id("users"),
@@ -61,14 +62,6 @@ export default defineSchema({
   })
     .index("by_appSlug", ["appSlug"])
     .index("by_previewSlug", ["previewSlug"]),
-
-  agentSandboxes: defineTable({
-    userId: v.id("users"),
-    sandboxId: v.optional(v.string()),
-    turn: v.optional(activeTurn),
-  })
-    .index("by_userId", ["userId"])
-    .index("by_tokenHash", ["turn.tokenHash"]),
 
   connections: defineTable({
     userId: v.id("users"),
