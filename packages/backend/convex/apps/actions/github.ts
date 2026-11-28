@@ -3,7 +3,6 @@
 import { createSign } from "node:crypto";
 import sodium from "libsodium-wrappers";
 import { ConvexError } from "convex/values";
-import { env } from "../../_generated/server";
 import { lookup, request, type DeploySecret } from "./provider";
 
 type Installation = {
@@ -19,36 +18,34 @@ type Repository = {
   description: string | null;
 };
 
-function appToken() {
+export function githubAppToken(appId: string | undefined, privateKey: string | undefined) {
+  if (!appId || !privateKey) throw new ConvexError("GitHub app provisioning is unavailable.");
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({
-    iss: env.DISPOSABL_GITHUB_APP_ID,
+    iss: appId,
     iat: now - 60,
     exp: now + 9 * 60,
   })).toString("base64url");
   const data = `${header}.${payload}`;
-  const privateKey = env.DISPOSABL_GITHUB_APP_PRIVATE_KEY?.replaceAll("\\n", "\n");
-  if (!privateKey) throw new ConvexError("GitHub app provisioning is unavailable.");
-  return `${data}.${createSign("RSA-SHA256").update(data).sign(privateKey, "base64url")}`;
+  return `${data}.${createSign("RSA-SHA256").update(data).sign(privateKey.replaceAll("\\n", "\n"), "base64url")}`;
 }
 
-async function installationToken(installationId: number, scope: object) {
-  const { token } = await request<{ token: string }>(
-    "GitHub", appToken(), `/app/installations/${installationId}/access_tokens`, scope,
+export async function installationToken(appToken: string, installationId: number, scope: object) {
+  return request<{ token: string; expires_at: string }>(
+    "GitHub", appToken, `/app/installations/${installationId}/access_tokens`, scope,
   );
-  return token;
 }
 
-export async function ensureRepository(owner: string, connectionId: string, name: string) {
-  const installation = await request<Installation>("GitHub", appToken(), `/app/installations/${connectionId}`);
+export async function ensureRepository(appToken: string, owner: string, connectionId: string, name: string) {
+  const installation = await request<Installation>("GitHub", appToken, `/app/installations/${connectionId}`);
   if (installation.account?.login.toLowerCase() !== owner || installation.suspended_at
     || !Number.isSafeInteger(installation.id)
     || (installation.account.type !== "Organization" && installation.account.type !== "User")) {
     throw new ConvexError("The GitHub installation does not match this app's owner.");
   }
 
-  const token = await installationToken(installation.id, { permissions: { administration: "write" } });
+  const { token } = await installationToken(appToken, installation.id, { permissions: { administration: "write" } });
   const path = `/repos/${owner}/${name}`;
   const description = `Disposabl app ${name}`;
   const find = () => lookup(request<Repository>("GitHub", token, path));
@@ -70,8 +67,8 @@ export async function ensureRepository(owner: string, connectionId: string, name
   return { repositoryId: repository.id, installationId: installation.id, path };
 }
 
-export async function openSecrets(repository: Awaited<ReturnType<typeof ensureRepository>>) {
-  const token = await installationToken(repository.installationId, {
+export async function openSecrets(appToken: string, repository: Awaited<ReturnType<typeof ensureRepository>>) {
+  const { token } = await installationToken(appToken, repository.installationId, {
     repository_ids: [repository.repositoryId],
     permissions: { secrets: "write" },
   });

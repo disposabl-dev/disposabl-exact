@@ -63,7 +63,19 @@ function keyMaterial(token: string) {
   return token.slice(token.lastIndexOf("|") + 1);
 }
 
-export async function createDeployKeys(token: string, project: Project, production: string, missing: DeploySecret[]) {
+export async function getProject(token: string, projectId: number, teamId: number) {
+  const project = await request<Project>("Convex", token, `/projects/${projectId}`);
+  if (project.id !== projectId || project.teamId !== teamId) throw new ConvexError("Reconnect the Convex team that owns this app.");
+  return project;
+}
+
+export async function createDeployKeys(
+  token: string,
+  project: Project,
+  production: string,
+  missing: DeploySecret[],
+  preview: { name: string; expiresAt?: number } = { name: "github-actions-preview" },
+) {
   const keys = new Map<DeploySecret, string>();
   if (missing.length === 0) return keys;
 
@@ -79,7 +91,7 @@ export async function createDeployKeys(token: string, project: Project, producti
       return deployKey;
     }
     const { previewDeployKey } = await request<{ previewDeployKey: string }>(
-      "Convex", signer, `/projects/${project.id}/create_preview_deploy_key`, { name: "github-actions-preview" },
+      "Convex", signer, `/projects/${project.id}/create_preview_deploy_key`, preview,
     );
     if (!previewDeployKey.startsWith(`preview:${project.teamSlug}:${project.slug}|`) || !keyMaterial(previewDeployKey)) {
       throw new ConvexError("Convex did not return a preview deploy key for this app.");
@@ -99,7 +111,7 @@ export async function createDeployKeys(token: string, project: Project, producti
       key = await mint(signer, name);
     }
     if (keyMaterial(key) === keyMaterial(token) || keyMaterial(key) === keyMaterial(signer)) {
-      throw new ConvexError("Convex returned a team credential. GitHub Actions requires an app-scoped deploy key.");
+      throw new ConvexError("Convex returned a team credential. An app-scoped deploy key is required.");
     }
     keys.set(name, key);
   }

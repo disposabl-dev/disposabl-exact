@@ -3,11 +3,11 @@
 import { createHash } from "node:crypto";
 import { ConvexError, type Infer } from "convex/values";
 import { internal } from "../../_generated/api";
-import { internalAction } from "../../_generated/server";
+import { env, internalAction } from "../../_generated/server";
 import { decryptConvexToken } from "../../connections/actions/crypto";
 import { createdApp, createForUserArgs } from "../validators";
 import { createDeployKeys, ensureProductionDeployment, ensureProject } from "./convex";
-import { ensureRepository, openSecrets } from "./github";
+import { ensureRepository, githubAppToken, openSecrets } from "./github";
 import { previewSecret, productionSecret, ProviderError } from "./provider";
 import { ensureSigningSecrets } from "./signing";
 
@@ -26,8 +26,9 @@ export const provision = internalAction({
       const token = decryptConvexToken(convexAccessToken, args.userId, convexTeamId);
       const project = await ensureProject(token, convexTeamId, resourceName);
       const production = await ensureProductionDeployment(token, project.id);
-      const repository = await ensureRepository(githubOwner, githubInstallationId, resourceName);
-      const secrets = await openSecrets(repository);
+      const githubToken = githubAppToken(env.DISPOSABL_GITHUB_APP_ID, env.DISPOSABL_GITHUB_APP_PRIVATE_KEY);
+      const repository = await ensureRepository(githubToken, githubOwner, githubInstallationId, resourceName);
+      const secrets = await openSecrets(githubToken, repository);
       await ensureSigningSecrets(token, project.id, production);
       const missingDeployKeys = ([productionSecret, previewSecret] as const).filter(name => !secrets.has(name));
       await secrets.save(await createDeployKeys(token, project, production, missingDeployKeys));

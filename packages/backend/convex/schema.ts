@@ -60,6 +60,33 @@ export default defineSchema({
     .index("by_appSlug", ["appSlug"])
     .index("by_previewSlug", ["previewSlug"]),
 
+  agentSandboxes: defineTable({
+    userId: v.id("users"),
+    sandboxId: v.optional(v.string()),
+    activeTurnId: v.optional(v.id("agentTurns")),
+  }).index("by_userId", ["userId"]),
+
+  agentTurns: defineTable({
+    userId: v.id("users"),
+    threadId: v.string(),
+    appSlug: v.optional(v.string()),
+    messageId: v.string(),
+    assistantMessageId: v.string(),
+    streamId: v.string(),
+    deadline: v.number(),
+    sandboxId: v.optional(v.string()),
+    conversationId: v.optional(v.string()),
+    promptId: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+    text: v.string(),
+    parts: v.number(),
+    tokenHash: v.optional(v.string()),
+    cancelled: v.optional(v.boolean()),
+    done: v.boolean(),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_tokenHash", ["tokenHash"]),
+
   connections: defineTable({
     userId: v.id("users"),
     github: v.optional(githubAccount),

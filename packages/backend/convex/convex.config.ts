@@ -6,8 +6,21 @@ import username from "@convex-dev/auth/components/username/convex.config.js";
 import mcp from "@convex-dev/mcp/convex.config.js";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import { defineApp } from "convex/server";
+import { v } from "convex/values";
 import { platform } from "@disposabl-kit/server/platforms.ts";
-import { app, googleConfigured } from "@disposabl-kit/server/components.ts";
+import { environment, googleConfigured } from "@disposabl-kit/server/components.ts";
+
+const app = defineApp({
+  env: {
+    ...environment,
+    BOAT_API_KEY: v.optional(v.string()),
+    BOAT_AGENT_ENVIRONMENT: v.optional(v.string()),
+    BOAT_AGENT_MODEL: v.optional(v.string()),
+    BOAT_AGENT_SNAPSHOT: v.optional(v.string()),
+    BOAT_AGENT_SNAPSHOTS: v.optional(v.string()),
+  },
+});
 
 app.use(staticHosting);
 app.use(auth);

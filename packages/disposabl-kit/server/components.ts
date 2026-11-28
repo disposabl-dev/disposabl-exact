@@ -4,18 +4,18 @@ import { v } from "convex/values";
 // Config evaluation decides whether to mount the component before Convex can generate typed env.
 export const googleConfigured = Boolean(process.env.AUTH_GOOGLE_CLIENT_ID?.trim() && process.env.AUTH_GOOGLE_CLIENT_SECRET?.trim());
 const googleCredential = googleConfigured ? v.string() : v.optional(v.string());
-export const app = defineApp({
-  env: {
-    AUTUMN_SECRET_KEY: v.optional(v.string()),
-    DISPOSABL_GITHUB_APP_ID: v.optional(v.string()),
-    DISPOSABL_GITHUB_APP_PRIVATE_KEY: v.optional(v.string()),
-    GITHUB_APP_SLUG: v.optional(v.string()),
-    GITHUB_OAUTH_CLIENT_ID: v.optional(v.string()),
-    GITHUB_OAUTH_CLIENT_SECRET: v.optional(v.string()),
-    CONVEX_OAUTH_CLIENT_ID: v.optional(v.string()),
-    CONVEX_OAUTH_CLIENT_SECRET: v.optional(v.string()),
-    CONNECTIONS_ENCRYPTION_KEY: v.optional(v.string()),
-    AUTH_GOOGLE_CLIENT_ID: googleCredential,
-    AUTH_GOOGLE_CLIENT_SECRET: googleCredential,
-  },
-});
+export const environment = {
+  AUTUMN_SECRET_KEY: v.optional(v.string()),
+  DISPOSABL_GITHUB_APP_ID: v.optional(v.string()),
+  DISPOSABL_GITHUB_APP_PRIVATE_KEY: v.optional(v.string()),
+  GITHUB_APP_SLUG: v.optional(v.string()),
+  GITHUB_OAUTH_CLIENT_ID: v.optional(v.string()),
+  GITHUB_OAUTH_CLIENT_SECRET: v.optional(v.string()),
+  CONVEX_OAUTH_CLIENT_ID: v.optional(v.string()),
+  CONVEX_OAUTH_CLIENT_SECRET: v.optional(v.string()),
+  CONNECTIONS_ENCRYPTION_KEY: v.optional(v.string()),
+  AUTH_GOOGLE_CLIENT_ID: googleCredential,
+  AUTH_GOOGLE_CLIENT_SECRET: googleCredential,
+};
+
+export const app = defineApp({ env: environment });
