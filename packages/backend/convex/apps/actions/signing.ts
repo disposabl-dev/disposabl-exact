@@ -45,26 +45,24 @@ export async function ensureSigningSecrets(
   const { environmentVariables } = await request<{ environmentVariables: Record<string, string | undefined> }>(
     target, token, "/list_environment_variables",
   );
-  const values = new Map<string, string>();
-  const changes: { name: string; value: string }[] = [];
+  const previewPath = `/projects/${projectId}`;
+  const { items } = await request<{ items: { name: string; value: string }[] }>(
+    "Convex", token, previewPath + "/list_default_environment_variables?deploymentType=preview",
+  );
+  const preview = new Map(items.map(({ name, value }) => [name, value]));
+  const productionChanges = [];
+  const previewChanges = [];
 
   for (const [name, generate] of Object.entries(generators)) {
-    let value = environmentVariables[name];
-    if (!value) {
-      if (value !== undefined) {
-        throw new ConvexError(`Restore ${name} in the app's production Convex environment before retrying.`);
-      }
-      value = generate();
-      changes.push({ name, value });
+    const saved = environmentVariables[name];
+    if (saved === "") throw new ConvexError(`Restore ${name} in the production Convex environment before retrying.`);
+    const productionValue = saved ?? generate();
+    if (!saved) productionChanges.push({ name, value: productionValue });
+    if (!preview.get(name) || preview.get(name) === productionValue) {
+      previewChanges.push({ name, value: generate(), deploymentType: "preview", applyToExistingDeployments: true });
     }
-    values.set(name, value);
   }
 
-  // Persist production first so a failed preview write can reuse the same keys.
-  if (changes.length > 0) await request(target, token, "/update_environment_variables", { changes });
-  await request("Convex", token, `/projects/${projectId}/update_default_environment_variables`, {
-    changes: Array.from(values, ([name, value]) => ({
-      name, value, deploymentType: "preview", applyToExistingDeployments: true,
-    })),
-  });
+  if (productionChanges.length) await request(target, token, "/update_environment_variables", { changes: productionChanges });
+  if (previewChanges.length) await request("Convex", token, previewPath + "/update_default_environment_variables", { changes: previewChanges });
 }

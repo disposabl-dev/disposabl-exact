@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { activeTurn } from "./agent/validators";
 import { convexAccount, flow, githubAccount } from "./connections/validators";
 
 const platformResult = v.object({
@@ -49,7 +50,8 @@ export default defineSchema({
     agentThreadId: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
-    .index("by_slug", ["slug"]),
+    .index("by_slug", ["slug"])
+    .index("by_agentThreadId", ["agentThreadId"]),
 
   previews: defineTable({
     appSlug: v.string(),
@@ -63,29 +65,10 @@ export default defineSchema({
   agentSandboxes: defineTable({
     userId: v.id("users"),
     sandboxId: v.optional(v.string()),
-    activeTurnId: v.optional(v.id("agentTurns")),
-  }).index("by_userId", ["userId"]),
-
-  agentTurns: defineTable({
-    userId: v.id("users"),
-    threadId: v.string(),
-    appSlug: v.optional(v.string()),
-    messageId: v.string(),
-    assistantMessageId: v.string(),
-    streamId: v.string(),
-    deadline: v.number(),
-    sandboxId: v.optional(v.string()),
-    conversationId: v.optional(v.string()),
-    promptId: v.optional(v.string()),
-    cursor: v.optional(v.string()),
-    text: v.string(),
-    parts: v.number(),
-    tokenHash: v.optional(v.string()),
-    cancelled: v.optional(v.boolean()),
-    done: v.boolean(),
+    turn: v.optional(activeTurn),
   })
-    .index("by_threadId", ["threadId"])
-    .index("by_tokenHash", ["tokenHash"]),
+    .index("by_userId", ["userId"])
+    .index("by_tokenHash", ["turn.tokenHash"]),
 
   connections: defineTable({
     userId: v.id("users"),

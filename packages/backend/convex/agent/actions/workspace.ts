@@ -5,6 +5,11 @@ const runtime = "/dev/shm/disposabl";
 const install = `set -eu
 umask 077
 install -d -m 700 ${runtime} "$HOME/.local/lib/disposabl" "$HOME/.local/bin" "${workspace}"
+export PATH="$HOME/.local/bin:$PATH"
+case "$(bun --version)" in
+  1.[0-3].*) npm install --no-audit --no-fund --prefix "$HOME/.local/lib/disposabl" bun@1.4.5
+             ln -sf "$HOME/.local/lib/disposabl/node_modules/.bin/bun" "$HOME/.local/bin/bun";;
+esac
 rm -f ${runtime}/github.json
 install -m 600 /tmp/disposabl-session.json ${runtime}/session.json
 rm -f /tmp/disposabl-session.json

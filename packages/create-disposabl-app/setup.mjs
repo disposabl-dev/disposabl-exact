@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -18,37 +18,6 @@ export async function writeJson(path, value) {
     await rename(temporary, path);
   } finally {
     await rm(temporary, { force: true });
-  }
-}
-
-function findCli(directory) {
-  const require = createRequire(join(directory, "package.json"));
-  const manifest = require.resolve("@disposabl/cli/package.json");
-  return join(dirname(manifest), require(manifest).bin.disposabl);
-}
-
-async function runCli(cli, directory, origin, args, signal, interactive = false) {
-  signal.throwIfAborted();
-  const output = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, ...args], {
-      cwd: directory,
-      signal,
-      env: { ...process.env, DISPOSABL_API_ORIGIN: origin },
-      stdio: interactive ? "inherit" : ["ignore", "pipe", "inherit"],
-    });
-    let stdout = "";
-    child.stdout?.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
-    child.once("error", reject);
-    child.once("close", code => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error('Disposabl setup failed at "' + args.slice(0, args.includes("--appSlug") ? 2 : 3).join(" ") + '".'));
-    });
-  });
-  if (interactive) return;
-  try {
-    return JSON.parse(output);
-  } catch {
-    throw new Error("Disposabl setup returned an invalid response.");
   }
 }
 
@@ -76,68 +45,56 @@ function configureRemote(directory, app) {
   return repository;
 }
 
-function openBrowser(url) {
-  const [command, ...args] = process.platform === "darwin" ? ["open"] :
-    process.platform === "win32" ? ["rundll32.exe", "url.dll,FileProtocolHandler"] : ["xdg-open"];
-  const child = spawn(command, [...args, url], { detached: true, stdio: "ignore" });
-  child.on("error", () => {});
-  child.unref();
-}
+async function connect(client, terminal, signal, provider, label, providerLink, openUrl) {
+  const path = "/api/connections/" + provider;
+  const status = () => client.request(path + "/status", { signal }, true);
+  if ((await status()).connected) return terminal.progress(label + " connected.");
 
-async function connect(run, terminal, signal, provider, label, authorizationOrigin) {
-  const status = () => run(["connections", provider, "status"]);
-  if ((await status()).connected) {
-    terminal.progress(label + " connected.");
-    return;
-  }
+  const { url } = await client.request(path + "/connect", { method: "POST", signal }, true);
+  const link = providerLink(provider, url);
+  terminal.progress("Open this link to connect " + label + ".\n" + link);
+  if (!terminal.interactive) throw new Error("Setup paused. Open the link, finish connecting " + label + ", then resume.");
+  openUrl(link);
 
-  const { url } = await run(["connections", provider, "connect", "--no-browser"]);
-  const authorization = typeof url === "string" ? URL.parse(url) : null;
-  if (!authorization || authorization.origin !== authorizationOrigin || authorization.username || authorization.password) {
-    throw new Error("Disposabl returned an invalid " + label + " authorization link.");
-  }
-
-  terminal.progress("Open this link to connect " + label + ".\n" + authorization.href);
-  if (!terminal.interactive) {
-    throw new Error("Setup paused. Open the link, finish connecting " + label + ", then resume.");
-  }
-  openBrowser(authorization.href);
   terminal.progress("Waiting for " + label + ". Press Ctrl+C to pause.");
   const expiresAt = Date.now() + 10 * 60_000;
   while (Date.now() < expiresAt) {
     await delay(2_000, undefined, { signal });
-    if ((await status()).connected) {
-      terminal.progress(label + " connected.");
-      return;
-    }
+    if ((await status()).connected) return terminal.progress(label + " connected.");
   }
   throw new Error(label + " connection timed out. Resume to check again.");
 }
 
 export async function setup(directory, name, config, terminal, signal) {
-  const cli = findCli(directory);
-  const { sandboxSession } = await import(join(dirname(cli), "sandbox.mjs"));
-  const origin = process.env.DISPOSABL_API_ORIGIN || sandboxSession()?.origin || defaultOrigin;
-  if (config.serviceOrigin && config.serviceOrigin !== origin) {
+  const require = createRequire(join(directory, "package.json"));
+  const cli = dirname(require.resolve("@disposabl/cli/package.json"));
+  const { createClient, providerLink } = await import(join(cli, "client.mjs"));
+  const { sandboxSession } = await import(join(cli, "sandbox.mjs"));
+  const { openUrl } = await import(join(cli, "auth.mjs"));
+  const client = createClient(process.env.DISPOSABL_API_ORIGIN || sandboxSession()?.origin || defaultOrigin);
+  if (config.serviceOrigin && config.serviceOrigin !== client.origin) {
     throw new Error("Set DISPOSABL_API_ORIGIN to the original Disposabl API origin before resuming.");
   }
 
-  const run = (args, interactive) => runCli(cli, directory, origin, args, signal, interactive);
   terminal.progress("[1/4] Check Disposabl sign-in");
-  if (!(await run(["login", "status"])).currentUser) {
+  if (!await client.currentUser({ signal })) {
     terminal.progress("Sign in in your browser, then return here to continue. Press Ctrl+C to pause.");
-    await run(terminal.interactive ? ["login"] : ["login", "--no-browser"], true);
-    if (!(await run(["login", "status"])).currentUser) throw new Error("Disposabl login did not complete.");
+    await client.signIn(terminal.interactive);
+    if (!await client.currentUser({ signal })) throw new Error("Disposabl login did not complete.");
   }
   terminal.progress("Signed in to Disposabl.");
 
   terminal.progress("[2/4] Connect GitHub");
-  await connect(run, terminal, signal, "github", "GitHub", "https://github.com");
+  await connect(client, terminal, signal, "github", "GitHub", providerLink, openUrl);
   terminal.progress("[3/4] Connect Convex");
-  await connect(run, terminal, signal, "convex", "Convex", "https://dashboard.convex.dev");
+  await connect(client, terminal, signal, "convex", "Convex", providerLink, openUrl);
 
   terminal.progress("[4/4] Provision your GitHub repository and Convex project");
-  const app = await run(["apps", "create", "--appSlug", name, "--appName", name]);
+  const app = await client.request("/api/apps/create", {
+    method: "POST", signal, timeout: 120_000,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ appSlug: name, appName: name }),
+  }, true);
   if (app.appSlug !== name || typeof app.appId !== "string" || !app.appId) {
     throw new Error("Disposabl did not return the expected app ID.");
   }
@@ -146,7 +103,7 @@ export async function setup(directory, name, config, terminal, signal) {
   }
 
   config.appId = app.appId;
-  config.serviceOrigin = origin;
+  config.serviceOrigin = client.origin;
   if (typeof app.convexSiteUrl === "string" && /^https:\/\/[a-z0-9-]+\.convex\.site$/.test(app.convexSiteUrl)) {
     config.apiOrigin = app.convexSiteUrl;
   }

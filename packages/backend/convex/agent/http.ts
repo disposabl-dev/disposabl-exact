@@ -18,13 +18,13 @@ async function session(ctx: ActionCtx, request: Request) {
   if (!token) return null;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  return ctx.runQuery(internal.agent.internal.getSandboxSession, { tokenHash });
+  return ctx.runQuery(internal.agent.internal.getSandboxSession, { tokenHash, now: Date.now() });
 }
 
 export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
   const sandbox = await session(ctx, request);
   if (!sandbox) return null;
-  const { userId, appSlug, threadId, turnId } = sandbox;
+  const { userId, appSlug, threadId, sandbox: box, messageId } = sandbox;
   return {
     userId,
     allows: (operation, args) => {
@@ -32,7 +32,7 @@ export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
       if (typeof args.appSlug !== "string") return false;
       if (operation.id === "apps/internal:get") return args.appSlug === appSlug;
       if (operation.id !== "apps/internal:create") return false;
-      return ctx.runMutation(internal.agent.internal.claimApp, { turnId, appSlug: args.appSlug });
+      return ctx.runMutation(internal.agent.internal.claimApp, { sandbox: box, messageId, appSlug: args.appSlug });
     },
     onSuccess: async (operation, args) => {
       if (operation.id === "apps/internal:create" && typeof args.appSlug === "string") {
@@ -42,35 +42,24 @@ export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
   };
 };
 
-const gitToken = httpAction(async (ctx, request) => {
-  const sandbox = await session(ctx, request);
-  if (!sandbox) return reply({ error: "Sandbox session expired." }, 401);
-  if (!sandbox.appSlug) return reply({ error: "Create an app before requesting workspace access." }, 409);
-  const args = { userId: sandbox.userId, appSlug: sandbox.appSlug };
-  try {
-    const result = await ctx.runAction(internal.agent.actions.credentials.github, args);
-    return reply(result);
-  } catch (error) {
-    if (error instanceof ConvexError && typeof error.data === "string") return reply({ error: error.data }, 400);
-    return reply({ error: "GitHub access is unavailable. Check the app's connection." }, 502);
-  }
-});
-
-const convexKey = httpAction(async (ctx, request) => {
-  const sandbox = await session(ctx, request);
-  if (!sandbox) return reply({ error: "Sandbox session expired." }, 401);
-  if (!sandbox.appSlug) return reply({ error: "Create an app before requesting workspace access." }, 409);
-  const args = { userId: sandbox.userId, appSlug: sandbox.appSlug };
-  try {
-    const result = await ctx.runAction(internal.agent.actions.credentials.convex, args);
-    return reply(result);
-  } catch (error) {
-    if (error instanceof ConvexError && typeof error.data === "string") return reply({ error: error.data }, 400);
-    return reply({ error: "Convex preview access is unavailable. Check the app's connection." }, 502);
-  }
-});
+function workspaceCredential(provider: "github" | "convex") {
+  return httpAction(async (ctx, request) => {
+    const sandbox = await session(ctx, request);
+    if (!sandbox) return reply({ error: "Sandbox session expired." }, 401);
+    if (!sandbox.appSlug) return reply({ error: "Create an app before requesting workspace access." }, 409);
+    const args = { userId: sandbox.userId, appSlug: sandbox.appSlug };
+    try {
+      const action = internal.agent.actions.credentials;
+      return reply(provider === "github" ? await ctx.runAction(action.github, args) : await ctx.runAction(action.convex, args));
+    } catch (error) {
+      if (error instanceof ConvexError && typeof error.data === "string") return reply({ error: error.data }, 400);
+      return reply({ error: "Workspace access is unavailable. Check the app's connection." }, 502);
+    }
+  });
+}
 
 export function registerSandboxRoutes(http: HttpRouter) {
-  http.route({ path: "/api/sandbox/github", method: "POST", handler: gitToken });
-  http.route({ path: "/api/sandbox/convex", method: "POST", handler: convexKey });
+  for (const provider of ["github", "convex"] as const) {
+    http.route({ path: `/api/sandbox/${provider}`, method: "POST", handler: workspaceCredential(provider) });
+  }
 }

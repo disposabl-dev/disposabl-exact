@@ -4,108 +4,86 @@ import { createHash, randomBytes } from "node:crypto";
 import { siteOrigin } from "../../../../disposabl-kit/server/authSettings";
 import { internal } from "../../_generated/api";
 import { internalAction, type ActionCtx } from "../../_generated/server";
-import type { Doc } from "../../_generated/dataModel";
+import type { Id } from "../../_generated/dataModel";
 import { turnArgs } from "../validators";
 import { BoatError, eventCursor, events, interrupt, promptStatus, readySandbox, runPrompt } from "./boat";
 import { clearWorkspace, installWorkspace } from "./workspace";
 
 const state = internal.agent.internal;
+type TurnRef = { sandbox: Id<"agentSandboxes">; messageId: string };
 
-function instruction(directory: string, branch: string, repository?: string) {
-  return `You are the coding agent for this user's Disposabl workspace. Work in ${directory}.
-${repository ? `The repository ${repository} is already linked.` : `If the user asks you to create an app, run bunx create-disposabl-app@latest with their app name and redirect stdin from /dev/null. Use --resume with an existing scaffold. Keep the scaffold under ${directory}. The Disposabl CLI is signed in for this turn. If setup prints a GitHub or Convex connection URL, give the full URL to the user in your assistant response and ask them to open it and continue this conversation when connected. Do not invent a URL or ask for a token. Creation stops until both accounts are connected.`}
-Export PATH="$HOME/.local/bin:$PATH" for gh and disposabl-preview. Git over HTTPS and gh can access this app's repository after it is linked. Run disposabl-preview from packages/backend if a hosted Convex preview is needed. Use branch ${branch} to checkpoint completed work for later turns. Do not push to main unless the user asks. Keep secrets out of your response, repository, and command output.`;
+async function finish(ctx: ActionCtx, ref: TurnRef, sandboxId?: string, text?: string, cursor?: string) {
+  await ctx.runMutation(state.update, { ...ref, cursor, text, delay: 0, finish: true });
+  if (sandboxId) await clearWorkspace(sandboxId, ref.messageId).catch(() => {});
 }
 
-function failure(error: unknown) {
-  if (error instanceof BoatError) {
-    if (error.code === "unsafe_environment") return "The sandbox needs a Boat environment with proxied AI access.";
-    if (error.code === "provider_not_configured" || error.code === "ultrafast_not_supported") {
-      return "Codex Ultrafast is unavailable for this workspace. Ask your administrator to check the Boat model settings.";
-    }
-    if (error.status === 429) return "The sandbox provider is busy. Send the message again in a moment.";
-  }
-  return "The coding agent could not complete this turn. Send another message to try again.";
-}
-
-async function finish(ctx: ActionCtx, turn: Doc<"agentTurns">, text = "", note?: string) {
-  await ctx.runMutation(state.finish, { turnId: turn._id, text, note });
-  if (turn.sandboxId) await clearWorkspace(turn.sandboxId, turn._id).catch(() => {});
-}
-
-function lastCursor(page: Awaited<ReturnType<typeof events>>, fallback?: string) {
-  const last = page.events.at(-1);
-  return page.pageInfo?.nextCursor ?? (last ? eventCursor(last) : fallback);
-}
-
-export const start = internalAction({
+export const processTurn = internalAction({
   args: turnArgs,
-  handler: async (ctx, { turnId }): Promise<void> => {
-    const data = await ctx.runQuery(state.getTurn, { turnId });
-    if (!data) return;
-    const { turn, existingSandboxId, prompt, repository, history } = data;
-    let sandboxId: string | undefined;
+  handler: async (ctx, ref): Promise<void> => {
+    const box = await ctx.runQuery(state.getTurn, ref);
+    if (!box || box.turn.deadline <= Date.now()) return;
+    const { turn } = box;
+    let sandboxId = box.sandboxId;
     try {
-      if (turn.cancelled) return await finish(ctx, turn, "", "Stopped by user.");
-      sandboxId = await readySandbox(existingSandboxId, turnId);
-      const id = sandboxId;
-      const token = "dsp_sandbox_" + randomBytes(32).toString("hex");
-      const tokenHash = createHash("sha256").update(token).digest("hex");
-      if (!await ctx.runMutation(state.sandboxReady, { turnId, sandboxId: id, tokenHash })) {
-        await finish(ctx, turn, "", "Stopped by user.");
+      if (turn.cancelled) {
+        if (sandboxId && turn.prompt) await interrupt(sandboxId, turn.prompt.conversationId);
+        return await finish(ctx, ref, sandboxId, "Stopped by user.");
+      }
+      if (!turn.prompt || !sandboxId) {
+        const conversation = await ctx.runQuery(state.getConversation, ref);
+        if (!conversation) return;
+        sandboxId = await readySandbox(sandboxId, ref.messageId);
+        const token = "dsp_sandbox_" + randomBytes(32).toString("hex");
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        if (!await ctx.runMutation(state.authorize, { ...ref, sandboxId, tokenHash })) {
+          return await finish(ctx, ref, sandboxId, "Stopped by user.");
+        }
+        const { repository, history } = conversation;
+        const { directory, branch } = await installWorkspace(sandboxId, { origin: siteOrigin(), token, expiresAt: turn.deadline, turnId: ref.messageId }, turn.threadId, turn.appSlug, repository);
+        const current = await ctx.runQuery(state.getTurn, ref);
+        if (!current || current.turn.cancelled) return await finish(ctx, ref, sandboxId, "Stopped by user.");
+        const prompt = await runPrompt(sandboxId, `Work in ${directory}. ${repository ? `The repository ${repository} is linked.` :
+          "To create an app, run bunx create-disposabl-app@latest with its name and stdin redirected from /dev/null. Use --resume if the directory exists. If setup prints a provider connection URL, give that URL to the user and ask them to continue after connecting."}
+Export PATH="$HOME/.local/bin:$PATH" before running commands. Use Git and gh with this app's credentials. Checkpoint changes on ${branch}. Push to main only when the user requests a production release. Use disposabl-preview from packages/backend for a hosted preview. Keep credentials private.
+Conversation ending with the latest user message:
+${JSON.stringify(history)}`);
+        await ctx.runMutation(state.update, { ...ref, prompt: { promptId: prompt.promptId, conversationId: prompt.conversationId }, delay: 0 });
         return;
       }
-      const { directory, branch } = await installWorkspace(id, { origin: siteOrigin(), token, expiresAt: turn.deadline, turnId }, turn.threadId, turn.appSlug, repository);
-      const current = await ctx.runQuery(state.getActiveTurn, { turnId });
-      if (!current || current.cancelled) return await finish(ctx, { ...turn, sandboxId: id }, "", "Stopped by user.");
 
-      const conversationId = id === existingSandboxId ? turn.conversationId : undefined;
-      const cursor = conversationId ? lastCursor(await events(id, conversationId, undefined, true)) : undefined;
-      if (!prompt) throw new Error("Message could not be loaded.");
-      const context = !conversationId && history.length ? `\nConversation history:\n${JSON.stringify(history)}\n` : "";
-      const result = await runPrompt(id, `${instruction(directory, branch, repository)}${context}\n\nUser message:\n${prompt}`, conversationId);
-      await ctx.runMutation(state.promptStarted, { turnId, promptId: result.promptId, conversationId: result.conversationId, cursor });
-    } catch (error) {
-      await finish(ctx, { ...turn, sandboxId }, "", failure(error));
-    }
-  },
-});
-
-export const poll = internalAction({
-  args: turnArgs,
-  handler: async (ctx, { turnId }): Promise<void> => {
-    const turn = await ctx.runQuery(state.getActiveTurn, { turnId });
-    if (!turn?.sandboxId || !turn.promptId || !turn.conversationId) return;
-    try {
-      if (turn.cancelled) await interrupt(turn.sandboxId, turn.conversationId);
-      const prompt = await promptStatus(turn.sandboxId, turn.promptId);
-      const page = await events(turn.sandboxId, turn.conversationId, turn.cursor);
-      const text = page.events.flatMap(event => event.type === "response" && typeof event.data?.content === "string" && event.data.content
+      const result = await promptStatus(sandboxId, turn.prompt.promptId);
+      const page = await events(sandboxId, turn.prompt.conversationId, turn.cursor);
+      const last = page.events.at(-1);
+      const cursor = page.pageInfo?.nextCursor ?? (last ? eventCursor(last) : turn.cursor);
+      const text = page.events.flatMap(event => event.type === "response" && typeof event.data?.content === "string"
         ? [event.data.content] : []).join("\n\n");
-      const delta = text && turn.text ? "\n\n" + text : text;
-      if (prompt.done && !page.pageInfo?.hasMore) {
-        const note = prompt.status === "interrupted" ? "Stopped by user."
-          : prompt.status === "failed" ? "The coding agent reported an error. Send another message to try again." : undefined;
-        await finish(ctx, turn, delta, note);
+      // Boat can publish the response after reporting the prompt as finished.
+      const finishedAt = result.done ? turn.finishedAt ?? Date.now() : undefined;
+      const hasResponse = turn.size > 0 || text.length > 0;
+      if (finishedAt && !page.pageInfo?.hasMore && (hasResponse || result.status !== "finished" || Date.now() - finishedAt >= 30_000)) {
+        const note = result.status === "failed" ? "The coding agent reported an error." : "";
+        return await finish(ctx, ref, sandboxId, [text, note].filter(Boolean).join("\n\n"), cursor);
+      }
+      await ctx.runMutation(state.update, { ...ref, cursor, text, finishedAt, delay: page.pageInfo?.hasMore ? 0 : 1_000 });
+    } catch (error) {
+      if (turn.prompt) {
+        await ctx.runMutation(state.update, { ...ref, delay: 3_000 });
         return;
       }
-      await ctx.runMutation(state.advance, { turnId, cursor: lastCursor(page, turn.cursor), text: delta, delay: page.pageInfo?.hasMore ? 0 : 1_000 });
-    } catch {
-      if (Date.now() < turn.deadline) {
-        await ctx.runMutation(state.advance, { turnId, text: "", delay: 3_000 });
-      }
+      const code = error instanceof BoatError ? error.code : undefined;
+      await finish(ctx, ref, sandboxId, code === "unsafe_environment" ? "The sandbox needs a Boat environment with proxied AI access."
+        : code === "provider_not_configured" || code === "ultrafast_not_supported" ? "Codex Ultrafast is unavailable in Boat."
+        : "The coding agent could not start. Send another message to try again.");
     }
   },
 });
 
 export const expire = internalAction({
   args: turnArgs,
-  handler: async (ctx, { turnId }): Promise<void> => {
-    const turn = await ctx.runQuery(state.getActiveTurn, { turnId });
-    if (!turn) return;
-    if (turn.sandboxId && turn.conversationId && turn.promptId) {
-      await interrupt(turn.sandboxId, turn.conversationId).catch(() => {});
-    }
-    await finish(ctx, turn, "", turn.cancelled ? "Stopped by user." : "The coding agent timed out. Send another message to continue.");
+  handler: async (ctx, ref): Promise<void> => {
+    const box = await ctx.runQuery(state.getTurn, ref);
+    if (!box) return;
+    if (box.sandboxId && box.turn.prompt) await interrupt(box.sandboxId, box.turn.prompt.conversationId).catch(() => {});
+    await finish(ctx, ref, box.sandboxId, box.turn.cancelled ? "Stopped by user." : "The coding agent timed out.");
   },
 });

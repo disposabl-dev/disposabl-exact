@@ -114,19 +114,22 @@ export async function command(id: string, command: string, timeoutSeconds = 30) 
   return result.stdout;
 }
 
-export function runPrompt(id: string, prompt: string, conversationId?: string) {
+export function runPrompt(id: string, prompt: string) {
   return request<Prompt>(path(id) + "/prompt", { body: {
     provider: "codex", model: env.BOAT_AGENT_MODEL || "gpt-6.2-sol", speed: "ultrafast", prompt,
-    ...(conversationId ? { conversationId } : { new: true }),
+    new: true,
   } });
 }
 
-export function promptStatus(id: string, promptId: string) {
-  return request<{ status: string; done: boolean }>(path(id) + "/prompts/" + encodeURIComponent(promptId));
+export async function promptStatus(id: string, promptId: string) {
+  const { promptRun } = await request<{ promptRun: { status: string; done: boolean } }>(
+    path(id) + "/prompts/" + encodeURIComponent(promptId),
+  );
+  return promptRun;
 }
 
-export function events(id: string, conversationId: string, cursor?: string, latest = false) {
-  const query = new URLSearchParams({ conversation: conversationId, sort: latest ? "desc" : "asc", limit: latest ? "1" : "100" });
+export function events(id: string, conversationId: string, cursor?: string) {
+  const query = new URLSearchParams({ conversation: conversationId, sort: "asc", limit: "100" });
   if (cursor) query.set("cursor", cursor);
   return request<{ events: BoatEvent[]; pageInfo?: { nextCursor?: string; hasMore: boolean } }>(path(id) + "/events?" + query.toString());
 }

@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseEnv } from "node:util";
 import { Command } from "commander";
-import { accessToken, hasCredentials, login, logout, NotAuthenticated, openUrl } from "./auth.mjs";
+import { logout, openUrl } from "./auth.mjs";
+import { apiOrigin, createClient, providerLink } from "./client.mjs";
 import { sandboxSession } from "./sandbox.mjs";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
@@ -35,69 +36,31 @@ function targetOrigin() {
   }
 }
 
-function apiOrigin(value) {
-  const url = URL.parse(value);
-  const localhost = url?.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if (!url || (url.protocol !== "https:" && !localhost) || url.href !== url.origin + "/") {
-    throw new Error("Use an HTTPS API origin, or an HTTP loopback origin for local development.");
-  }
-  return url.origin;
-}
-
-function request(url, options = {}) {
-  return fetch(url, { ...options, redirect: "error", signal: AbortSignal.timeout(options.timeout ?? 30_000) });
-}
-
-async function result(response) {
-  const body = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(body?.error ?? ("HTTP " + response.status));
-  return body;
-}
-
 let contractPromise;
 function contract(timeout) {
   return contractPromise ??= (async () => {
-    const origin = targetOrigin();
-    const spec = await result(await request(origin + "/openapi.json", { timeout }));
+    const client = createClient(targetOrigin());
+    const spec = await client.request("/openapi.json", { timeout });
     const operations = Object.entries(spec.paths).flatMap(([path, methods]) =>
       ["get", "post"].filter(method => methods[method]).map(method => ({ path, method, ...methods[method] })),
     );
-    return { origin, authentication: spec["x-disposabl"]?.authentication ?? true, operations };
+    return { client, authentication: spec["x-disposabl"]?.authentication ?? true, operations };
   })();
 }
 
-async function authenticatedRequest(url, options, origin) {
-  const sandbox = sandboxSession();
-  const send = async (refresh = false) => {
-    const token = sandbox?.origin === origin ? sandbox.token : await accessToken(origin, refresh);
-    return request(url, { ...options, headers: { ...options.headers, Authorization: "Bearer " + token } });
-  };
-  const response = await send();
-  return response.status === 401 && sandbox?.origin !== origin && !process.env.DISPOSABL_API_KEY ? send(true) : response;
-}
-
 async function loginStatus() {
-  const { origin, authentication } = await contract();
-  let currentUser = null;
-  if (authentication && (sandboxSession()?.origin === origin || await hasCredentials(origin))) {
-    try {
-      const response = await authenticatedRequest(origin + "/api/users/current", {}, origin);
-      if (response.status !== 401) currentUser = await result(response);
-    } catch (error) {
-      if (!(error instanceof NotAuthenticated)) throw error;
-    }
-  }
-  return { authentication, currentUser };
+  const { client, authentication } = await contract();
+  return { authentication, currentUser: authentication ? await client.currentUser() : null };
 }
 
 const output = value => console.log(JSON.stringify(value, null, 2));
 const loginCommand = program.command("login").description("Sign in to the target app")
   .option("--no-browser", "Print the sign-in link")
   .action(async ({ browser }) => {
-    const { origin, authentication } = await contract();
+    const { client, authentication } = await contract();
     if (!authentication) return output({ authentication });
-    if (sandboxSession()?.origin === origin) return output(await loginStatus());
-    await login(origin, browser);
+    if (client.sandbox) return output(await loginStatus());
+    await client.signIn(browser);
     console.error("Signed in.");
   });
 loginCommand.command("status").description("Check the current session")
@@ -105,8 +68,8 @@ loginCommand.command("status").description("Check the current session")
 program.command("status").description("Check whether the app requires login and report the current user")
   .action(async () => output(await loginStatus()));
 program.command("logout").description("Sign out of the target app").action(async () => {
-  const { origin, authentication } = await contract();
-  if (authentication) await logout(origin);
+  const { client, authentication } = await contract();
+  if (authentication) await logout(client.origin);
   output({ authentication, currentUser: null });
 });
 
@@ -134,8 +97,8 @@ async function call(operation, args) {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     throw new Error("Operation arguments must be a JSON object.");
   }
-  const { origin, authentication } = await contract();
-  const url = new URL(operation.path, origin);
+  const { client, authentication } = await contract();
+  const url = new URL(operation.path, client.origin);
   commandParts(operation.path);
   const parameters = fields(operation);
   for (const name of Object.keys(args)) {
@@ -154,11 +117,11 @@ async function call(operation, args) {
     if (operation.path === "/api/apps/create") options.timeout = 120_000;
   }
 
-  if (operation.security?.length === 0) return result(await request(url, options));
+  if (operation.security?.length === 0) return client.request(url, options);
   if (!authentication && !process.env.DISPOSABL_API_KEY) {
     throw new Error("Set DISPOSABL_API_KEY for this user-scoped operation.");
   }
-  return result(await authenticatedRequest(url, options, origin));
+  return client.request(url, options, true);
 }
 
 program.command("list").description("List the operations enabled for this app").action(async () => {
@@ -195,12 +158,7 @@ function addOperation(operation) {
     const args = Object.fromEntries(parameters.filter(field => options[field.name] !== undefined)
       .map(field => [field.name, field.schema?.type === "string" ? options[field.name] : JSON.parse(options[field.name])]));
     const response = await call(operation, args);
-    if (provider && options.browser) {
-      const url = URL.parse(response?.url);
-      const expected = provider === "github" ? "https://github.com" : "https://dashboard.convex.dev";
-      if (!url || url.origin !== expected || url.username || url.password) throw new Error("Invalid provider authorization link.");
-      openUrl(url.href);
-    }
+    if (provider && options.browser) openUrl(providerLink(provider, response?.url));
     output(response);
   });
 }

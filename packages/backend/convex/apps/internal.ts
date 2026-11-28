@@ -139,6 +139,8 @@ export const remove = internalMutation({
     if (row.live !== null) throw new ConvexError("An app with live data cannot be deleted.");
 
     if (row.agentThreadId) {
+      const box = await ctx.db.query("agentSandboxes").withIndex("by_userId", q => q.eq("userId", userId)).unique();
+      if (box?.turn?.threadId === row.agentThreadId) throw new ConvexError("Stop the coding turn before deleting this app.");
       await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId: row.agentThreadId });
     }
     await ctx.db.delete("apps", row._id);
