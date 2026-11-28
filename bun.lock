@@ -5,12 +5,12 @@
     "": {
       "name": "disposabl-app",
       "devDependencies": {
-        "@disposabl/cli": "4.1.0",
+        "@disposabl/cli": "file:packages/cli",
       },
     },
   },
   "packages": {
-    "@disposabl/cli": ["@disposabl/cli@4.1.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "1.32.2", "commander": "15.0.0", "proper-lockfile": "4.1.2" }, "bin": { "disposabl": "dist/index.js" } }, "sha512-Y1KhWdSaf4DBZ9MimC32DPYvJ+XlGd2m+xE2UJdgPkVr7lsBY2N9ip3kwTrND+yKTxYlEvJSHTrnIPo0yq3+Xg=="],
+    "@disposabl/cli": ["@disposabl/cli@file:packages/cli", { "dependencies": { "@modelcontextprotocol/sdk": "1.32.2", "commander": "15.0.0", "proper-lockfile": "4.1.2" }, "bin": { "disposabl": "./index.mjs" } }],
 
     "@hono/node-server": ["@hono/node-server@2.1.11", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-KzKz9vl4vvr1vgLHamj+g5uonbrj5NwAdO3yzOS6cd2HjALVeOgTgeZOyAzNxejbkfOOPIcvuf/Tg8l1pEFLog=="],
 

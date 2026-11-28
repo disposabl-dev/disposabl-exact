@@ -20,7 +20,8 @@ function readPlatform(value: unknown) {
     frontend: web || native,
     native,
     credentials: web && authentication && (api || mcp),
-    consent: web && authentication && mcp,
+    consent: web && authentication && (api || mcp),
+    oauth: authentication && (api || (web && mcp)),
   };
 }
 

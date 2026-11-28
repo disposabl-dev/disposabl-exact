@@ -29,7 +29,7 @@ export const operations = Object.entries(definitions).map(([id, definition]) => 
     feature: exposed.feature,
     description: exposed.description ?? `Call ${id}.`,
     name: id.replace(/[^a-zA-Z0-9_.-]/g, "_"),
-    path: `/api/${id.replace(":", "/")}`,
+    path: `/api/${id.replace(/\/internal:/, ":").replace(":", "/")}`,
     method: readOnly ? "GET" as const : "POST" as const,
     scope: readOnly ? "read" : "write",
   };
@@ -41,8 +41,12 @@ export type Operation = (typeof operations)[number];
 export const validate = (operation: Operation, input: unknown) => checkValue(v.object(operation.args), input);
 
 type Caller = Pick<GenericActionCtx<GenericDataModel>, "runQuery" | "runMutation" | "runAction">;
-export function invoke(ctx: Caller, operation: Operation, args: Record<string, Value>, userId: string): Promise<Value> {
-  const input = operation.usesUser ? { ...args, userId } : args;
+export function invoke(ctx: Caller, operation: Operation, args: Record<string, Value>, userId?: string): Promise<Value> {
+  let input = args;
+  if (operation.usesUser) {
+    if (!userId) throw new Error("This operation requires a user.");
+    input = { ...args, userId };
+  }
   const reference = <Kind extends FunctionType>() =>
     makeFunctionReference<Kind, typeof input, Value>(operation.id);
   switch (operation.kind) {

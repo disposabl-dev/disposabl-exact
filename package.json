@@ -8,6 +8,6 @@
     "android": "bun scripts/exact.mjs run android"
   },
   "devDependencies": {
-    "@disposabl/cli": "4.1.0"
+    "@disposabl/cli": "file:packages/cli"
   }
 }

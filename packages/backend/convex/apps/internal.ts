@@ -5,7 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { env, type QueryCtx } from "../_generated/server";
 import { findConnection } from "../connections/internal";
 import {
-  app, appSlugArgs, appOrNull, appPage, createForUserArgs,
+  app, appSlugArgs, appOrNull, appPage, createdApp, createForUserArgs,
   creationPlan, listArgs, removeArgs, saveCreatedAppArgs,
 } from "./validators";
 
@@ -60,8 +60,8 @@ export const create = internalAction({
   platforms: true,
   description: "Create a private GitHub repository and a Convex project, then configure GitHub Actions.",
   args: createForUserArgs,
-  returns: app,
-  handler: (ctx, args): Promise<Infer<typeof app>> =>
+  returns: createdApp,
+  handler: (ctx, args): Promise<Infer<typeof createdApp>> =>
     ctx.runAction(internal.apps.actions.create.provision, args),
 });
 
@@ -69,7 +69,7 @@ export const prepareCreation = internalQuery({
   args: createForUserArgs,
   returns: creationPlan,
   handler: async (ctx, args): Promise<Infer<typeof creationPlan>> => {
-    const { userId, mode = "agent" } = args;
+    const { userId } = args;
     const name = args.appName.trim();
     const slug = args.appSlug.trim().toLowerCase();
     if (!name || name.length > 100) throw new ConvexError("App name must be 1–100 characters.");
@@ -83,59 +83,48 @@ export const prepareCreation = internalQuery({
     if (existing && (existing.userId !== userId || existing.name !== name)) {
       throw new ConvexError("App slug is already in use.");
     }
-    if (existing) return { status: "complete", app: presentApp(existing) };
+    if (existing) return { status: "complete", app: { ...presentApp(existing), appId: existing._id } };
 
     const connection = await findConnection(ctx, userId);
-    const managedGitHub = !connection?.github;
-    const managedConvex = !connection?.convex;
-    if (mode === "local" && (managedGitHub || managedConvex)) {
-      throw new ConvexError("Connect GitHub and Convex to create an app in local mode.");
-    }
-
-    if ((managedGitHub || managedConvex) && await ctx.db.query("apps")
-      .withIndex("by_userId", q => q.eq("userId", userId)).first()) {
-      throw new ConvexError("Connect GitHub and Convex to create another app.");
-    }
+    if (!connection?.github) throw new ConvexError("Connect GitHub before creating the app.");
+    if (!connection.convex) throw new ConvexError("Connect Convex before creating the app.");
     if (await ctx.db.query("previews").withIndex("by_appSlug", q => q.eq("appSlug", slug)).first()) {
       throw new ConvexError("This app is still being removed. Try again shortly.");
     }
 
-    const githubOwner = managedGitHub ? "disposabl-dev" : connection?.github?.owner.toLowerCase();
-    const githubInstallationId = managedGitHub ? null : connection?.github?.installationId;
-    const convexTeamId = managedConvex ? Number(env.DISPOSABL_CONVEX_TEAM_ID) : connection?.convex?.teamId;
-    const convexAccessToken = managedConvex ? env.DISPOSABL_CONVEX_TEAM_TOKEN : connection?.convex?.accessToken;
+    const githubOwner = connection.github.owner.toLowerCase();
+    const githubInstallationId = connection.github.installationId;
+    const { teamId: convexTeamId, accessToken: convexAccessToken } = connection.convex;
     if (!env.DISPOSABL_GITHUB_APP_ID || !env.DISPOSABL_GITHUB_APP_PRIVATE_KEY) {
       throw new ConvexError("GitHub app provisioning is unavailable.");
     }
-    if (!githubOwner || !/^[a-z0-9][a-z0-9-]{0,38}$/.test(githubOwner)
-      || githubInstallationId === undefined
-      || (githubInstallationId !== null && !/^[1-9][0-9]*$/.test(githubInstallationId))) {
+    if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(githubOwner) || !/^[1-9][0-9]*$/.test(githubInstallationId)) {
       throw new ConvexError("Reconnect GitHub before creating the app.");
     }
-    if (!convexTeamId || convexTeamId < 1 || !Number.isSafeInteger(convexTeamId) || !convexAccessToken?.trim()) {
-      throw new ConvexError(managedConvex ? "Disposabl's Convex team is unavailable." : "Reconnect Convex before creating the app.");
+    if (convexTeamId < 1 || !Number.isSafeInteger(convexTeamId) || !convexAccessToken.trim()) {
+      throw new ConvexError("Reconnect Convex before creating the app.");
     }
     return {
       status: "provision", appSlug: slug, appName: name,
-      githubOwner, githubInstallationId, convexTeamId, convexAccessToken: convexAccessToken.trim(), managedConvex,
+      githubOwner, githubInstallationId, convexTeamId, convexAccessToken,
     };
   },
 });
 
 export const saveCreatedApp = internalMutation({
   args: saveCreatedAppArgs,
-  returns: app,
+  returns: createdApp,
   handler: async (ctx, { appSlug: slug, appName: name, ...fields }) => {
     const existing = await findAppBySlug(ctx, slug);
     if (existing) {
-      if (existing.userId === fields.userId && existing.name === name) return presentApp(existing);
+      if (existing.userId === fields.userId && existing.name === name) return { ...presentApp(existing), appId: existing._id };
       throw new ConvexError("App slug is already in use.");
     }
 
     const id = await ctx.db.insert("apps", { ...fields, slug, name, prod: null, live: null });
     const row = await ctx.db.get("apps", id);
     if (!row) throw new ConvexError("App could not be saved.");
-    return presentApp(row);
+    return { ...presentApp(row), appId: id };
   },
 });
 

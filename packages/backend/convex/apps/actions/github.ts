@@ -40,10 +40,8 @@ async function installationToken(installationId: number, scope: object) {
   return token;
 }
 
-export async function ensureRepository(owner: string, connectionId: string | null, name: string) {
-  const installation = await request<Installation>("GitHub", appToken(), connectionId
-    ? `/app/installations/${connectionId}`
-    : `/orgs/${owner}/installation`);
+export async function ensureRepository(owner: string, connectionId: string, name: string) {
+  const installation = await request<Installation>("GitHub", appToken(), `/app/installations/${connectionId}`);
   if (installation.account?.login.toLowerCase() !== owner || installation.suspended_at
     || !Number.isSafeInteger(installation.id)
     || (installation.account.type !== "Organization" && installation.account.type !== "User")) {

@@ -9,8 +9,6 @@ export const app = defineApp({
     AUTUMN_SECRET_KEY: v.optional(v.string()),
     DISPOSABL_GITHUB_APP_ID: v.optional(v.string()),
     DISPOSABL_GITHUB_APP_PRIVATE_KEY: v.optional(v.string()),
-    DISPOSABL_CONVEX_TEAM_ID: v.optional(v.string()),
-    DISPOSABL_CONVEX_TEAM_TOKEN: v.optional(v.string()),
     GITHUB_APP_SLUG: v.optional(v.string()),
     GITHUB_OAUTH_CLIENT_ID: v.optional(v.string()),
     GITHUB_OAUTH_CLIENT_SECRET: v.optional(v.string()),

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { extract } from "tar";
 import lockfile from "proper-lockfile";
@@ -11,13 +11,14 @@ import { git, readJson, setup, writeJson } from "./setup.mjs";
 import { createTerminal } from "./terminal.mjs";
 
 const terminal = createTerminal();
+const setupCancellation = new AbortController();
 const nameError = "Provide an app name of up to 55 lowercase letters, numbers and hyphens.";
 const validName = name => typeof name === "string" && name.length <= 55 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name);
 
 const help = `Usage: create-disposabl-app [app-name] [options]
 
-Create an Exact and Convex project. Web and authentication are the defaults.
-Setup uses @disposabl/cli to provision GitHub and Convex.
+Create an Exact and Convex project. Web, CLI, and authentication are enabled by default.
+Setup signs you in to Disposabl, connects GitHub and Convex, then creates the app.
 
   --platforms  Comma-separated list of ${platforms.join(", ")}.
   --features   Comma-separated list of ${features.join(", ")}.
@@ -119,21 +120,29 @@ async function main() {
   const release = await lockfile.lock(configPath, {
     lockfilePath: join(git(directory, "rev-parse", "--absolute-git-dir"), "disposabl-setup.lock"),
   });
+  const interrupt = () => setupCancellation.abort();
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
   try {
     const config = await readJson(configPath);
     readProjectConfig(config);
-    await terminal.install(directory, config);
-    if (!values["skip-setup"]) await setup(directory, app.name, config);
+    const { signal } = setupCancellation;
+    await terminal.install(directory, config, signal);
+    if (!values["skip-setup"]) await setup(directory, app.name, config, terminal, signal);
   } catch (error) {
-    throw new Error(`${error.message}\nFiles are in ${directory}. Rerun the generator with --resume.`);
+    const reason = setupCancellation.signal.aborted ? "Setup paused." : error.message;
+    throw new Error(`${reason}\nProject files are in ${directory}.\nRun this command from ${dirname(directory)} to resume.\n  bunx create-disposabl-app@latest ${name} --resume`);
   } finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", interrupt);
     await release();
   }
-  terminal.complete(directory);
+  terminal.complete(directory, !values["skip-setup"]);
 }
 
 try {
   await main();
 } catch (error) {
-  process.exitCode = terminal.fail(error);
+  const status = terminal.fail(error);
+  process.exitCode = setupCancellation.signal.aborted ? 130 : status;
 }

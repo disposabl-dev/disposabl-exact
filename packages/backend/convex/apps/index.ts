@@ -2,7 +2,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { action, mutation, query } from "../_generated/server";
 import { requireUserId } from "../lib/requireUserId";
-import { app, appSlugArgs, appOrNull, appPage, createArgs, listArgs, removeArgs } from "./validators";
+import { appSlugArgs, appOrNull, appPage, createdApp, createArgs, listArgs, removeArgs } from "./validators";
 
 export const list = query({
   args: listArgs,
@@ -20,8 +20,8 @@ export const get = query({
 
 export const create = action({
   args: createArgs,
-  returns: app,
-  handler: async (ctx, args): Promise<Infer<typeof app>> => {
+  returns: createdApp,
+  handler: async (ctx, args): Promise<Infer<typeof createdApp>> => {
     const userId = await ctx.runQuery(api.auth.viewerId, {});
     if (!userId) throw new ConvexError("Sign in to continue.");
     return ctx.runAction(internal.apps.actions.create.provision, { ...args, userId });

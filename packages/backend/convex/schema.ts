@@ -43,6 +43,7 @@ export default defineSchema({
     githubOwner: v.string(),
     githubRepoName: v.string(),
     convexProjectId: v.number(),
+    convexSiteUrl: v.optional(v.string()),
     prod: appPlatforms,
     live: appPlatforms,
     agentThreadId: v.optional(v.string()),

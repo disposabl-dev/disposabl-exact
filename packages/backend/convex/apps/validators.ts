@@ -7,29 +7,28 @@ export const app = schema.doc("apps")
   .extend({ appSlug: v.string(), appName: v.string() });
 export const appOrNull = v.union(app, v.null());
 export const appPage = paginationResultValidator(app);
+export const createdApp = app.extend({ appId: v.id("apps") });
 
 export const appSlugArgs = { appSlug: v.string() };
 export const listArgs = { paginationOpts: paginationOptsValidator };
 export const createArgs = {
   ...appSlugArgs,
   appName: v.string(),
-  mode: v.optional(v.union(v.literal("agent"), v.literal("local"))),
 };
 export const removeArgs = { ...appSlugArgs, confirm: v.literal(true) };
 
 export const createForUserArgs = { userId: v.id("users"), ...createArgs };
 
 export const creationPlan = v.union(
-  v.object({ status: v.literal("complete"), app }),
+  v.object({ status: v.literal("complete"), app: createdApp }),
   v.object({
     status: v.literal("provision"),
     ...appSlugArgs,
     appName: v.string(),
     githubOwner: v.string(),
-    githubInstallationId: v.union(v.string(), v.null()),
+    githubInstallationId: v.string(),
     convexTeamId: v.number(),
     convexAccessToken: v.string(),
-    managedConvex: v.boolean(),
   }),
 );
 
@@ -40,4 +39,5 @@ export const saveCreatedAppArgs = {
   githubOwner: v.string(),
   githubRepoName: v.string(),
   convexProjectId: v.number(),
+  convexSiteUrl: v.string(),
 };
