@@ -2,7 +2,7 @@ import { v, type Infer } from "convex/values";
 
 export const audience = "https://www.disposabl.dev/github/deployments";
 const workflow = ".github/workflows/deploy.yml";
-const reusableWorkflow = "disposabl-dev/disposabl-exact/.github/workflows/deploy-managed.yml@refs/heads/main";
+const reusableWorkflow = `disposabl-dev/disposabl-exact/${workflow}@refs/heads/main`;
 const platforms = ["web", "api", "mcp", "android", "ios", "macos"] as const;
 const statuses = ["building", "done", "error"] as const;
 export const report = v.object({

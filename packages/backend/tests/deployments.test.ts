@@ -5,7 +5,7 @@ const ref = "refs/heads/main";
 const claims = {
   event_name: "push", repository: "customer/example", repository_id: "42", ref,
   workflow_ref: `customer/example/.github/workflows/deploy.yml@${ref}`,
-  job_workflow_ref: `disposabl-dev/disposabl-exact/.github/workflows/deploy-managed.yml@${ref}`,
+  job_workflow_ref: `disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@${ref}`,
   sha: "f".repeat(40), run_id: "101", run_number: "10", run_attempt: "2",
 };
 

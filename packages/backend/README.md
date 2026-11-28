@@ -16,7 +16,7 @@ The status operations report the signed-in user's connected GitHub owner and Con
 
 The generated GitHub Actions workflow reports each platform as building, done, or error. A push to `main` updates `apps.prod`. A pull request from the same repository updates its `pr-<number>` preview. `apps.live` is reserved for store delivery.
 
-Reporting verifies GitHub's OIDC token against the registered repository ID. The last successful URL stays available during a rebuild, after a failure, and after an OTA-only update. To opt an existing app in, register its verified GitHub repository ID, then use `deploy-managed.yml` and grant `id-token: write` on the calling job.
+Reporting verifies GitHub's OIDC token against the registered repository ID. The last successful URL stays available during a rebuild, after a failure, and after an OTA-only update.
 
 ## Setting up
 
