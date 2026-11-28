@@ -20,6 +20,13 @@ The generator saves your selections in `disposabl.json`. The provisioning API us
 
 Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. Run the project CLI with `bun run disposabl --help`.
 
+## Project skills
+
+New projects start with empty skill folders at `.agents/skills` for Codex and `.claude/skills` for Claude Code.
+
+1. To ship a skill with future projects, add `packages/skills/<skill-name>/SKILL.md` in this repository.
+2. Stage the file and run `bun run test` from this package. The generator copies tracked skill files into both folders.
+
 ## Reset to the clean starter
 
 Run `bun run reset-app` from this package directory in the Exact source checkout to export the clean app and backend to a temporary directory. The command prints the directory path. The package build uses the same reset automatically.

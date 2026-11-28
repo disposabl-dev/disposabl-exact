@@ -6,7 +6,9 @@ import { create } from "tar";
 import { resetApp } from "./reset-app.mjs";
 
 const root = join(import.meta.dirname, "../..");
+const skillsRoot = "packages/skills";
 const templatePaths = [
+  skillsRoot,
   ".gitignore", "package.json", "bun.lock", "scripts/dev.mjs", "scripts/dev-web.mjs", "scripts/exact.mjs",
   "README.md", "packages/.gitignore", "packages/disposabl-kit", "packages/cli", "packages/sdk",
   ".github/ci/android-key.sh",
@@ -22,9 +24,19 @@ try {
   const sources = new Map([
     [".github/workflows/deploy.yml", join(import.meta.dirname, "templates/deploy.yml")],
     ["disposabl.json", join(import.meta.dirname, "disposabl.json")],
-    ...sharedFiles.map(file => [file, join(root, file)]),
-    ...appFiles.map(file => [file, join(restored, file)]),
   ]);
+  for (const file of sharedFiles) {
+    const source = join(root, file);
+    if (file.startsWith(skillsRoot + "/")) {
+      const relative = file.slice(skillsRoot.length + 1);
+      for (const directory of [".agents/skills", ".claude/skills"]) {
+        sources.set(`${directory}/${relative}`, source);
+      }
+    } else {
+      sources.set(file, source);
+    }
+  }
+  for (const file of appFiles) sources.set(file, join(restored, file));
   const selected = new Set(sources.values());
   const files = [...sources.keys()].sort();
   for (const file of files) {
