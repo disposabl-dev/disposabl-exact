@@ -24,7 +24,7 @@ Press Ctrl+C to pause. In a non-interactive shell, open the printed provider lin
 
 Run `bunx disposabl status` from a generated app. The CLI targets the local Convex deployment when configured, or the app’s hosted API otherwise. Override the target with `--origin <url>`.
 
-Run `bunx disposabl login` if your app uses authentication. `bunx disposabl list` shows the commands exposed by its Convex functions with `platforms: true`. For automation, use `bunx disposabl call <operationId> '<json>'` or run a named command. Apps with payments enabled expose `bunx disposabl billing status`.
+Run `bunx disposabl login` if your app uses authentication. `bunx disposabl list` shows the commands exposed by its Convex functions with `platforms: true`. For automation, use `bunx disposabl call <operationId> '<json>'` or run a named command. Apps with payments enabled and an Autumn key configured expose `bunx disposabl billing status`.
 
 ## Reset to the clean starter
 
