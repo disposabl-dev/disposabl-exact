@@ -13,7 +13,7 @@ Starter kit for building apps and agents with Exact and Convex.
 }
 ```
 
-- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. Deploy App builds only the selected clients, publishes updates only to the selected mobile platforms, and uses a backend-only deployment for API or MCP without web. The macOS job produces a preview.
+- Choose any combination of `web`, `android`, `ios`, `macos`, `api`, `mcp`, `cli`, and `typescript-sdk`. Selecting either developer client also enables the REST API. A merge to main deploys the backend and delivers updates for the selected apps. API, MCP, CLI and SDK have no separate deployment jobs.
 - Choose `authentication` to enable app sign-in. Choose `payments` alongside `authentication` to enable account billing. Set `features` to `[]` to disable both. Payments also need the provider configuration below.
 - Commit and deploy a configuration change to enable or disable a selection. Connected clients receive the updated feature settings. Deploy App always requires the Convex deployment key. With an empty platform list, it deploys the backend to turn off the previously published endpoints and skips every client build. Existing accounts, billing records, API keys, and installers are retained.
 
@@ -23,45 +23,46 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 ## First deployment from a new repository
 
-Use the GitHub repository provisioned by the generator, or create one from this template. Enable GitHub Actions and Blacksmith for that repository. Enable Static Hosting on your Convex deployment if you select web. The generator provisions the Convex deploy key in GitHub Actions. For manual setup, add it yourself.
+Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses two repository secrets, `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
 
-| Scope | Name | Value |
-| --- | --- | --- |
-| Repository | `CONVEX_DEPLOY_KEY` | Convex production deploy key |
-| `android-production` environment | `EXACT_UPDATE_SEED` | Independent 32-byte, base64-encoded mobile update signing seed |
-| `android-production` environment | `ANDROID_APK_SIGNING` | JSON containing the base64 PKCS12 `keystore` and its `password`, with key alias `android` |
+For any native platform, the generator provisions `EXACT_UPDATE_SEED` in the repository’s `android-production` GitHub environment. Android also gets a persistent APK signing key for direct installation. To add native delivery after creating a project, run `bash .github/ci/android-key.sh android` for Android or `bash .github/ci/android-key.sh update` for Apple platforms only. Running these commands again reuses the existing keys.
 
-Create `android-production` in **Settings → Environments** and restrict it to `main`. Mobile builds use the signing secrets in this environment. Environment secrets are available for public repositories on GitHub Free. [GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+On the first deployment, CI builds each selected native app on Ubuntu and writes its AppDrop link to the job summary. Android produces a signed APK, iOS produces a device IPA for re-signing, and macOS produces an ad-hoc-signed, non-notarized app ZIP. Subsequent deployments publish compatible app changes as signed over-the-air updates. Changes that require a new native binary or include changed static assets produce a new installer link. Web and its backend share a Convex site URL. Pull requests preview web only.
 
-For a new repository with Android or iOS selected, commit and push the project with only web enabled first. This registers the signing workflow on `main`. Restore your mobile selections in your local `disposabl.json` after that push, then run the setup command below with a repository administrator's GitHub CLI login. A GitHub-hosted runner generates the keys and encrypts them with the environment's public key. The command saves the encrypted values and keeps any existing keys.
+## Exact updates
 
-```sh
-python3 .github/actions/exact-setup/scripts/setup-signing.py
-```
+Store-installed apps can offer a newer native build on the home screen through `@exact/store-update`. Apple opens the App Store listing. Google Play downloads the update in the background when supported and offers a restart once it is ready. The feature uses the installed app's store identity and needs no extra environment variables or credentials. AppDrop installs use the signed update flow above.
 
-Commit and push the mobile selections to `main` to start the first native builds. Open **Deploy app** for the signed Android APK, the iPhone IPA and an unlisted AppDrop install link for each phone. Anyone with the corresponding link can download the app. Complete signing on the iPhone with your own Apple ID through AppDrop/Tuft. Free provisioning needs periodic renewal on the phone, including while the app receives over-the-air updates.
-
-## iPhone builds
-
-Blacksmith macOS 27 with Xcode builds the first IPA and any replacement native binary. Blacksmith Ubuntu 26.04 handles web, Android, and compatible iOS updates. The shared iOS setup bundle contains Rust and Hermes tools. Xcode and the Apple SDK come from the hosted runner.
-
-## Subsequent deployments
-
-Web uploads to Convex Static Hosting on every deployment. Android and iOS use Exact's signed update store on AppDrop. Compatible app view, TypeScript and asset changes publish to installed apps. Exact checks on launch or foreground and activates downloaded content on a subsequent cold launch. A native version bump in `apps/apps/app.json`, SDK change, or incompatible permissions or capabilities requires a replacement native build. The workflow uses the production build receipt to initialize each stream. For a new phone, use the existing install link. Compatible deployments keep that link in the Actions summary. CI saves it in the Convex environment as `EXACT_INSTALL_ANDROID` or `EXACT_INSTALL_IOS` after a successful native build.
-
-Change the Exact SHA in [pin.env](.github/actions/exact-setup/pin.env) and merge the PR into `disposabl-dev/disposabl-exact:main`. The publisher builds the matching web tools, Android Cargo and Gradle caches, and iOS Cargo cache. Reviewed iOS linker configurations also get a Swift host catalog. Deployment waits for the versioned release and checks its asset digests before using it. Ordinary app changes reuse the release for the current pin.
-
-The one-minute target covers web deployment and compatible mobile updates, including queueing and transfers.
-
-### Android App Bundles and Google Play
-
-Append `--play` to the signing setup command to also create the `ANDROID_PLAY_UPLOAD_SIGNING` environment secret. Set the `ANDROID_PLAY_CONNECTED` Actions **variable** to `true` in `android-production` and bump the app version for the first Play build. The default Android build produces a release APK signed with the app’s standalone key. A Play-connected build also produces an AAB signed with the Play upload key. If the artifacts have incompatible native receipts, CI keeps the verified APK and fails the job before publishing the AAB. [Play App Signing](https://developer.android.com/studio/publish/app-signing)
+Generated repositories call Disposabl's shared deployment workflow on `main`. Every six hours, the central repository builds the latest upstream Exact commit and tests the caches on fresh Ubuntu runners. Once all four platforms pass, it publishes them together. New and existing apps automatically use the newest complete set on their next deployment. During a failed or incomplete refresh, deployments continue using the previous complete set. If no verified set exists, deployment stops before building. The refresh also rebuilds the shared Boat development snapshot and tests a fresh restore.
 
 ### Run the app locally
 
-Check out [expo/exact](https://github.com/expo/exact) at the revision in [pin.env](.github/actions/exact-setup/pin.env) and set `EXACT` to that checkout's absolute path. Android cache builds and restores automatically apply the [layer-header fix](.github/actions/exact-setup/scripts/android-layer-header.patch) for the revision that needs it. Apply the same patch to that revision in a local Android SDK checkout.
+Create the app and start its backend and web development server from the project root.
 
-Install dependencies in `packages/backend`, then run `bun run dev` there. In `apps/apps`, run `bun exact.mjs --help` and `bun install`. Set `CONVEX_ORIGIN` to the backend WebSocket origin and `CONVEX_SITE_ORIGIN` to its HTTP actions origin. For a local deployment these are typically `ws://127.0.0.1:3210` and `http://127.0.0.1:3211`. CI reads both origins from Convex.
+```sh
+bunx create-disposabl-app@latest my-app
+cd my-app
+bun run dev
+```
+
+The generator installs dependencies. After cloning an existing app, run `bun install` at its root first. Convex starts the configured development deployment (or a local deployment with `--skip-setup`), then starts Exact with the development URLs. The first web build prepares the Exact SDK and compiler tools. Use `EXACT` to select an existing SDK checkout.
+
+To launch Android on a connected device or running emulator, run `bun run android` at the project root. On a fresh installation with Bun's bin directory on PATH, `exact run android` also works. If you already have another global Exact CLI, `bun run android` selects this project's launcher.
+
+The shared Boat sandbox includes web, Android and Apple cross-build tools on 4 vCPU and 8 GB. The same share code follows future refreshes of `exact-dev`. Create a sandbox with the command below. A login shell loads the toolchain automatically.
+
+```sh
+boat new --type default --no-env --from bsh_hvAwp0phMPSKIjvJPxpHipEdJCa3iQQ1wyXzS465pzi
+```
+
+From an Exact app directory, build an unsigned iPhone IPA or an ad-hoc-signed macOS app.
+
+```sh
+exact ios --device --release --unsigned --archive app.ipa
+exact mac --release
+```
+
+The snapshot includes both SDKs. On a fresh restore, the commands above wait for Boat to finish loading the compiler cache. Once `boat info <sandbox-id> --json` reports `.sandbox.hydrated` as `true`, app-local commands such as `bun exact.mjs ios --device --release --unsigned --archive app.ipa` and `EXACT_IDENTITY=- bun exact.mjs mac --release` use them directly. The Boat image omits emulator and simulator runtimes. An unsigned iPhone IPA still needs signing before installation.
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
 
@@ -92,9 +93,7 @@ Use `["read","write"]` for an integration that needs write access. Revoke the ke
 
 ### CLI and TypeScript SDK
 
-Choose `cli` or `typescript-sdk` to build and test that package in GitHub Actions.
-The workflow uploads npm tarballs for the configured app. It generates the SDK
-from the app's OpenAPI contract on an isolated Convex deployment.
+Choose `cli` or `typescript-sdk` to enable the corresponding client. The SDK uses the app’s OpenAPI contract.
 
 Both clients use a scoped API key. Sign in on the web app to issue a personal
 key, or have a deployment operator issue a service key for a headless app.

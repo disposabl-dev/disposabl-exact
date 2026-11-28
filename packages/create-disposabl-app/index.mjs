@@ -2,12 +2,17 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { extract } from "tar";
 import lockfile from "proper-lockfile";
 import { features, platforms, readProjectConfig } from "./platform-config.mjs";
 import { git, readJson, setup, writeJson } from "./setup.mjs";
+
+import { createTerminal } from "./terminal.mjs";
+
+const terminal = createTerminal();
+const nameError = "Provide an app name of up to 55 lowercase letters, numbers and hyphens.";
+const validName = name => typeof name === "string" && name.length <= 55 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name);
 
 const help = `Usage: create-disposabl-app [app-name] [options]
 
@@ -22,18 +27,11 @@ Setup uses @disposabl/cli to provision GitHub and Convex.
   --help        Show this message.`;
 
 async function getName(positionals) {
-  if (positionals.length === 0 && process.stdin.isTTY) {
-    const prompt = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-      positionals.push((await prompt.question("App name: ")).trim());
-    } finally {
-      prompt.close();
-    }
+  if (positionals.length === 0 && terminal.interactive) {
+    return terminal.name(name => validName(name) ? undefined : nameError);
   }
   const [name] = positionals;
-  if (positionals.length !== 1 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || name.length > 55) {
-    throw new Error("Provide an app name of up to 55 lowercase letters, numbers and hyphens.");
-  }
+  if (positionals.length !== 1 || !validName(name)) throw new Error(nameError);
   return name;
 }
 
@@ -54,19 +52,12 @@ function parseSelection(value) {
 
 async function selectConfig(path, options) {
   const config = await readJson(path);
-  let prompt;
-  try {
-    for (const [key, choices] of [["platforms", platforms], ["features", features]]) {
-      if (options[key] !== undefined) {
-        config[key] = parseSelection(options[key]);
-      } else if (process.stdin.isTTY) {
-        prompt ??= createInterface({ input: process.stdin, output: process.stdout });
-        const answer = await prompt.question(`Choose ${key} (${choices.join(", ")} or none) [${config[key].join(", ")}]: `);
-        if (answer.trim()) config[key] = parseSelection(answer);
-      }
+  for (const [key, choices] of [["platforms", platforms], ["features", features]]) {
+    if (options[key] !== undefined) {
+      config[key] = parseSelection(options[key]);
+    } else if (terminal.interactive) {
+      config[key] = await terminal.select(key, choices, config[key]);
     }
-  } finally {
-    prompt?.close();
   }
   readProjectConfig(config);
   await writeJson(path, config);
@@ -116,6 +107,7 @@ async function main() {
   if (values.resume && (values.platforms !== undefined || values.features !== undefined)) {
     throw new Error("Edit disposabl.json before resuming setup.");
   }
+  terminal.intro(values.resume);
   const name = await getName(positionals);
   const directory = resolve(name);
   if (!values.resume) await createProject(directory, name, values);
@@ -130,18 +122,18 @@ async function main() {
   try {
     const config = await readJson(configPath);
     readProjectConfig(config);
+    await terminal.install(directory, config);
     if (!values["skip-setup"]) await setup(directory, app.name, config);
   } catch (error) {
     throw new Error(`${error.message}\nFiles are in ${directory}. Rerun the generator with --resume.`);
   } finally {
     await release();
   }
-  console.log(`Created ${directory}\nSee README.md for local development and deployment.`);
+  terminal.complete(directory);
 }
 
 try {
   await main();
 } catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
+  process.exitCode = terminal.fail(error);
 }

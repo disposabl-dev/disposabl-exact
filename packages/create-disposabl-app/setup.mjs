@@ -4,9 +4,6 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
-const require = createRequire(import.meta.url);
-const cliManifest = require.resolve("@disposabl/cli/package.json");
-const cli = join(dirname(cliManifest), require(cliManifest).bin.disposabl);
 const defaultOrigin = "https://www.disposabl.dev";
 const web = JSON.stringify(["web"]);
 
@@ -25,6 +22,9 @@ export async function writeJson(path, value) {
 }
 
 async function runCli(directory, origin, args, interactive = false) {
+  const require = createRequire(join(directory, "package.json"));
+  const manifest = require.resolve("@disposabl/cli/package.json");
+  const cli = join(dirname(manifest), require(manifest).bin.disposabl);
   const output = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, ...args], {
       cwd: directory,
@@ -136,4 +136,7 @@ export async function setup(directory, name, config) {
     "--platforms", web, "--features", features,
   ]);
   await configureExact(directory, config.appId, deployment);
+  if (config.platforms.some(platform => ["android", "ios", "macos"].includes(platform))) {
+    execFileSync("bash", [".github/ci/android-key.sh", config.platforms.includes("android") ? "android" : "update"], { cwd: directory, stdio: "inherit" });
+  }
 }

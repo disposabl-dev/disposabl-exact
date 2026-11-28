@@ -66,5 +66,10 @@
   "app.loading": "جارٍ التحميل…",
   "keys.failed": "تعذّر تحميل الاتصالات أو تحديثها. حاول مرة أخرى.",
   "billing.monthlyOffer": "{count} وحدة رصيد شهريًا مقابل {price}",
-  "billing.topupOffer": "{count} وحدة رصيد لمرة واحدة مقابل {price}"
+  "billing.topupOffer": "{count} وحدة رصيد لمرة واحدة مقابل {price}",
+  "storeUpdate.open": "التحديث في App Store",
+  "storeUpdate.install": "تحديث التطبيق",
+  "storeUpdate.restart": "إعادة التشغيل للتحديث",
+  "storeUpdate.downloading": "جارٍ تنزيل التحديث…",
+  "storeUpdate.failed": "تعذّر تحديث التطبيق. حاول مرة أخرى."
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,6 +43,13 @@ test("the packed generator defaults to web and preserves selections through prov
   assert.ok(!files.has("package/reset-app.mjs"));
   assert.ok(!files.has("package/starter.ref"));
   execFileSync("bun", ["add", "--ignore-scripts", archive], { cwd: work });
+  const packed = JSON.parse(await readFile(join(work, "node_modules/create-disposabl-app/package.json"), "utf8"));
+  const repository = "https://github.com/disposabl-dev/disposabl-exact";
+  assert.equal(packed.dependencies["@disposabl/cli"], undefined);
+  assert.equal(packed.repository.url, `git+${repository}.git`);
+  assert.equal(packed.repository.directory, "packages/create-disposabl-app");
+  assert.equal(packed.homepage, `${repository}/tree/main/packages/create-disposabl-app#readme`);
+  assert.equal(packed.bugs.url, `${repository}/issues`);
 
   const cli = join(work, "node_modules/create-disposabl-app/index.mjs");
   const scaffold = (name, flags, env = {}) =>
@@ -94,13 +101,30 @@ test("the packed generator defaults to web and preserves selections through prov
     DO_NOT_TRACK: "1",
   };
 
-  const selected = { platforms: ["web", "ios", "mcp"], features: ["authentication", "payments"] };
+  const bin = join(work, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "gh"), `#!/bin/sh
+case "$1 $2" in
+  "repo view") echo "example/exact-demo" ;;
+  "api repos/example/exact-demo/environments/android-production") exit 0 ;;
+  "secret list") printf "ANDROID_APK_SIGNING\nEXACT_UPDATE_SEED\n" ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  env.PATH = bin + ":" + process.env.PATH;
+  const selected = { platforms: ["web", "android", "ios", "mcp"], features: ["authentication", "payments"] };
   await assert.rejects(scaffold("exact-demo", [
     "--platforms", selected.platforms.join(","), "--features", selected.features.join(","),
   ], env), /--resume/);
   assert.deepEqual((await config()).platforms, selected.platforms);
   assert.deepEqual((await config()).features, selected.features);
+  for (const name of ["gradle.lockfile", "gradle-verification.xml"]) {
+    assert.equal(await read(`apps/apps/${name}`), await readFile(join(packageDir, `../../apps/apps/${name}`), "utf8"));
+  }
   assert.equal((await config()).appId, appId);
+  assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "4.1.0");
+  await access(join(directory, "node_modules/.bin/disposabl"));
+  for (const script of ["dev.mjs", "dev-web.mjs", "exact.mjs"]) await access(join(directory, "scripts", script));
   assert.equal(creations, 1);
   const callsBeforeRejectedOrigin = calls.length;
   await assert.rejects(scaffold("exact-demo", ["--resume"], {
@@ -116,7 +140,8 @@ test("the packed generator defaults to web and preserves selections through prov
   const mobile = execFileSync("bun", ["--print", 'JSON.stringify((await import("./packages/disposabl-kit/server/platform.ts")).platform.mobile)'], {
     cwd: directory, encoding: "utf8",
   });
-  assert.deepEqual(JSON.parse(mobile), ["ios"]);
+  assert.deepEqual(JSON.parse(mobile).sort(), ["android", "ios"]);
+  assert.match(result.stdout, /Using the existing APK key/);
   assert.equal(execFileSync("git", ["remote", "get-url", "origin"], { cwd: directory, encoding: "utf8" }).trim(), repositoryUrl);
   assert.equal(parseEnv(await read("packages/backend/.env.local")).CONVEX_DEPLOY_KEY, deployKey);
   assert.deepEqual(parseEnv(await read("apps/apps/.env.local")), {
@@ -159,10 +184,11 @@ test("the packed generator defaults to web and preserves selections through prov
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
-  assert.deepEqual(deploy.getIn(["jobs", "tools", "needs"]).toJSON(), ["config"]);
-  assert.equal(deploy.hasIn(["jobs", "native"]), true);
-  assert.equal(deploy.hasIn(["jobs", "provision-signing"]), true);
-  await access(join(directory, ".github/actions/exact-setup/scripts/publish-installer.sh"));
+  assert.equal(deploy.getIn(["jobs", "deploy", "uses"]), "disposabl-dev/disposabl-exact/.github/workflows/deploy.yml@main");
+  await access(join(directory, ".github/ci/android-key.sh"));
+  for (const file of [".github/workflows/refresh.yml", ".github/ci/boat.sh", ".github/ci/cache-build.sh"]) {
+    await assert.rejects(access(join(directory, file)), { code: "ENOENT" });
+  }
   await access(join(directory, "apps/apps/.gitignore"));
 
   const priorCalls = calls.length;

@@ -1,8 +1,12 @@
 {
   "name": "create-disposabl-app",
-  "version": "0.22.0",
+  "version": "1.0.0",
   "description": "Create a Disposabl app with Exact and Convex",
   "type": "module",
+  "homepage": "https://github.com/disposabl-dev/disposabl-exact/tree/main/packages/create-disposabl-app#readme",
+  "bugs": {
+    "url": "https://github.com/disposabl-dev/disposabl-exact/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/disposabl-dev/disposabl-exact.git",
@@ -14,6 +18,7 @@
   "files": [
     "index.mjs",
     "setup.mjs",
+    "terminal.mjs",
     "platform-config.mjs",
     "template.tar.gz"
   ],
@@ -21,11 +26,13 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "@disposabl/cli": "4.1.0",
+    "@clack/prompts": "1.8.1",
     "proper-lockfile": "4.1.2",
     "tar": "7.5.23"
   },
   "devDependencies": {
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semantic-release": "25.0.9",
     "yaml": "2.9.1"
   },
   "scripts": {
@@ -33,5 +40,33 @@
     "reset-app": "node reset-app.mjs",
     "prepack": "bun run build",
     "test": "bun run build && node --test test.mjs"
+  },
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "tagFormat": "create-disposabl-app-v${version}",
+    "plugins": [
+      [
+        "@semantic-release/commit-analyzer",
+        {
+          "preset": "conventionalcommits",
+          "releaseRules": [
+            {
+              "breaking": true,
+              "release": "major"
+            },
+            {
+              "type": "feat",
+              "release": "minor"
+            },
+            {
+              "release": "patch"
+            }
+          ]
+        }
+      ],
+      "@semantic-release/npm"
+    ]
   }
 }

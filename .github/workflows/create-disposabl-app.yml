@@ -1,60 +1,57 @@
 name: Exact app generator
-
 on:
   pull_request:
-  workflow_dispatch:
-
+    paths: ['packages/create-disposabl-app/**', '.github/**', 'packages/disposabl-kit/**', 'package.json', 'bun.lock', 'scripts/*.mjs', 'README.md']
+  push:
+    branches: [main]
+concurrency:
+  group: generator-${{ github.event_name == 'push' && 'publication' || github.ref }}
+  cancel-in-progress: false
+  queue: max
 permissions:
   contents: read
-
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  generator:
+    if: github.repository == 'disposabl-dev/disposabl-exact'
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
+      - &checkout
+        uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false, fetch-depth: 0 }
+      - &node
+        uses: actions/setup-node@v6
+        with: { node-version: '24', registry-url: 'https://registry.npmjs.org', package-manager-cache: false }
+      - &bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with: { bun-version: '1.4.5' }
+      - working-directory: packages/create-disposabl-app
+        run: |
+          node --test ../../.github/ci/updates.test.mjs
+          bun install --frozen-lockfile && bun run test
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7.0.2
         with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          package-manager-cache: false
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: ${{ steps.pin.outputs.bun-version }}
-      - run: bun install --frozen-lockfile
-        working-directory: packages/create-disposabl-app
-      - run: bun run test
-        working-directory: packages/create-disposabl-app
-
+          name: generator-inputs
+          path: |
+            packages/create-disposabl-app/platform-config.mjs
+            packages/create-disposabl-app/template.tar.gz
+          if-no-files-found: error
+          retention-days: 1
   publish:
-    needs: test
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'disposabl-dev/disposabl-exact'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
+    needs: generator
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions: { contents: write, id-token: write }
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-          package-manager-cache: false
-      - id: pin
-        run: cat .github/actions/exact-setup/pin.env >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: ${{ steps.pin.outputs.bun-version }}
-      - run: bun install --frozen-lockfile
-        working-directory: packages/create-disposabl-app
-      - run: bun pm pack --filename "$RUNNER_TEMP/create-disposabl-app.tgz"
-        working-directory: packages/create-disposabl-app
-      - run: npm publish "$RUNNER_TEMP/create-disposabl-app.tgz" --access public --tag next
+      - *checkout
+      - *node
+      - *bun
+      - uses: actions/download-artifact@v8.0.2
+        with: { name: generator-inputs, path: packages/create-disposabl-app }
+      - working-directory: packages/create-disposabl-app
+        run: bun install --frozen-lockfile --ignore-scripts
+      - working-directory: packages/create-disposabl-app
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          npm_config_ignore_scripts: 'true'
+        run: bun run semantic-release
