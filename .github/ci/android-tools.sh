@@ -4,6 +4,16 @@ set -euo pipefail
 : "${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK root}"
 action=${1:-path}
 case "$action" in
+  bootstrap)
+    tools="$ANDROID_HOME/cmdline-tools/latest"
+    [[ ! -x "$tools/bin/sdkmanager" ]] || exit 0
+    mkdir -p "$(dirname "$tools")"
+    work=$(mktemp -d "$(dirname "$tools")/install.XXXXXXXX")
+    trap 'rm -rf -- "$work"' EXIT
+    curl -fsSL --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip -o "$work/android.zip"
+    printf '%s  %s\n' e025545c62a8e64c7559119566a569fb1dec5f60 "$work/android.zip" | sha1sum -c -
+    unzip -q "$work/android.zip" -d "$work"
+    mv -T "$work/cmdline-tools" "$tools" ;;
   install)
     sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
     [[ -x "$sdk" ]] || { echo "Missing sdkmanager: $sdk" >&2; exit 1; }
@@ -22,5 +32,5 @@ case "$action" in
     version=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/' | sort -V | tail -n 1)
     [[ -n "$version" && -x "$ANDROID_HOME/build-tools/$version/apksigner" ]] || { echo 'No installed stable Android Build Tools with apksigner' >&2; exit 1; }
     printf '%s\n' "$ANDROID_HOME/build-tools/$version/apksigner" ;;
-  *) echo "Usage: $0 [install|path]" >&2; exit 2 ;;
+  *) echo "Usage: $0 [bootstrap|install|path]" >&2; exit 2 ;;
 esac

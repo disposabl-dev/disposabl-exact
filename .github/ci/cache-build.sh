@@ -4,8 +4,14 @@ platform=${1:?Expected platform}
 command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
 [[ "$GITHUB_REPOSITORY" == disposabl-dev/disposabl-exact && "$EXACT_REF" =~ ^[0-9a-f]{40}$ ]]
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
-mkdir -p "$RUNNER_TEMP/cache-output" "$CARGO_TARGET_DIR"
+# Start this qualification from its own SDK and fixture. Other tool installs stay warm.
+rm -rf -- "$EXACT" "$RUNNER_TEMP/exact-cache-fixture" "$RUNNER_TEMP/cache-output"
+mkdir -p "$RUNNER_TEMP/cache-output"
+
 if [[ ${CACHE_VERIFY:-} == 1 ]]; then
+  # A kept verifier disk must not fill gaps in the archive it is testing.
+  rm -rf -- "$CARGO_TARGET_DIR" "$HOME/.cache/exact/tools" "$HOME/.cache/exact/ota-tools" \
+    "$HOME/.cargo/"{registry,git,hermes-lean-sys} "$HOME/.gradle/"{caches,wrapper/dists}
   cat "$RUNNER_TEMP"/restored-cache/cache-"$platform".tar.zst.part-* | zstd -dc | tar -xf - -C "$HOME"
   if [[ "$platform" == ios || "$platform" == macos ]]; then
     [[ -n $(find "$CARGO_TARGET_DIR/apple-modules" -name libexact_svg_raster.dylib -print -quit) ]]
@@ -77,6 +83,7 @@ else
   export EXACT_UPDATE_TRUST=production EXACT_UPDATE_GENESIS=1 EXACT_MOBILE_CHANNEL=base-1 EXACT_BUILD_NUMBER=1
   if [[ "$platform" == android ]]; then
     key="$RUNNER_TEMP/public-fixture.p12"
+    rm -f -- "$key"
     keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$key" -storepass publicfixture -keypass publicfixture -alias android -keyalg RSA -dname CN=PublicFixture -validity 2 >/dev/null 2>&1
     export ANDROID_APK_SIGNING="$(python3 -c 'import base64,json,sys; print(json.dumps({"password":"publicfixture","keystore":base64.b64encode(open(sys.argv[1],"rb").read()).decode()}))' "$key")"
   fi

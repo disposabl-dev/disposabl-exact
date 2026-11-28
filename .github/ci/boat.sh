@@ -109,17 +109,10 @@ if [[ ${1:-} == prepare-android ]]; then
   source "$HOME/.local/share/exact-boat/env.sh"
   mkdir -p "$GRADLE_USER_HOME"
   printf '%s\n' 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8' 'org.gradle.workers.max=2' > "$GRADLE_USER_HOME/gradle.properties"
-  work=$(mktemp -d)
-  trap 'rm -rf "$work"' EXIT
   sudo -n apt-get -q -o Acquire::Retries=3 update
   sudo -n apt-get -qy -o Acquire::Retries=3 install --no-install-recommends openjdk-21-jdk-headless
-  tools="$ANDROID_HOME/cmdline-tools/latest"
-  mkdir -p "$(dirname "$tools")"
-  curl -fsSL --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip -o "$work/android.zip"
-  printf '%s  %s\n' e025545c62a8e64c7559119566a569fb1dec5f60 "$work/android.zip" | sha1sum -c -
-  unzip -q "$work/android.zip" -d "$work"
-  mv "$work/cmdline-tools" "$tools"
-  sdk="$tools/bin/sdkmanager"
+  bash "$script_dir/android-tools.sh" bootstrap
+  sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
   (set +o pipefail; yes | "$sdk" --sdk_root="$ANDROID_HOME" --licenses >/dev/null)
   "$sdk" --sdk_root="$ANDROID_HOME" 'platform-tools' 'platforms;android-37.2' 'ndk;27.3.13750724'
   bash "$script_dir/android-tools.sh" install

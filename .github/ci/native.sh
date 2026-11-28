@@ -5,6 +5,9 @@ phase=${1:?expected prepare, build, or publish}; platform=${2:?expected android,
 : "${RUNNER_TEMP:?}"
 case "$platform" in android|ios|macos) ;; *) exit 2 ;; esac
 out="$RUNNER_TEMP/$platform-artifacts"
+if [[ "$platform" == android ]]; then
+  export ANDROID_HOME="${ANDROID_HOME:-$HOME/.cache/android-sdk}"
+fi
 restore=
 if [[ "$phase" == prepare && ${3:-} == restore ]]; then
   bash "$(dirname "$0")/setup.sh" "$platform" restore & restore=$!
@@ -45,10 +48,10 @@ case "$phase" in
     : "${EXACT:?}"
     case "$platform" in
       android)
-        : "${ANDROID_HOME:?}"
+        bash "$(dirname "$0")/android-tools.sh" bootstrap
         sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
         yes | "$sdk" --licenses >/dev/null || true
-        "$sdk" 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+        "$sdk" 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.1.12297006'
         bash "$(dirname "$0")/android-tools.sh" install >/dev/null
         target=aarch64-linux-android ;;
       ios) target=aarch64-apple-ios ;;

@@ -8,6 +8,8 @@ ref=${EXACT_REF:?Expected upstream Exact commit}
 [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
 export EXACT="$HOME/work/_temp/exact-sdk" CARGO_TARGET_DIR="$HOME/.cache/exact-native/cargo"
 if [[ "$phase" == all || "$phase" == checkout ]]; then
+  # Reuse the stable compiler path across runners, with a fresh SDK for this job.
+  rm -rf -- "$EXACT"
   bash "$(dirname "$0")/checkout.sh" "$ref" "$EXACT"
   (cd "$EXACT" && bun install --frozen-lockfile && git ls-tree -rtz --name-only HEAD | xargs -0 touch -ch -t 202001010000)
   printf 'EXACT=%s\nEXACT_REF=%s\nCARGO_TARGET_DIR=%s\n' "$EXACT" "$ref" "$CARGO_TARGET_DIR" >> "$GITHUB_ENV"

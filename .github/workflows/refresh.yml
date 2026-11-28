@@ -16,7 +16,7 @@ concurrency: { group: 'exact-refresh-${{ github.ref }}', cancel-in-progress: fal
 jobs:
   resolve:
     if: github.repository == 'disposabl-dev/disposabl-exact'
-    runs-on: ubuntu-24.04
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=true/id=${{ github.run_id }}-${{ github.run_attempt }}-refresh-resolve
     outputs: { ref: '${{ steps.version.outputs.ref }}' }
     steps:
       - id: version
@@ -36,7 +36,7 @@ jobs:
   boat:
     needs: resolve
     if: github.ref == 'refs/heads/main' && (!inputs.platform || inputs.platform == 'all')
-    runs-on: ubuntu-24.04
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=false/id=${{ github.run_id }}-${{ github.run_attempt }}-refresh-boat
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7.0.1
@@ -46,12 +46,15 @@ jobs:
           chmod +x "$RUNNER_TEMP/boat"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - env: { BOAT_API_KEY: '${{ secrets.BOAT_API_KEY }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}', BUN_VERSION: '1.4.5' }
-        run: bash .github/ci/boat.sh
+        run: |
+          boat_home=$(mktemp -d "$RUNNER_TEMP/boat-home.XXXXXXXX")
+          trap 'rm -rf -- "$boat_home"' EXIT
+          HOME="$boat_home" XDG_CONFIG_HOME="$boat_home/.config" bash .github/ci/boat.sh
 
   publish:
     needs: [resolve, cache]
     if: github.ref == 'refs/heads/main' && (!inputs.platform || inputs.platform == 'all')
-    runs-on: ubuntu-24.04
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=false/id=${{ github.run_id }}-${{ github.run_attempt }}-refresh-publish
     permissions: { contents: write }
     env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}', EXACT_REF: '${{ needs.resolve.outputs.ref }}' }
     steps:

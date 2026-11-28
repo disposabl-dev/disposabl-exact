@@ -10,27 +10,33 @@ env:
   PLATFORM: ${{ inputs.platform }}
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=true/id=${{ github.run_id }}-${{ github.run_attempt }}-cache-platform-build-${{ inputs.platform }}
     timeout-minutes: 120
     steps:
-      - &checkout
-        uses: actions/checkout@v7.0.1
-        with: { persist-credentials: false }
+      - uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false, clean: false }
       - &bun
         uses: oven-sh/setup-bun@v2.2.0
         with: { bun-version: '1.4.5' }
+      - &java
+        if: inputs.platform == 'android'
+        uses: actions/setup-java@v6.3.0
+        with: { distribution: temurin, java-version: '21' }
       - &build
         run: bash .github/ci/cache-build.sh "$PLATFORM"
       - uses: actions/upload-artifact@v7.0.2
         with: { name: 'cache-${{ inputs.platform }}', path: '${{ runner.temp }}/cache-output/', if-no-files-found: error, retention-days: 1, compression-level: 0 }
   verify:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=true/id=${{ github.run_id }}-${{ github.run_attempt }}-cache-platform-verify-${{ inputs.platform }}
     timeout-minutes: 120
     env: { CACHE_VERIFY: '1' }
     steps:
-      - *checkout
+      # Verify from a clean app checkout.
+      - uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false }
       - *bun
+      - *java
       - uses: actions/download-artifact@v8.0.2
         with: { name: 'cache-${{ inputs.platform }}', path: '${{ runner.temp }}/restored-cache' }
       - *build
