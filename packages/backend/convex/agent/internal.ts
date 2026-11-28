@@ -1,10 +1,11 @@
 import { createThread, getThreadMetadata, listUIMessages, saveMessage, syncStreams } from "@convex-dev/agent";
 import { internalMutation, internalQuery } from "@disposabl-kit/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation as mutation, internalQuery as query, type QueryCtx } from "../_generated/server";
 import { ownedApp, requireOwnedApp } from "../apps/internal";
+import type { appRef } from "../apps/validators";
 import { findConnection } from "../connections/internal";
 import { abortArgs, abortResult, boatPrompt, messagesArgs, messagesResult, sendArgs, sendResult, turnArgs } from "./validators";
 
@@ -16,8 +17,8 @@ function workspace(ctx: QueryCtx, userId: Id<"users">) {
   return ctx.db.query("agentSandboxes").withIndex("by_userId", q => q.eq("userId", userId)).unique();
 }
 
-async function conversation(ctx: QueryCtx, userId: Id<"users">, appSlug?: string, suppliedThread?: string) {
-  const app = appSlug ? await requireOwnedApp(ctx, userId, appSlug) : null;
+async function conversation(ctx: QueryCtx, userId: Id<"users">, ref: Infer<typeof appRef>, suppliedThread?: string) {
+  const app = ref.appSlug !== undefined || ref.appId !== undefined ? await requireOwnedApp(ctx, userId, ref) : null;
   if (suppliedThread) {
     const thread = await getThreadMetadata(ctx, components.agent, { threadId: suppliedThread }).catch(() => null);
     if (thread?.userId !== userId || (app && app.agentThreadId !== suppliedThread)) {
@@ -32,13 +33,13 @@ export const sendMessage = internalMutation({
   description: "Send a message to the coding agent.",
   args: { ...identity, ...sendArgs },
   returns: sendResult,
-  handler: async (ctx, { userId, appSlug, threadId: suppliedThread, prompt }) => {
+  handler: async (ctx, { userId, threadId: suppliedThread, prompt, ...ref }) => {
     const text = prompt.trim();
     if (!text || text.length > 32_000) throw new ConvexError("Message must be 1–32,000 characters.");
     const box = await workspace(ctx, userId);
     if (box?.turn) throw new ConvexError("Wait for the current message or stop it before sending another.");
 
-    const target = await conversation(ctx, userId, appSlug, suppliedThread);
+    const target = await conversation(ctx, userId, ref, suppliedThread);
     const threadId = target.threadId ?? await createThread(ctx, components.agent, { userId, title: target.app?.name });
     if (target.app && !target.app.agentThreadId) await ctx.db.patch("apps", target.app._id, { agentThreadId: threadId });
     const app = target.app ?? await ctx.db.query("apps")
@@ -72,8 +73,8 @@ export const getMessages = internalQuery({
   description: "Read conversation messages and stream deltas by app slug or thread ID.",
   args: { ...identity, ...messagesArgs },
   returns: messagesResult,
-  handler: async (ctx, { userId, appSlug, threadId: suppliedThread, paginationOpts, streamArgs }) => {
-    const { threadId } = await conversation(ctx, userId, appSlug, suppliedThread);
+  handler: async (ctx, { userId, threadId: suppliedThread, paginationOpts, streamArgs, ...ref }) => {
+    const { threadId } = await conversation(ctx, userId, ref, suppliedThread);
     if (!threadId) return { page: [], isDone: true, continueCursor: "" };
     return {
       ...await listUIMessages(ctx, components.agent, { threadId, paginationOpts }),
@@ -87,8 +88,8 @@ export const abortMessage = internalMutation({
   description: "Stop the active coding agent turn.",
   args: { ...identity, ...abortArgs },
   returns: abortResult,
-  handler: async (ctx, { userId, appSlug, threadId: suppliedThread, messageId }) => {
-    const { threadId } = await conversation(ctx, userId, appSlug, suppliedThread);
+  handler: async (ctx, { userId, threadId: suppliedThread, messageId, ...ref }) => {
+    const { threadId } = await conversation(ctx, userId, ref, suppliedThread);
     const box = await workspace(ctx, userId);
     if (!box?.turn || box.turn.threadId !== threadId || box.turn.messageId !== messageId) return { accepted: false };
     await ctx.db.patch("agentSandboxes", box._id, { turn: { ...box.turn, cancelled: true, tokenHash: undefined } });
@@ -109,7 +110,7 @@ export const getConversation = query({
     const box = await active(ctx, args);
     if (!box) return null;
     const { userId, turn } = box;
-    const app = turn.appSlug && await ownedApp(ctx, userId, turn.appSlug);
+    const app = turn.appSlug && await ownedApp(ctx, userId, { appSlug: turn.appSlug });
     const { page } = await listUIMessages(ctx, components.agent, {
       threadId: turn.threadId, paginationOpts: { numItems: 9, cursor: null },
     });
@@ -179,7 +180,7 @@ export const getSandboxSession = query({
 export const linkApp = mutation({
   args: { ...identity, appSlug: v.string(), threadId: v.string() },
   handler: async (ctx, { userId, appSlug, threadId }) => {
-    const app = await ownedApp(ctx, userId, appSlug);
+    const app = await ownedApp(ctx, userId, { appSlug });
     if (app && !app.agentThreadId) await ctx.db.patch("apps", app._id, { agentThreadId: threadId });
   },
 });
@@ -199,7 +200,7 @@ export const claimApp = mutation({
 export const getAppConnection = query({
   args: { ...identity, appSlug: v.string() },
   handler: async (ctx, { userId, appSlug }) => ({
-    app: await requireOwnedApp(ctx, userId, appSlug),
+    app: await requireOwnedApp(ctx, userId, { appSlug }),
     connection: await findConnection(ctx, userId),
   }),
 });

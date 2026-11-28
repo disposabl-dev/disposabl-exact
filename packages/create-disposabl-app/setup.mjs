@@ -95,19 +95,20 @@ export async function setup(directory, name, config, terminal, signal) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ appSlug: name, appName: name }),
   }, true);
-  if (app.appSlug !== name || typeof app.appId !== "string" || !app.appId) {
-    throw new Error("Disposabl did not return the expected app ID.");
+  if (app.appSlug !== name) {
+    throw new Error("Disposabl did not return the expected app slug.");
   }
-  if (config.appId && config.appId !== app.appId) {
+  if ((config.appSlug && config.appSlug !== app.appSlug) || (config.appId && config.appId !== app.appId)) {
     throw new Error("This project is linked to a different Disposabl app.");
   }
 
-  config.appId = app.appId;
+  const repository = configureRemote(directory, app);
+  delete config.appId;
+  config.appSlug = app.appSlug;
   config.serviceOrigin = client.origin;
   if (typeof app.convexSiteUrl === "string" && /^https:\/\/[a-z0-9-]+\.convex\.site$/.test(app.convexSiteUrl)) {
     config.apiOrigin = app.convexSiteUrl;
   }
   await writeJson(join(directory, "disposabl.json"), config);
-  const repository = configureRemote(directory, app);
-  terminal.progress("App linked to " + repository + ". App ID saved in disposabl.json.");
+  terminal.progress("App linked to " + repository + ". App slug saved in disposabl.json.");
 }

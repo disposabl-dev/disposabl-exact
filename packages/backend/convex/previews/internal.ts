@@ -5,22 +5,25 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { findAppBySlug, ownedApp, requireOwnedApp } from "../apps/internal";
 import { appSlugArgs } from "../apps/validators";
-import { createArgs, getArgs, listArgs, preview, previewOrNull, previewPage, removeArgs } from "./validators";
+import { createArgs, getArgs, listArgs, preview, previewOrNull, previewPage, previewRef, removeArgs } from "./validators";
 
 const identity = { userId: v.id("users") };
 
 function presentPreview(row: Doc<"previews">, app: Doc<"apps">): Infer<typeof preview> {
   const { _id, ...fields } = row;
-  return { ...fields, appName: app.name };
+  return { ...fields, appId: app._id, appName: app.name, previewId: _id };
 }
 
-async function ownedPreview(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, previewSlug: string) {
-  const row = await ctx.db.query("previews")
-    .withIndex("by_previewSlug", q => q.eq("previewSlug", previewSlug))
+async function ownedPreview(ctx: Pick<QueryCtx, "db">, userId: Id<"users">, { previewId, previewSlug }: Infer<typeof previewRef>) {
+  if ((!previewId && !previewSlug) || (previewId && previewSlug !== undefined)) {
+    throw new ConvexError("Provide either previewId or previewSlug.");
+  }
+  const row = previewId ? await ctx.db.get("previews", previewId) : await ctx.db.query("previews")
+    .withIndex("by_previewSlug", q => q.eq("previewSlug", previewSlug ?? ""))
     .unique();
   if (!row) return null;
 
-  const app = await ownedApp(ctx, userId, row.appSlug);
+  const app = await ownedApp(ctx, userId, { appSlug: row.appSlug });
   return app ? { row, app } : null;
 }
 
@@ -29,8 +32,8 @@ export const create = internalMutation({
   description: "Create or get a named preview for an app.",
   args: { ...identity, ...createArgs },
   returns: preview,
-  handler: async (ctx, { userId, appSlug, previewName }) => {
-    const app = await requireOwnedApp(ctx, userId, appSlug);
+  handler: async (ctx, { userId, previewName, ...ref }) => {
+    const app = await requireOwnedApp(ctx, userId, ref);
     const name = previewName.trim();
     if (!name || name.length > 200) throw new ConvexError("Preview name must be 1–200 characters.");
 
@@ -61,8 +64,8 @@ export const list = internalQuery({
   description: "List an app's previews.",
   args: { ...identity, ...listArgs },
   returns: previewPage,
-  handler: async (ctx, { userId, appSlug, paginationOpts }) => {
-    const app = await requireOwnedApp(ctx, userId, appSlug);
+  handler: async (ctx, { userId, paginationOpts, ...ref }) => {
+    const app = await requireOwnedApp(ctx, userId, ref);
     const page = await ctx.db.query("previews")
       .withIndex("by_appSlug", q => q.eq("appSlug", app.slug))
       .paginate(paginationOpts);
@@ -72,11 +75,11 @@ export const list = internalQuery({
 
 export const get = internalQuery({
   platforms: true,
-  description: "Get a preview by its slug.",
+  description: "Get a preview by its slug or ID.",
   args: { ...identity, ...getArgs },
   returns: previewOrNull,
-  handler: async (ctx, { userId, previewSlug }) => {
-    const result = await ownedPreview(ctx, userId, previewSlug);
+  handler: async (ctx, { userId, ...ref }) => {
+    const result = await ownedPreview(ctx, userId, ref);
     return result ? presentPreview(result.row, result.app) : null;
   },
 });
@@ -86,8 +89,8 @@ export const remove = internalMutation({
   description: "Delete a preview record.",
   args: { ...identity, ...removeArgs },
   returns: v.null(),
-  handler: async (ctx, { userId, previewSlug }) => {
-    const result = await ownedPreview(ctx, userId, previewSlug);
+  handler: async (ctx, { userId, confirm: _confirm, ...ref }) => {
+    const result = await ownedPreview(ctx, userId, ref);
     if (result) await ctx.db.delete("previews", result.row._id);
     return null;
   },

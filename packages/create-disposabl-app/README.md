@@ -8,7 +8,7 @@ cd my-app
 bun run dev
 ```
 
-The generator installs `@disposabl/cli` and checks your Disposabl sign-in. It then guides you through GitHub and Convex in order. With both providers connected, setup creates the GitHub repository and Convex project in your accounts, sets the repository as `origin`, and saves the returned `appId` in `disposabl.json`. `bun run dev` starts a local Convex development deployment.
+The generator installs `@disposabl/cli` and checks your Disposabl sign-in. It then guides you through GitHub and Convex in order. With both providers connected, setup creates the GitHub repository and Convex project in your accounts, sets the repository as `origin`, and saves the returned `appSlug` in `disposabl.json`. `bun run dev` starts a local Convex development deployment.
 
 The default project enables web, CLI, and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 

@@ -11,3 +11,4 @@ jobs:
     secrets:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       CONVEX_DEPLOY_KEY_PREVIEW: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
+      DISPOSABL_PUBLISH_KEY: ${{ github.event_name == 'push' && secrets.DISPOSABL_PUBLISH_KEY || '' }}

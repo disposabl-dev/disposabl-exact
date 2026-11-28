@@ -1,8 +1,9 @@
 import { vStreamArgs, vStreamUIMessagesReturnValue } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { appRef } from "../apps/references";
 
-export const conversationArgs = { appSlug: v.optional(v.string()), threadId: v.optional(v.string()) };
+export const conversationArgs = { ...appRef.fields, threadId: v.optional(v.string()) };
 export const sendArgs = { ...conversationArgs, prompt: v.string() };
 export const sendResult = v.object({ threadId: v.string(), messageId: v.string(), assistantMessageId: v.string() });
 

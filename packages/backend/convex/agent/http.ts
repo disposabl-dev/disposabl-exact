@@ -29,8 +29,12 @@ export const authorizeSandbox: SandboxAuthorization = async (ctx, request) => {
     userId,
     allows: (operation, args) => {
       if (connectionOperations.has(operation.id)) return true;
+      if (operation.id === "apps/internal:get") {
+        if (!appSlug) return false;
+        if (typeof args.appId !== "string") return args.appSlug === appSlug;
+        return ctx.runQuery(internal.apps.internal.get, { userId, appSlug }).then(app => app?.appId === args.appId);
+      }
       if (typeof args.appSlug !== "string") return false;
-      if (operation.id === "apps/internal:get") return args.appSlug === appSlug;
       if (operation.id !== "apps/internal:create") return false;
       return ctx.runMutation(internal.agent.internal.claimApp, { sandbox: box, messageId, appSlug: args.appSlug });
     },

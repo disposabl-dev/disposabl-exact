@@ -31,7 +31,7 @@ bunx disposabl agent sendMessage --threadId '<threadId>' --prompt "Continue setu
 bunx disposabl agent abortMessage --threadId '<threadId>' --messageId '<messageId>'
 ```
 
-Use `--appSlug` to address an existing app's conversation. Otherwise the first message starts a regular conversation and returns its thread ID. App clients can subscribe to `getMessages` with the Agent component's streaming options. An app created from the conversation inherits its thread.
+Use `--appSlug` or `--appId` to address an existing app's conversation. Otherwise the first message starts a regular conversation and returns its thread ID. App clients can subscribe to `getMessages` with the Agent component's streaming options. An app created from the conversation inherits its thread.
 
 The generator prints the GitHub connection link first and the Convex link next. The assistant includes the current link in its reply. Open the link wherever you're signed into the provider, then continue the same conversation. Connections are saved on your Disposabl account.
 

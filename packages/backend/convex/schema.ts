@@ -47,10 +47,12 @@ export default defineSchema({
     convexSiteUrl: v.optional(v.string()),
     prod: appPlatforms,
     live: appPlatforms,
+    publishKeyId: v.optional(v.string()),
     agentThreadId: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
     .index("by_slug", ["slug"])
+    .index("by_publishKeyId", ["publishKeyId"])
     .index("by_agentThreadId", ["agentThreadId"]),
 
   previews: defineTable({

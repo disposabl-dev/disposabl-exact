@@ -115,7 +115,7 @@ test("the packed generator defaults to web and CLI and preserves selections thro
   for (const name of ["gradle.lockfile", "gradle-verification.xml"]) {
     assert.equal(await read(`apps/apps/${name}`), await readFile(join(packageDir, `../../apps/apps/${name}`), "utf8"));
   }
-  assert.equal((await config()).appId, undefined);
+  assert.equal((await config()).appSlug, undefined);
   assert.equal(JSON.parse(await read("package.json")).devDependencies["@disposabl/cli"], "file:packages/cli");
   await access(join(directory, "node_modules/.bin/disposabl"));
   for (const script of ["dev.mjs", "dev-web.mjs", "exact.mjs"]) await access(join(directory, "scripts", script));
@@ -123,7 +123,7 @@ test("the packed generator defaults to web and CLI and preserves selections thro
   connected.github = true;
   await assert.rejects(scaffold("exact-demo", ["--resume"], env),
     error => error.stdout.includes(links.convex) && error.stderr.includes("exact-demo --resume"));
-  assert.equal((await config()).appId, undefined);
+  assert.equal((await config()).appSlug, undefined);
   assert.equal(created, false);
   assert.deepEqual(calls, [
     "/api/users/current", "/api/connections/github/status", "/api/connections/github/connect",
@@ -139,14 +139,15 @@ test("the packed generator defaults to web and CLI and preserves selections thro
   interrupted.child.kill("SIGINT");
   await interruptedResult;
   holdGitHubStatus = undefined;
-  assert.equal((await config()).appId, undefined);
+  assert.equal((await config()).appSlug, undefined);
 
   await assert.rejects(scaffold("exact-demo", ["--resume"], env), /exact-demo --resume/);
-  assert.equal((await config()).appId, undefined);
+  assert.equal((await config()).appSlug, undefined);
   failCreate = false;
   const result = await scaffold("exact-demo", ["--resume"], env);
-  assert.match(result.stdout, /App ID saved in disposabl.json/);
-  assert.equal((await config()).appId, appId);
+  assert.match(result.stdout, /App slug saved in disposabl.json/);
+  assert.equal((await config()).appSlug, "exact-demo");
+  assert.equal((await config()).appId, undefined);
   assert.equal((await config()).apiOrigin, convexSiteUrl);
   assert.equal(created, true);
   const callsBeforeRejectedOrigin = calls.length;
@@ -190,7 +191,7 @@ test("the packed generator defaults to web and CLI and preserves selections thro
   await scaffold("exact-demo", ["--resume"], env);
   assert.deepEqual(await config(), edited);
   assert.equal(git("config", "--get", "remote.origin.url"), sshOrigin);
-  assert.equal((await config()).appId, appId);
+  assert.equal((await config()).appSlug, "exact-demo");
   const deploy = parseDocument(await read(".github/workflows/deploy.yml"));
   assert.deepEqual(deploy.errors, []);
   assert.equal(deploy.hasIn(["jobs", "publish"]), false);
