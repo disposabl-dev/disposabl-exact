@@ -11,5 +11,3 @@ jobs:
     secrets:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       CONVEX_DEPLOY_KEY_PREVIEW: ${{ secrets.CONVEX_DEPLOY_KEY_PREVIEW }}
-      EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
-      ANDROID_APK_SIGNING: ${{ secrets.ANDROID_APK_SIGNING }}

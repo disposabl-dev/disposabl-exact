@@ -65,7 +65,7 @@ case "$phase" in
     mkdir -p "$out"
     case "$platform" in
       android)
-        : "${ANDROID_APK_SIGNING:?Set the standalone APK key with .github/ci/android-key.sh}" "${ANDROID_HOME:?}"
+        : "${ANDROID_APK_SIGNING:?Missing the Android APK signing key}" "${ANDROID_HOME:?}"
         signing=$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")
         trap 'rm -rf "$signing"' EXIT
         export EXACT_KEYSTORE="$signing/key.p12" EXACT_KEY_ALIAS=android EXACT_UPDATE_TRUST=production
@@ -73,6 +73,7 @@ case "$phase" in
         echo "::add-mask::$EXACT_KEYSTORE_PASSWORD"
         export EXACT_KEYSTORE_PASSWORD EXACT_KEY_PASSWORD="$EXACT_KEYSTORE_PASSWORD"
         jq -er '.keystore | select(type == "string" and length > 0)' <<< "$ANDROID_APK_SIGNING" | base64 --decode > "$EXACT_KEYSTORE"
+        unset ANDROID_APK_SIGNING
         for attempt in 1 2; do
           if { bun exact.mjs android --release --no-install --json > "$out/build.json"; } 2>&1 | tee "$signing/build.log" >&2; then break; fi
           [[ "$attempt" == 1 ]] && grep -Fq 'Received status code 429 from server' "$signing/build.log" || exit 1

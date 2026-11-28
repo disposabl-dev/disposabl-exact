@@ -61,12 +61,11 @@ export async function ensureSigningSecrets(
     values.set(name, value);
   }
 
-  // Save the recoverable copy before publishing to GitHub's write-only secret store.
+  // Persist production first so a failed preview write can reuse the same keys.
   if (changes.length > 0) await request(target, token, "/update_environment_variables", { changes });
   await request("Convex", token, `/projects/${projectId}/update_default_environment_variables`, {
     changes: Array.from(values, ([name, value]) => ({
       name, value, deploymentType: "preview", applyToExistingDeployments: true,
     })),
   });
-  return values;
 }

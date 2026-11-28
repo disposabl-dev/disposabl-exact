@@ -4,7 +4,7 @@ import { createSign } from "node:crypto";
 import sodium from "libsodium-wrappers";
 import { ConvexError } from "convex/values";
 import { env } from "../../_generated/server";
-import { lookup, request } from "./provider";
+import { lookup, request, type DeploySecret } from "./provider";
 
 type Installation = {
   id: number;
@@ -83,7 +83,7 @@ export async function openSecrets(repository: Awaited<ReturnType<typeof ensureRe
 
   return {
     has: (name: string) => existing.has(name),
-    async save(values: ReadonlyMap<string, string>) {
+    async save(values: ReadonlyMap<DeploySecret, string>) {
       if (values.size === 0) return;
       const publicKey = await request<{ key_id: string; key: string }>("GitHub", token, `${path}/public-key`);
       await sodium.ready;

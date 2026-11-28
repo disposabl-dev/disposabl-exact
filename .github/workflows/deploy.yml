@@ -100,8 +100,12 @@ jobs:
           bun install --frozen-lockfile
       - id: probe
         working-directory: apps/apps
-        env: &update-key { EXACT_UPDATE_SEED: '${{ secrets.EXACT_UPDATE_SEED }}' }
-        run: &plan bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" plan "$PLATFORM"
+        env: &update-key
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        run: &plan |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" plan "$PLATFORM"
       - if: steps.probe.outputs.tools == 'true' || steps.probe.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
         run: bash "$CI_SCRIPTS/setup.sh" web ota
@@ -117,8 +121,15 @@ jobs:
       - if: *native
         working-directory: apps/apps
         env:
+          CONVEX_DEPLOY_KEY: ${{ matrix.platform == 'android' && secrets.CONVEX_DEPLOY_KEY || '' }}
           ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
-        run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" build "$PLATFORM"
+        run: |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          if [[ "$PLATFORM" == android ]]; then
+            bash "$ci/with-signing.sh" ANDROID_APK_SIGNING bash "$ci/native.sh" build "$PLATFORM"
+          else
+            bash "$ci/native.sh" build "$PLATFORM"
+          fi
       - if: *native
         working-directory: apps/apps
         run: bash "$GITHUB_WORKSPACE/$CI_SCRIPTS/native.sh" publish "$PLATFORM"
@@ -133,4 +144,6 @@ jobs:
       - if: *native
         working-directory: apps/apps
         env: *update-key
-        run: bun --no-env-file "$GITHUB_WORKSPACE/$CI_SCRIPTS/updates.mjs" seed "$PLATFORM"
+        run: |
+          ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
+          bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" seed "$PLATFORM"
