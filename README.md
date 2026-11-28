@@ -25,7 +25,7 @@ When upgrading a draft configuration that listed only `api` and `mcp`, add the c
 
 Enable GitHub Actions on the repository provisioned by the generator. For web, enable Convex Static Hosting. The workflow uses two repository secrets, `CONVEX_DEPLOY_KEY` for main and `CONVEX_DEPLOY_KEY_PREVIEW` for same-repository pull requests. Forks build with placeholder origins. Each preview uses its own Convex deployment named `pr-<number>`.
 
-The Disposabl app API provisions `EXACT_UPDATE_SEED` and `ANDROID_APK_SIGNING` in Convex. Native CI reads them from the app's production deployment using `CONVEX_DEPLOY_KEY`. Apps using the generator's legacy setup continue using the keys in the `android-production` GitHub environment. For those apps, run `bash .github/ci/android-key.sh android` to add Android delivery or `bash .github/ci/android-key.sh update` for Apple platforms only. Running the helper again reuses the existing keys.
+For native deployment, use `apps.create` to provision the app, generate the files with `--skip-setup`, and push them to the provisioned repository. `apps.create` sets `EXACT_UPDATE_SEED` and `ANDROID_APK_SIGNING` in Convex. Native CI reads them from the app's production deployment using `CONVEX_DEPLOY_KEY`.
 
 On the first deployment, CI builds each selected native app on Ubuntu and writes its AppDrop link to the job summary. Android produces a signed APK, iOS produces a device IPA for re-signing, and macOS produces an ad-hoc-signed, non-notarized app ZIP. Subsequent deployments publish compatible app changes as signed over-the-air updates. Changes that require a new native binary or include changed static assets produce a new installer link. Web and its backend share a Convex site URL. Pull requests preview web only.
 

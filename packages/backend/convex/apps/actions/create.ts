@@ -23,7 +23,7 @@ export const provision = internalAction({
       const production = await ensureProductionDeployment(convexAccessToken, project.id);
       const repository = await ensureRepository(githubOwner, githubInstallationId, resourceName, creationId);
       const secrets = await openSecrets(repository);
-      await ensureSigningSecrets(convexAccessToken, project.id, production, secrets.has);
+      await ensureSigningSecrets(convexAccessToken, project.id, production);
       const missingDeployKeys = ([productionSecret, previewSecret] as const).filter(name => !secrets.has(name));
       await secrets.save(await createDeployKeys(convexAccessToken, project, production, missingDeployKeys));
       return await ctx.runMutation(internal.apps.internal.finishCreation, { ...lease, convexProjectId: project.id });

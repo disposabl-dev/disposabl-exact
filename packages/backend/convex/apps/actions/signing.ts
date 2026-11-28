@@ -40,7 +40,6 @@ export async function ensureSigningSecrets(
   token: string,
   projectId: number,
   production: string,
-  hasGitHubSecret: (name: string) => boolean,
 ) {
   const target = { deployment: production };
   const { environmentVariables } = await request<{ environmentVariables: Record<string, string | undefined> }>(
@@ -52,7 +51,7 @@ export async function ensureSigningSecrets(
   for (const [name, generate] of Object.entries(generators)) {
     let value = environmentVariables[name];
     if (!value) {
-      if (value !== undefined || hasGitHubSecret(name)) {
+      if (value !== undefined) {
         throw new ConvexError(`Restore ${name} in the app's production Convex environment before retrying.`);
       }
       value = generate();

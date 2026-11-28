@@ -2,8 +2,6 @@ name: Deploy app
 on:
   workflow_call:
     secrets:
-      ANDROID_APK_SIGNING: { required: false }
-      EXACT_UPDATE_SEED: { required: false }
       CONVEX_DEPLOY_KEY: { required: false }
       CONVEX_DEPLOY_KEY_PREVIEW: { required: false }
   pull_request:
@@ -78,7 +76,6 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.config.outputs.native) }}
     runs-on: ubuntu-24.04
-    environment: { name: android-production, deployment: false }
     env:
       EXACT_CACHE_TAGS: ${{ needs.config.outputs.cache }}
       PLATFORM: ${{ matrix.platform }}
@@ -100,9 +97,7 @@ jobs:
           bun install --frozen-lockfile
       - id: probe
         working-directory: apps/apps
-        env: &update-key
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          EXACT_UPDATE_SEED: ${{ secrets.EXACT_UPDATE_SEED }}
+        env: &production-key { CONVEX_DEPLOY_KEY: '${{ secrets.CONVEX_DEPLOY_KEY }}' }
         run: &plan |
           ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
           bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" plan "$PLATFORM"
@@ -112,7 +107,7 @@ jobs:
       - id: plan
         if: steps.probe.outputs.tools == 'true'
         working-directory: apps/apps
-        env: *update-key
+        env: *production-key
         run: *plan
       - if: &native steps.probe.outputs.native == 'true' || steps.plan.outputs.native == 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
@@ -122,7 +117,6 @@ jobs:
         working-directory: apps/apps
         env:
           CONVEX_DEPLOY_KEY: ${{ matrix.platform == 'android' && secrets.CONVEX_DEPLOY_KEY || '' }}
-          ANDROID_APK_SIGNING: ${{ matrix.platform == 'android' && secrets.ANDROID_APK_SIGNING || '' }}
         run: |
           ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
           if [[ "$PLATFORM" == android ]]; then
@@ -143,7 +137,7 @@ jobs:
           printf '[Install %s](%s)\n' "$PLATFORM" "$(jq -er .url "$RUNNER_TEMP/installer-$PLATFORM.json")" >> "$GITHUB_STEP_SUMMARY"
       - if: *native
         working-directory: apps/apps
-        env: *update-key
+        env: *production-key
         run: |
           ci="$GITHUB_WORKSPACE/$CI_SCRIPTS"
           bash "$ci/with-signing.sh" EXACT_UPDATE_SEED bun --no-env-file "$ci/updates.mjs" seed "$PLATFORM"

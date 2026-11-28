@@ -18,6 +18,8 @@ bunx create-disposabl-app@latest my-app --platforms web,ios --features authentic
 
 The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
 
+For native CI, provision the repository and Convex signing variables with `apps.create`. Generate the source with `--skip-setup` and push it to the provisioned repository.
+
 Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. Run the project CLI with `bun run disposabl --help`.
 
 ## Reset to the clean starter
