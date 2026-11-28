@@ -206,13 +206,9 @@ esac
   await assert.rejects(scaffold("offline-app", ["--skip-setup"], env), /EEXIST/);
 
   const offlineApp = join(work, "offline-app");
-  for (const name of ["disposabl-app", "disposabl-reconfigure"]) {
-    const file = `${name}/SKILL.md`;
-    const source = await readFile(join(packageDir, "../../packages/skills", file), "utf8");
-    for (const path of [`.agents/skills/${file}`, `.claude/skills/${file}`]) {
-      assert.equal(await readFile(join(offlineApp, path), "utf8"), source);
-      execFileSync("git", ["add", "--dry-run", "--", path], { cwd: offlineApp });
-    }
+  for (const path of [".agents/skills/.gitkeep", ".claude/skills/.gitkeep"]) {
+    assert.equal(await readFile(join(offlineApp, path), "utf8"), "");
+    execFileSync("git", ["add", "--dry-run", "--", path], { cwd: offlineApp });
   }
   await assert.rejects(access(join(offlineApp, "packages/skills")), { code: "ENOENT" });
 });

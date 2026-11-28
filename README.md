@@ -66,6 +66,10 @@ The snapshot includes both SDKs. On a fresh restore, the commands above wait for
 
 Build the web app with `bun run build` from `apps/apps`. From `packages/backend`, run `bun run static-hosting upload --dist ../../apps/apps/dist` and open the HTTP actions origin. The web app and auth endpoints share that origin so the browser can use an HttpOnly cookie. Keep the generated `/.exact/auth/callback` and its script in the upload.
 
+### Project skills
+
+Add a `SKILL.md` in `.agents/skills/<name>/` for Codex or `.claude/skills/<name>/` for Claude Code. Give it a `name`, a `description`, and the instructions for the agent to follow. To use it with both agents, put a copy in each folder.
+
 ### Authentication
 
 Exact uses Convex Auth `2.1.0` on web, Android, and iOS. Username and password work on a fresh deployment. Google appears after both `AUTH_GOOGLE_CLIENT_ID` and `AUTH_GOOGLE_CLIENT_SECRET` are set on that Convex deployment and the backend is redeployed. Use a Google **web application** client and register `<Convex HTTP actions origin>/oauth/google/callback` as its authorized redirect URI. Set the values through Convex, where the Google component can read them through environment bindings. To disable Google on a configured deployment, blank either value and redeploy before removing the variables. Keep the same Google OAuth client for each deployment's existing accounts.

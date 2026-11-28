@@ -12,8 +12,6 @@ The generator installs `@disposabl/cli` as a development dependency in the new a
 
 The default project enables web and authentication. Choose platforms and features at the prompts or pass comma-separated lists for unattended setup.
 
-New projects include `disposabl-app` and `disposabl-reconfigure` in `.agents/skills` for Codex and `.claude/skills` for Claude Code.
-
 ```sh
 bunx create-disposabl-app@latest my-app --platforms web,ios --features authentication,payments
 ```
@@ -21,6 +19,13 @@ bunx create-disposabl-app@latest my-app --platforms web,ios --features authentic
 The generator saves your selections in `disposabl.json`. The provisioning API uses web to create the repository and Convex project. Deployment uses the platforms and features in the generated file. Use `--features ""` for an app without sign-in or billing.
 
 Run the same command with `--resume` and the app name if setup stops partway. Edit `disposabl.json` to change selections before resuming. Use `--skip-setup` to create the files without provisioning a repository or deployment. Run the project CLI with `bun run disposabl --help`.
+
+## Project skills
+
+New projects start with empty skill folders at `.agents/skills` for Codex and `.claude/skills` for Claude Code.
+
+1. To ship a skill with future projects, add `packages/skills/<skill-name>/SKILL.md` in this repository.
+2. Stage the file and run `bun run test` from this package. The generator copies tracked skill files into both folders.
 
 ## Reset to the clean starter
 
