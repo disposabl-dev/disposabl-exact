@@ -12,7 +12,8 @@ permissions:
   contents: read
 jobs:
   generator:
-    if: github.repository == 'disposabl-dev/disposabl-exact'
+    # 251083309 is the immutable GitHub account ID for vivek-yast.
+    if: github.repository == 'disposabl-dev/disposabl-exact' && (github.event_name != 'pull_request' || github.event.pull_request.user.id == 251083309)
     runs-on: ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=true/id=${{ github.run_id }}-${{ github.run_attempt }}-create-disposabl-app-generator
     steps:
       - uses: actions/checkout@v7.0.1

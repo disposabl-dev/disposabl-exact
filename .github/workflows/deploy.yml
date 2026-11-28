@@ -21,6 +21,8 @@ env:
   CI_SCRIPTS: ${{ github.repository == 'disposabl-dev/disposabl-exact' && '.github/ci' || '.disposabl-ci/.github/ci' }}
 jobs:
   config:
+    # Gate this repository before allocating a runner. Generated repositories own their PR policy.
+    if: github.event_name != 'pull_request' || github.repository != 'disposabl-dev/disposabl-exact' || github.event.pull_request.user.id == 251083309
     runs-on: ${{ github.repository == 'disposabl-dev/disposabl-exact' && format('ravion/ee=github-actions/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/interruptible=true/id={0}-{1}-deploy-config', github.run_id, github.run_attempt) || 'ubuntu-24.04' }}
     outputs:
       web: ${{ steps.platforms.outputs.web }}
