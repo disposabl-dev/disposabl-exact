@@ -8,6 +8,11 @@
  * @module
  */
 
+import type * as agent_actions_boat from "../agent/actions/boat.js";
+import type * as agent_actions_credentials from "../agent/actions/credentials.js";
+import type * as agent_actions_run from "../agent/actions/run.js";
+import type * as agent_actions_workspace from "../agent/actions/workspace.js";
+import type * as agent_http from "../agent/http.js";
 import type * as agent_index from "../agent/index.js";
 import type * as agent_internal from "../agent/internal.js";
 import type * as agent_validators from "../agent/validators.js";
@@ -46,6 +51,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "agent/actions/boat": typeof agent_actions_boat;
+  "agent/actions/credentials": typeof agent_actions_credentials;
+  "agent/actions/run": typeof agent_actions_run;
+  "agent/actions/workspace": typeof agent_actions_workspace;
+  "agent/http": typeof agent_http;
   "agent/index": typeof agent_index;
   "agent/internal": typeof agent_internal;
   "agent/validators": typeof agent_validators;

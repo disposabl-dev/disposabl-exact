@@ -1,13 +1,14 @@
 import { vStreamArgs, vStreamUIMessagesReturnValue } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { appSlugArgs } from "../apps/validators";
 
-export const sendArgs = { ...appSlugArgs, prompt: v.string() };
-export const sendResult = v.object({ threadId: v.string(), messageId: v.string() });
+export const conversationArgs = { appSlug: v.optional(v.string()), threadId: v.optional(v.string()) };
+export const sendArgs = { ...conversationArgs, prompt: v.string() };
+export const sendResult = v.object({ threadId: v.string(), messageId: v.string(), assistantMessageId: v.string() });
 
-export const messagesArgs = { ...appSlugArgs, paginationOpts: paginationOptsValidator, streamArgs: vStreamArgs };
+export const messagesArgs = { ...conversationArgs, paginationOpts: paginationOptsValidator, streamArgs: vStreamArgs };
 export const messagesResult = vStreamUIMessagesReturnValue;
 
-export const abortArgs = { ...appSlugArgs, messageId: v.string() };
+export const abortArgs = { ...conversationArgs, messageId: v.string() };
+export const turnArgs = { turnId: v.id("agentTurns") };
 export const abortResult = v.object({ accepted: v.boolean() });

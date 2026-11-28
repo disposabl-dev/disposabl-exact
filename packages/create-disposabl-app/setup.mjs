@@ -21,11 +21,14 @@ export async function writeJson(path, value) {
   }
 }
 
-async function runCli(directory, origin, args, signal, interactive = false) {
-  signal.throwIfAborted();
+function findCli(directory) {
   const require = createRequire(join(directory, "package.json"));
   const manifest = require.resolve("@disposabl/cli/package.json");
-  const cli = join(dirname(manifest), require(manifest).bin.disposabl);
+  return join(dirname(manifest), require(manifest).bin.disposabl);
+}
+
+async function runCli(cli, directory, origin, args, signal, interactive = false) {
+  signal.throwIfAborted();
   const output = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, ...args], {
       cwd: directory,
@@ -112,12 +115,14 @@ async function connect(run, terminal, signal, provider, label, authorizationOrig
 }
 
 export async function setup(directory, name, config, terminal, signal) {
-  const origin = process.env.DISPOSABL_API_ORIGIN || defaultOrigin;
+  const cli = findCli(directory);
+  const { sandboxSession } = await import(join(dirname(cli), "sandbox.mjs"));
+  const origin = process.env.DISPOSABL_API_ORIGIN || sandboxSession()?.origin || defaultOrigin;
   if (config.serviceOrigin && config.serviceOrigin !== origin) {
     throw new Error("Set DISPOSABL_API_ORIGIN to the original Disposabl API origin before resuming.");
   }
 
-  const run = (args, interactive) => runCli(directory, origin, args, signal, interactive);
+  const run = (args, interactive) => runCli(cli, directory, origin, args, signal, interactive);
   terminal.progress("[1/4] Check Disposabl sign-in");
   if (!(await run(["login", "status"])).currentUser) {
     terminal.progress("Sign in in your browser, then return here to continue. Press Ctrl+C to pause.");

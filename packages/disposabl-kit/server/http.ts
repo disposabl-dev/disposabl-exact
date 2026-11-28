@@ -9,7 +9,7 @@ import { authClient, cookieName, isAppRequest, privateHeaders, readBody, readSes
 import { api, components, internal } from "../../backend/convex/_generated/api";
 import { httpAction } from "../../backend/convex/_generated/server";
 import { mcp } from "./mcp";
-import { registerAppOperations, registerRest } from "./rest";
+import { registerAppOperations, registerRest, type SandboxAuthorization } from "./rest";
 import { GOOGLE_NATIVE_CALLBACK, GOOGLE_NATIVE_RETURN, GOOGLE_WEB_RETURN, googleAvailable, googleEnabled } from "./authSettings";
 
 const cookieOptions = { path: "/", secure: true, httpOnly: true, sameSite: "strict" } as const;
@@ -143,7 +143,7 @@ const webReturn = httpAction(async (ctx) => {
 
 const notFound = httpAction(async () => reply({ error: "NOT_FOUND" }, 404));
 
-export function createHttp(config: PlatformSelection = platform) {
+export function createHttp(config: PlatformSelection = platform, authorizeSandbox?: SandboxAuthorization) {
   const http = httpRouter();
   if (config.authentication && config.web) {
     http.route({ path: "/api/auth/web", method: "POST", handler: session });
@@ -155,7 +155,7 @@ export function createHttp(config: PlatformSelection = platform) {
   }
   if (config.payments) registerBilling(http, config.web, config.native);
   if (config.authentication) registerAppOperations(http, config.web, config.native);
-  if (config.api) registerRest(http, config);
+  if (config.api) registerRest(http, config, authorizeSandbox);
   else http.route({ path: "/openapi.json", method: "GET", handler: notFound });
   if (config.oauth) {
     mcp.registerRoutes(http);

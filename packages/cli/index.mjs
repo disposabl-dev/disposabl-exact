@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { parseEnv } from "node:util";
 import { Command } from "commander";
 import { accessToken, hasCredentials, login, logout, NotAuthenticated, openUrl } from "./auth.mjs";
+import { sandboxSession } from "./sandbox.mjs";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 const program = new Command().name("disposabl").version(version)
@@ -30,7 +31,7 @@ function targetOrigin() {
       if (origin) return apiOrigin(origin);
       throw new Error("Start this app with bun run dev or set DISPOSABL_API_ORIGIN.");
     }
-    if (directory === dirname(directory)) return "https://www.disposabl.dev";
+    if (directory === dirname(directory)) return apiOrigin(sandboxSession()?.origin ?? "https://www.disposabl.dev");
   }
 }
 
@@ -66,18 +67,19 @@ function contract(timeout) {
 }
 
 async function authenticatedRequest(url, options, origin) {
+  const sandbox = sandboxSession();
   const send = async (refresh = false) => {
-    const token = await accessToken(origin, refresh);
+    const token = sandbox?.origin === origin ? sandbox.token : await accessToken(origin, refresh);
     return request(url, { ...options, headers: { ...options.headers, Authorization: "Bearer " + token } });
   };
   const response = await send();
-  return response.status === 401 && !process.env.DISPOSABL_API_KEY ? send(true) : response;
+  return response.status === 401 && sandbox?.origin !== origin && !process.env.DISPOSABL_API_KEY ? send(true) : response;
 }
 
 async function loginStatus() {
   const { origin, authentication } = await contract();
   let currentUser = null;
-  if (authentication && await hasCredentials(origin)) {
+  if (authentication && (sandboxSession()?.origin === origin || await hasCredentials(origin))) {
     try {
       const response = await authenticatedRequest(origin + "/api/users/current", {}, origin);
       if (response.status !== 401) currentUser = await result(response);
@@ -94,6 +96,7 @@ const loginCommand = program.command("login").description("Sign in to the target
   .action(async ({ browser }) => {
     const { origin, authentication } = await contract();
     if (!authentication) return output({ authentication });
+    if (sandboxSession()?.origin === origin) return output(await loginStatus());
     await login(origin, browser);
     console.error("Signed in.");
   });
